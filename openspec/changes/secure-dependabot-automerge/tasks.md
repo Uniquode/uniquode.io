@@ -14,9 +14,9 @@
 ## 3. Secret Scanning Gates
 
 - [x] 3.1 Confirm whether GitGuardian, GitHub secret scanning, or both will provide the required secret-scanning PR check.
-- [ ] 3.2 Configure the selected secret-scanning provider for pull request checks.
-- [ ] 3.3 Let the secret-scanning check report successfully on a pull request so the check can be selected as required.
-- [ ] 3.4 Add the selected secret-scanning check to the required checks for `main`.
+- [x] 3.2 Configure the selected secret-scanning provider for pull request checks.
+- [x] 3.3 Let the secret-scanning check report successfully on a pull request so the check can be selected as required.
+- [x] 3.4 Add the selected secret-scanning check to the required checks for `main`.
 
 ## 4. Branch Protection
 
