@@ -40,7 +40,7 @@ For direct invocation, the equivalent command is:
 uv run uvicorn uniquode.asgi:app
 ```
 
-Development reload behavior may be enabled by the `runserver` script or future options, but the stable contract is that `runserver` starts the ASGI application using Uvicorn.
+Development reload behaviour may be enabled by the `runserver` script or future options, but the stable contract is that `runserver` starts the ASGI application using Uvicorn.
 
 Production deployment must preserve ASGI handoff. If a process manager is needed, use an ASGI-compatible deployment path, such as Gunicorn with a Uvicorn worker or another deployment system that runs the same `uniquode.asgi:app` target.
 
@@ -50,7 +50,7 @@ The application can be run before any front-end pipeline exists because FastAPI 
 
 Developers get a short project-specific command for local execution while the underlying server target remains explicit and standard.
 
-Using `uv run` keeps runtime behavior tied to project metadata and the managed environment.
+Using `uv run` keeps runtime behaviour tied to project metadata and the managed environment.
 
 Keeping the ASGI target stable avoids coupling deployment configuration to internal application factory details.
 

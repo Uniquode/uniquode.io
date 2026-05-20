@@ -129,4 +129,3 @@ The system SHALL limit initial runtime dependencies to platform dependencies jus
 #### Scenario: Product dependencies are excluded
 - **WHEN** the initialization change is reviewed
 - **THEN** it does not add authentication, asset pipeline, form handling, queue, NoSQL, or product-specific integration dependencies without a requirement
-
