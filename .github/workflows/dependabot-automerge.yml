@@ -17,6 +17,8 @@ jobs:
     name: Enable auto-merge
     if: >-
       github.actor == 'dependabot[bot]' &&
+      github.event.pull_request.user.login == 'dependabot[bot]' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       github.event.pull_request.draft == false
     runs-on: ubuntu-latest
 
@@ -30,9 +32,8 @@ jobs:
       - name: Enable auto-merge for Python patch updates
         if: >-
           steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' &&
-          steps.dependabot-metadata.outputs.package-ecosystem != 'github_actions' &&
-          steps.dependabot-metadata.outputs.package-ecosystem != 'github-actions' &&
-          !contains(github.event.pull_request.title, 'security')
+          steps.dependabot-metadata.outputs.package-ecosystem == 'uv' &&
+          steps.dependabot-metadata.outputs.dependency-group == ''
         run: gh pr merge --auto --rebase "$PR_URL"
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
