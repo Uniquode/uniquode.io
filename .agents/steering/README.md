@@ -9,3 +9,4 @@ Use `AGENTS.md` for the short always-loaded rules. Use these steering files for 
 - `openspec.md`: project-specific OpenSpec workflow guidance.
 - `architecture.md`: application layout and platform boundaries.
 - `linear.md`: Linear project workflow, issue traceability, and ADR document sync guidance.
+- `gh.md`: GitHub connector preference and when to fall back to `gh`.
