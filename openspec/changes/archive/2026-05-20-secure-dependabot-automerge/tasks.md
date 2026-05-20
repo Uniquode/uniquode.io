@@ -37,5 +37,5 @@
 
 - [x] 6.1 Run YAML validation or pre-commit checks for all changed GitHub workflow and Dependabot files.
 - [x] 6.2 Run `openspec validate secure-dependabot-automerge --strict`.
-- [ ] 6.3 Validate behaviour with a Dependabot patch PR or equivalent dry run.
+- [x] 6.3 Validate behaviour with a Dependabot patch PR or equivalent dry run.
 - [x] 6.4 Update `.todo/context.md` with the final administrative security automation state.
