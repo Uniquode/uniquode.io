@@ -8,8 +8,8 @@
 ## 2. Code Scanning Gates
 
 - [x] 2.1 Add CodeQL scanning for the Python codebase or enable GitHub CodeQL default setup.
-- [ ] 2.2 Let CodeQL report successfully on a pull request so the check can be selected as required.
-- [ ] 2.3 Add the CodeQL check to the required checks for `main`.
+- [x] 2.2 Let CodeQL report successfully on a pull request so the check can be selected as required.
+- [x] 2.3 Add the CodeQL check to the required checks for `main`.
 
 ## 3. Secret Scanning Gates
 
