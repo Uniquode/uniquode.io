@@ -8,3 +8,4 @@ Use `AGENTS.md` for the short always-loaded rules. Use these steering files for 
 - `validation.md`: baseline check commands and timeout conventions.
 - `openspec.md`: project-specific OpenSpec workflow guidance.
 - `architecture.md`: application layout and platform boundaries.
+- `linear.md`: Linear project workflow, issue traceability, and ADR document sync guidance.
