@@ -45,14 +45,14 @@ Alternatives considered:
 
 ### Choose local-development defaults that favour interactive use
 
-The `runserver` command should represent the normal local-development experience, so it should prefer localhost binding, the conventional development port, and reload enabled by default. These defaults make the command immediately useful while keeping the underlying Uvicorn invocation standard.
+The `runserver` command should represent the normal local-development experience, so it should prefer localhost binding and the conventional development port while leaving reload disabled unless the developer opts in. This keeps the baseline closer to a plain server invocation while still allowing explicit reload behaviour when it is wanted.
 
-The launcher should parse supported command-line options and use the defaults only when an override is not supplied. This keeps the project-specific entry point flexible without exposing the whole Uvicorn configuration surface prematurely.
+The launcher should parse supported command-line options and use the defaults only when an override is not supplied. Reload should also be able to fall back to a project-specific environment variable when the CLI flag is absent. This keeps the project-specific entry point flexible without exposing the whole Uvicorn configuration surface prematurely.
 
 Alternatives considered:
 
-- Disable reload by default
-  - Rejected because the command is explicitly for local development and reload improves the default feedback loop.
+- Enable reload by default
+  - Rejected because the baseline command should stay closer to a plain server startup unless the developer explicitly opts into reload behaviour.
 - Bind to all interfaces by default
   - Rejected because localhost is the safer baseline unless a broader bind requirement emerges.
 - Hard-code values with no command-line parsing
