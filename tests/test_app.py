@@ -13,6 +13,7 @@ from uniquode.runserver import (
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_RELOAD,
+    RELOAD_ENV_VAR,
     build_parser,
 )
 from uniquode.runserver import (
@@ -74,7 +75,27 @@ def test_runserver_parser_uses_defaults() -> None:
 
     assert args.host == DEFAULT_HOST
     assert args.port == DEFAULT_PORT
-    assert args.reload is DEFAULT_RELOAD
+    assert args.reload is None
+
+
+def test_runserver_main_uses_environment_reload(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(app_target: str, **kwargs: object) -> None:
+        captured["app_target"] = app_target
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
+    monkeypatch.setenv(RELOAD_ENV_VAR, "true")
+
+    runserver_main([])
+
+    assert captured["app_target"] == APP_TARGET
+    assert captured["kwargs"] == {
+        "host": DEFAULT_HOST,
+        "port": DEFAULT_PORT,
+        "reload": True,
+    }
 
 
 def test_runserver_main_uses_cli_overrides(monkeypatch) -> None:
@@ -86,11 +107,31 @@ def test_runserver_main_uses_cli_overrides(monkeypatch) -> None:
 
     monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
 
-    runserver_main(["--host", "0.0.0.0", "--port", "9000", "--no-reload"])
+    runserver_main(["--host", "0.0.0.0", "--port", "9000", "--reload"])
 
     assert captured["app_target"] == APP_TARGET
     assert captured["kwargs"] == {
         "host": "0.0.0.0",
         "port": 9000,
-        "reload": False,
+        "reload": True,
+    }
+
+
+def test_runserver_cli_reload_overrides_environment(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(app_target: str, **kwargs: object) -> None:
+        captured["app_target"] = app_target
+        captured["kwargs"] = kwargs
+
+    monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
+    monkeypatch.setenv(RELOAD_ENV_VAR, "off")
+
+    runserver_main(["--reload"])
+
+    assert captured["app_target"] == APP_TARGET
+    assert captured["kwargs"] == {
+        "host": DEFAULT_HOST,
+        "port": DEFAULT_PORT,
+        "reload": True,
     }

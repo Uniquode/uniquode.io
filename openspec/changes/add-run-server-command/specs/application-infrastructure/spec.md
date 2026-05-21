@@ -26,6 +26,10 @@ The system SHALL define the baseline local runtime behaviour of the `runserver` 
 - **WHEN** a developer runs `uv run runserver` with supported host, port, or reload command-line options
 - **THEN** the application starts with the supplied values instead of the baseline defaults
 
+#### Scenario: Reload falls back to environment configuration
+- **WHEN** a developer runs `uv run runserver` without `--reload` and `U_RELOAD` is set to a truthy value
+- **THEN** the application starts with reload enabled
+
 #### Scenario: Runtime contract stays independent of front-end tooling
 - **WHEN** the local runtime command is reviewed
 - **THEN** it does not require a front-end asset pipeline in order to start the ASGI application
