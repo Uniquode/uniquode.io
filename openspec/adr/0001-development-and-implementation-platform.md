@@ -93,5 +93,10 @@ Choosing SQL now does not prevent later use of NoSQL for a specific capability, 
 
 ## Follow-Up Decisions
 
-- Define the initial application packaging and runtime command.
-- Define the template, static asset, and form handling conventions.
+- Runtime and deployment command conventions are resolved by ADR 0002.
+- UI delivery architecture is resolved by ADR 0004.
+- CSS strategy and theming conventions are resolved by ADR 0003.
+- Remaining implementation work should define:
+  - template and layout hierarchy conventions;
+  - static asset inclusion and delivery conventions;
+  - form handling conventions.

@@ -1,4 +1,4 @@
-# 0006: CSS Strategy and Theming Conventions
+# 0003: CSS Strategy and Theming Conventions
 
 Date: 2026-05-20
 
@@ -8,7 +8,7 @@ Status: Provisional
 
 The project is now close to defining its initial template hierarchy and front-end conventions.
 
-ADR 0003 established a server-rendered HTML-first UI using Jinja2, with `htmx` as the preferred dynamic enhancement layer where needed. That decision still leaves open how the project should approach baseline styling, responsive layout, reusable widgets, and colour-mode support.
+ADR 0004 established a server-rendered HTML-first UI using Jinja2, with `htmx` as the preferred dynamic enhancement layer where needed. That decision still leaves open how the project should approach baseline styling, responsive layout, reusable widgets, and colour-mode support.
 
 Building all CSS from scratch would maximise control, but it would also require the project to define and maintain consistent defaults for typography, forms, tables, navigation, layout, spacing, visual states, and reusable interface elements from the beginning.
 

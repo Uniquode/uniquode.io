@@ -40,7 +40,15 @@ For direct invocation, the equivalent command is:
 uv run uvicorn uniquode.asgi:app
 ```
 
-Development reload behaviour may be enabled by the `runserver` script or future options, but the stable contract is that `runserver` starts the ASGI application using Uvicorn.
+The `runserver` command uses the following baseline local defaults:
+
+- host `127.0.0.1`;
+- port `8000`;
+- reload disabled by default.
+
+The `runserver` command should support explicit local overrides for host and port.
+
+The `--reload` flag should enable reload explicitly. When `--reload` is not supplied, the `U_RELOAD` environment variable may enable reload when set to a truthy value.
 
 Production deployment must preserve ASGI handoff. If a process manager is needed, use an ASGI-compatible deployment path, such as Gunicorn with a Uvicorn worker or another deployment system that runs the same `uniquode.asgi:app` target.
 
@@ -58,7 +66,4 @@ If later requirements introduce a front-end build step, that step can be added b
 
 ## Follow-Up Work
 
-- Add the `runserver` project script.
-- Decide the script's default host, port, and reload behavior.
-- Add focused tests or smoke checks for the runtime command where practical.
-- Document production deployment once the hosting target is selected.
+No additional follow-up work is currently required by this ADR.

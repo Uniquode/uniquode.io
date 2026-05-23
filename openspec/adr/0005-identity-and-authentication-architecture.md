@@ -1,4 +1,4 @@
-# 0004: Identity and Authentication Architecture
+# 0005: Identity and Authentication Architecture
 
 Date: 2026-05-20
 
