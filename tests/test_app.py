@@ -4,7 +4,7 @@ import tomllib
 from pathlib import Path
 
 import pytest
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from starlette.staticfiles import StaticFiles
@@ -25,6 +25,7 @@ from uniquode.runserver import (
 )
 from uniquode.settings import Settings
 from uniquode.validate import main as validate_main
+from uniquode.web.errors import EmptyBodyResponseException
 from uniquode.web.renderer import TemplateRenderer
 
 
@@ -164,6 +165,17 @@ def test_create_app_mounts_configurable_static_files() -> None:
     assert Path(static_app.directory) == settings.static_root
 
 
+def test_missing_static_asset_does_not_render_html_error_page() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get("/static/missing.css")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "<!doctype html>" not in response.text.lower()
+    assert response.text == "Not Found"
+
+
 def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
@@ -203,6 +215,116 @@ def test_api_route_stays_machine_oriented() -> None:
 
     assert response.status_code == 200
     assert response.json() == {"theme_mode": "auto"}
+
+
+def test_missing_page_route_renders_html_404() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get("/missing")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<!doctype html>" in response.text.lower()
+    assert "Not Found" in response.text
+
+
+def test_missing_api_route_stays_json_even_with_browser_accept_header() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get("/api/missing", headers={"accept": "text/html"})
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {
+        "error": "Not Found",
+        "detail": "The requested resource could not be found.",
+        "status_code": 404,
+    }
+
+
+def test_page_route_unhandled_error_renders_html_500() -> None:
+    web_app = create_app()
+
+    @web_app.get("/boom-page")
+    async def boom_page() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/boom-page")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<!doctype html>" in response.text.lower()
+    assert "Internal Server Error" in response.text
+
+
+def test_api_route_unhandled_error_stays_json() -> None:
+    web_app = create_app()
+
+    @web_app.get("/api/test/boom")
+    async def boom_api() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/api/test/boom", headers={"accept": "text/html"})
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("application/json")
+    assert response.json() == {
+        "error": "Internal Server Error",
+        "detail": "An internal server error prevented the request from completing.",
+        "status_code": 500,
+    }
+
+
+def test_partial_route_unhandled_error_returns_fragment() -> None:
+    web_app = create_app()
+
+    @web_app.get("/partials/boom")
+    async def boom_partial() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/partials/boom", headers={"HX-Request": "true"})
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<!doctype html>" not in response.text.lower()
+    assert "<section" in response.text
+    assert "Internal Server Error" in response.text
+
+
+def test_known_http_status_uses_generic_api_fallback() -> None:
+    web_app = create_app()
+
+    @web_app.get("/api/test/limited")
+    async def limited_api() -> None:
+        raise HTTPException(status_code=429)
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/api/test/limited")
+
+    assert response.status_code == 429
+    assert response.json() == {
+        "error": "Too Many Requests",
+        "detail": "Too many requests were made in a short period.",
+        "status_code": 429,
+    }
+
+
+def test_non_standard_empty_body_error_bypasses_generic_rendering() -> None:
+    web_app = create_app()
+
+    @web_app.get("/api/test/terminate")
+    async def terminate_api() -> None:
+        raise EmptyBodyResponseException(status_code=444)
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/api/test/terminate")
+
+    assert response.status_code == 444
+    assert response.text == ""
+    assert "content-type" not in response.headers
 
 
 def test_theme_preference_cookie_drives_page_rendering() -> None:
