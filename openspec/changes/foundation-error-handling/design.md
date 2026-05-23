@@ -27,6 +27,9 @@ part of the baseline response contract for every later surface.
   requiring a bespoke template or serializer for each one.
 - Define a safe policy for non-standard or application-specific status codes such
   as `444`, where the application may want to terminate quickly or emit no body.
+- Harden the error path so it preserves only applicable metadata, validates its
+  own route-surface configuration, and fails closed when rendering infrastructure
+  is unavailable.
 
 **Non-Goals:**
 
@@ -86,7 +89,39 @@ the application-level contract should be:
   empty-body or termination-style response;
 - the chosen behaviour must still be explicit and testable.
 
-### 5. Foundation validation and tests should cover error-path behaviour
+### 5. Error translation should preserve only safe metadata
+
+Exception-derived headers should not be copied wholesale onto translated error
+responses. The error-handling layer should preserve only explicitly safe metadata
+that remains semantically relevant after translation, such as authentication or
+retry guidance.
+
+The alternative is copying all headers forward. That is simpler mechanically, but
+it risks leaking content-specific, cache-specific, or otherwise inapplicable
+headers into error responses that should have a narrower contract.
+
+### 6. Route-surface detection should validate its own configuration
+
+The route-surface classifier should not assume its API and partial prefixes are
+always sensible. Empty or root-mounted prefixes should be rejected as invalid
+configuration because they would silently classify effectively every path as the
+same surface.
+
+The alternative is permissive prefix matching. That would make configuration bugs
+harder to detect and would undermine the foundational guarantee that each route
+surface has distinct error behaviour.
+
+### 7. Renderer-dependent error handling must fail closed
+
+If the template renderer is unavailable or misconfigured while handling an error,
+the application should not raise again and recurse through the same error path. It
+should fall back to a minimal safe response for the relevant surface instead.
+
+The alternative is assuming the renderer is always present because `create_app`
+normally wires it. That assumption is too brittle for defensive error handling,
+tests, or alternative app setups.
+
+### 8. Foundation validation and tests should cover error-path behaviour
 
 This slice should be verified through focused tests rather than assumed from the
 framework defaults. The foundation should prove:
@@ -95,7 +130,10 @@ framework defaults. The foundation should prove:
 - API `404` and `500` machine-oriented responses;
 - partial-route error behaviour;
 - generic fallback handling for known codes;
-- non-standard-code bypass behaviour.
+- non-standard-code bypass behaviour;
+- safe header propagation behaviour;
+- prefix-validation behaviour;
+- renderer-misconfiguration fallback behaviour.
 
 ## Risks / Trade-offs
 
@@ -106,6 +144,9 @@ framework defaults. The foundation should prove:
   → The spec should define the application contract in terms of empty-body or
   termination-style policy rather than overpromising wire-level behaviour the stack
   cannot guarantee.
+- `Restrictive header propagation may omit metadata a caller expected`
+  → That is preferable to leaking inapplicable headers by default; the allowlist
+  can expand deliberately when a new requirement appears.
 - `Generic fallback copy may be plain at first`
   → That is acceptable at foundation level; correctness and surface consistency are
   more important than polished bespoke wording at this stage.
@@ -117,4 +158,5 @@ framework defaults. The foundation should prove:
 3. Add mandatory `404` and `500` coverage and generic handling for other known
    HTTP status codes.
 4. Add explicit handling for non-standard termination-style codes such as `444`.
-5. Add focused tests for all supported error surfaces and fallback modes.
+5. Add focused tests for all supported error surfaces, fallback modes, safe header
+   propagation, prefix validation, and renderer-misconfiguration behaviour.

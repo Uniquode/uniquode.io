@@ -14,6 +14,13 @@
     <main class="container surface-panel">
       <h1>{{ heading or "Something went wrong" }}</h1>
       <p class="muted-copy">{{ detail or "The request could not be completed." }}</p>
+      {% if form_errors %}
+      <ul>
+        {% for field_name, messages in form_errors.items() %}
+        <li><strong>{{ field_name }}</strong>: {{ messages|join(", ") }}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
     </main>
   </body>
 </html>
