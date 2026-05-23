@@ -1,14 +1,20 @@
-<button
+<form
   id="theme-selector"
-  class="theme-selector"
-  type="button"
+  class="theme-selector-form"
+  method="post"
+  action="{{ theme_update_path }}"
   hx-post="{{ theme_update_path }}"
   hx-target="this"
   hx-swap="outerHTML"
-  hx-vals='{"theme_mode":"{{ theme_next_mode }}"}'
-  title="Theme mode: {{ theme_label }}. Activate to switch to {{ theme_next_mode.title() }}."
-  aria-label="Theme mode: {{ theme_label }}. Activate to switch to {{ theme_next_mode.title() }}."
 >
+  <input type="hidden" name="theme_mode" value="{{ theme_next_mode }}" />
+  <input type="hidden" name="return_to" value="{{ theme_return_path }}" />
+  <button
+    class="theme-selector"
+    type="submit"
+    title="Theme mode: {{ theme_label }}. Activate to switch to {{ theme_next_mode.title() }}."
+    aria-label="Theme mode: {{ theme_label }}. Activate to switch to {{ theme_next_mode.title() }}."
+  >
   {% if theme_mode == "light" %}
   <svg
     aria-hidden="true"
@@ -56,4 +62,5 @@
   </svg>
   {% endif %}
   <span class="sr-only">Theme mode: {{ theme_label }}</span>
-</button>
+  </button>
+</form>

@@ -5,7 +5,7 @@ from typing import Any, cast
 from urllib.parse import parse_qs
 
 from fastapi import Request
-from fastapi.responses import Response
+from fastapi.responses import RedirectResponse, Response
 
 from uniquode.web.dispatcher import HtmlView
 from uniquode.web.renderer import TemplateRenderer
@@ -48,12 +48,16 @@ def _build_home_context(request: Request) -> dict[str, Any]:
     return {
         "page_title": "uniquode",
         "theme_update_path": request.url_for("public:partial:theme-mode"),
+        "theme_return_path": request.url.path,
     }
 
 
-def _build_theme_selector_context(request: Request) -> dict[str, Any]:
+def _build_theme_selector_context(
+    request: Request, *, return_path: str | None = None
+) -> dict[str, Any]:
     return {
         "theme_update_path": request.url_for("public:partial:theme-mode"),
+        "theme_return_path": return_path or request.url.path,
     }
 
 
@@ -75,19 +79,30 @@ class ThemeModePartialView(HtmlView):
         try:
             form_data = await request.form()
             submitted_mode = form_data.get("theme_mode", "auto")
+            return_path = form_data.get("return_to", "/")
         except AssertionError:
             body = (await request.body()).decode("utf-8")
             parsed_form_data = parse_qs(body, keep_blank_values=True)
             submitted_mode = next(
                 iter(parsed_form_data.get("theme_mode", ["auto"])), "auto"
             )
+            return_path = next(iter(parsed_form_data.get("return_to", ["/"])), "/")
 
         theme_mode = normalise_theme_mode(
             submitted_mode if isinstance(submitted_mode, str) else "auto"
         )
+        redirect_path = (
+            return_path if isinstance(return_path, str) and return_path else "/"
+        )
+
+        if request.headers.get("HX-Request") != "true":
+            response = RedirectResponse(url=redirect_path, status_code=303)
+            set_theme_mode_cookie(response, theme_mode)
+            return response
+
         context = theme_template_context(
             request, theme_mode=theme_mode
-        ) | _build_theme_selector_context(request)
+        ) | _build_theme_selector_context(request, return_path=redirect_path)
         response = renderer.render_partial(
             "components/theme_selector.html", request, context
         )

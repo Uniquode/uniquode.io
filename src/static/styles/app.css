@@ -152,6 +152,11 @@ body {
   width: 1.25rem;
 }
 
+.theme-selector-form {
+  display: inline-flex;
+  margin: 0;
+}
+
 .eyebrow {
   color: var(--u-colour-accent);
   font-size: 0.875rem;
