@@ -227,6 +227,7 @@ def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "light"
+    assert "HttpOnly" in response.headers["set-cookie"]
     assert json.loads(response.headers["HX-Trigger"]) == {
         "theme-mode-changed": {"theme_mode": "light"}
     }
@@ -247,6 +248,7 @@ def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "auto"
+    assert "HttpOnly" in response.headers["set-cookie"]
     assert json.loads(response.headers["HX-Trigger"]) == {
         "theme-mode-changed": {"theme_mode": "auto"}
     }
@@ -267,6 +269,7 @@ def test_theme_mode_route_redirects_without_htmx() -> None:
     assert response.status_code == 303
     assert response.headers["location"] == "/"
     assert response.cookies["theme_mode"] == "dark"
+    assert "HttpOnly" in response.headers["set-cookie"]
 
 
 def test_home_page_renders_reusable_theme_selector_component() -> None:

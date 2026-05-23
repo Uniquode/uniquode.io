@@ -34,6 +34,7 @@ def set_theme_mode_cookie(response: Response, theme_mode: ThemeMode) -> None:
     response.set_cookie(
         THEME_MODE_COOKIE,
         theme_mode,
+        httponly=True,
         max_age=31_536_000,
         path="/",
         samesite="lax",
