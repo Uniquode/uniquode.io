@@ -21,6 +21,15 @@ class TemplateRenderer:
     def render_template(self, template_name: str, context: dict[str, Any]) -> str:
         return self.environment.get_template(template_name).render(context)
 
+    @staticmethod
+    def _resolve_route_name(request: Request) -> str:
+        route = request.scope.get("route")
+        route_name = getattr(route, "name", None)
+        if isinstance(route_name, str):
+            return route_name
+
+        return "unknown"
+
     def render_page(
         self,
         template_name: str,
@@ -32,7 +41,7 @@ class TemplateRenderer:
         return HTMLResponse(
             self.render_template(
                 template_name,
-                {"request": request, "route_name": request.scope["route"].name}
+                {"request": request, "route_name": self._resolve_route_name(request)}
                 | context,
             ),
             status_code=status_code,

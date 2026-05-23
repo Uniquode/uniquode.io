@@ -3,9 +3,11 @@ import json
 import tomllib
 from pathlib import Path
 
-from fastapi import FastAPI
+import pytest
+from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
+from starlette.staticfiles import StaticFiles
 
 from uniquode.app import create_app
 from uniquode.asgi import app
@@ -23,6 +25,7 @@ from uniquode.runserver import (
 )
 from uniquode.settings import Settings
 from uniquode.validate import main as validate_main
+from uniquode.web.renderer import TemplateRenderer
 
 
 def test_asgi_app_imports() -> None:
@@ -150,10 +153,22 @@ def test_create_app_mounts_configurable_static_files() -> None:
 
     web_app = create_app(settings)
 
-    assert any(
-        route.path == "/assets" and getattr(route, "name", None) == "static"
-        for route in web_app.routes
-    )
+    static_routes = [r for r in web_app.routes if getattr(r, "name", None) == "static"]
+    assert len(static_routes) == 1
+
+    static_route = static_routes[0]
+    assert static_route.path == "/assets"
+
+    static_app = static_route.app
+    assert isinstance(static_app, StaticFiles)
+    assert Path(static_app.directory) == settings.static_root
+
+
+def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
+    settings = Settings(project_root=tmp_path)
+
+    assert settings.template_root == (tmp_path / "src/templates").resolve()
+    assert settings.static_root == (tmp_path / "src/static").resolve()
 
 
 def test_home_page_renders_full_html_document() -> None:
@@ -217,6 +232,22 @@ def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
     assert "Theme mode: Light." in response.text
 
 
+def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
+    client = TestClient(create_app())
+
+    response = client.post("/partials/theme-mode", data={"theme_mode": "neon"})
+
+    assert response.status_code == 200
+    assert response.cookies["theme_mode"] == "auto"
+    assert json.loads(response.headers["HX-Trigger"]) == {
+        "theme-mode-changed": {"theme_mode": "auto"}
+    }
+    assert 'id="theme-selector"' in response.text
+    assert '/partials/theme-mode"' in response.text
+    assert "Theme mode: Auto." in response.text
+    assert '"theme_mode":"light"' in response.text
+
+
 def test_home_page_renders_reusable_theme_selector_component() -> None:
     client = TestClient(create_app())
 
@@ -241,6 +272,27 @@ def test_base_layout_updates_root_theme_from_htmx_event() -> None:
         'document.documentElement.setAttribute("data-theme", themeMode)'
         in layout_template
     )
+
+
+def test_template_renderer_falls_back_when_route_name_is_missing() -> None:
+    renderer = TemplateRenderer(Path(__file__).resolve().parents[1] / "src/templates")
+    request = Request({"type": "http", "headers": [], "method": "GET", "path": "/"})
+
+    response = renderer.render_page(
+        "components/theme_selector.html",
+        request,
+        {
+            "theme_mode": "auto",
+            "theme_label": "Auto",
+            "theme_attribute": "",
+            "theme_next_mode": "light",
+            "theme_icon_name": "computer",
+            "theme_update_path": "/partials/theme-mode",
+        },
+    )
+
+    assert response.status_code == 200
+    assert b'id="theme-selector"' in response.body
 
 
 def test_project_stylesheet_defines_semantic_theme_tokens() -> None:
@@ -268,13 +320,43 @@ def test_base_layout_uses_theme_tokens_without_template_colour_branching() -> No
     assert "#eef4f2" not in layout_template
 
 
-def test_validate_command_checks_web_foundation(monkeypatch, capsys) -> None:
+def test_validate_command_checks_web_foundation(capsys) -> None:
     exit_code = validate_main(["web"])
 
     captured = capsys.readouterr()
 
     assert exit_code == 0
     assert "web: ok" in captured.out
+
+
+def test_validate_command_unknown_target_raises_system_exit(capsys) -> None:
+    with pytest.raises(
+        SystemExit, match="Unknown validation target\\(s\\): foo"
+    ) as excinfo:
+        validate_main(["foo"])
+
+    captured = capsys.readouterr()
+    assert "foo" in str(excinfo.value)
+    assert captured.out == ""
+    assert captured.err == ""
+
+
+def test_validate_command_accepts_normalisable_static_url_path(capsys) -> None:
+    exit_code = validate_main(["web", "--static-url-path", "static"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "web: ok" in captured.out
+
+
+def test_validate_command_rejects_blank_static_url_path(capsys) -> None:
+    exit_code = validate_main(["web", "--static-url-path", "   "])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert "Static URL path must not be empty." in captured.out
 
 
 def test_validate_command_reports_missing_templates(tmp_path, capsys) -> None:
@@ -339,3 +421,4 @@ def test_validate_command_reports_missing_theme_tokens(tmp_path, capsys) -> None
 
     assert exit_code == 1
     assert "Missing theme token" in captured.out
+    assert "Missing theme selector" in captured.out

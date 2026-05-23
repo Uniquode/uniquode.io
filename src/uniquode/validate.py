@@ -5,20 +5,10 @@ from pathlib import Path
 from public.routes import build_public_route_set
 from uniquode.settings import Settings
 from uniquode.web.renderer import TemplateRenderer
-
-REQUIRED_STATIC_ASSETS: tuple[str, ...] = ("styles/app.css",)
-REQUIRED_THEME_TOKENS: tuple[str, ...] = (
-    "--u-colour-page-bg",
-    "--u-colour-surface",
-    "--u-colour-text",
-    "--u-colour-muted-text",
-    "--u-colour-border",
-    "--u-colour-accent",
-)
-REQUIRED_THEME_SELECTORS: tuple[str, ...] = (
-    'html[data-theme="light"]',
-    'html[data-theme="dark"]',
-    "@media (prefers-color-scheme: dark)",
+from uniquode.web.style_contract import (
+    REQUIRED_STATIC_ASSETS,
+    REQUIRED_THEME_SELECTORS,
+    REQUIRED_THEME_TOKENS,
 )
 
 
@@ -80,10 +70,8 @@ def validate_web(settings: Settings) -> ValidationResult:
     if not settings.static_root.is_dir():
         errors.append(f"Missing static root: {settings.static_root}")
 
-    if not settings.static_url_path.startswith(
-        "/"
-    ) or not settings.static_url_path.endswith("/"):
-        errors.append("Static URL path must start and end with '/'.")
+    if not settings.static_url_path.strip():
+        errors.append("Static URL path must not be empty.")
 
     route_set = build_public_route_set()
     renderer = TemplateRenderer(settings.template_root)
