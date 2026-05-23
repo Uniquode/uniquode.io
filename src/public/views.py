@@ -72,10 +72,19 @@ class ThemeStatusPartialView(TemplateView):
 @dataclass(frozen=True, slots=True)
 class ThemeModePartialView(HtmlView):
     async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
-        body = (await request.body()).decode("utf-8")
-        form_data = parse_qs(body, keep_blank_values=True)
-        submitted_mode = next(iter(form_data.get("theme_mode", ["auto"])), "auto")
-        theme_mode = normalise_theme_mode(submitted_mode)
+        try:
+            form_data = await request.form()
+            submitted_mode = form_data.get("theme_mode", "auto")
+        except AssertionError:
+            body = (await request.body()).decode("utf-8")
+            parsed_form_data = parse_qs(body, keep_blank_values=True)
+            submitted_mode = next(
+                iter(parsed_form_data.get("theme_mode", ["auto"])), "auto"
+            )
+
+        theme_mode = normalise_theme_mode(
+            submitted_mode if isinstance(submitted_mode, str) else "auto"
+        )
         context = theme_template_context(
             request, theme_mode=theme_mode
         ) | _build_theme_selector_context(request)

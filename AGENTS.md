@@ -28,8 +28,8 @@ Use it for low-level design asset and token decisions; use Stitch for repository
 
 # Guide MCP
 
-The guide mcp is the manager of the development workflow, and will offer important information
+The Guide MCP is the manager of the development workflow, and will offer important information
 and instructions through the development lifecycle, from discussion, planning to implementation and review.
 
-guide:// uris just be resolved using the guide mcp's own `read_resource` tool.
-Always follow both `instructions` and `additional_agent_instructions` returned by this mcp.
+guide:// URIs should be resolved using the Guide MCP's own `read_resource` tool.
+Always follow both `instructions` and `additional_agent_instructions` returned by the Guide MCP.
