@@ -13,15 +13,11 @@ from uniquode.app import create_app
 from uniquode.asgi import app
 from uniquode.routes.health import health
 from uniquode.runserver import (
-    APP_TARGET,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_RELOAD,
-    RELOAD_ENV_VAR,
     build_parser,
-)
-from uniquode.runserver import (
-    main as runserver_main,
+    env_requests_reload,
 )
 from uniquode.settings import Settings
 from uniquode.validate import main as validate_main
@@ -61,90 +57,12 @@ def test_runserver_project_script_is_defined() -> None:
     assert data["project"]["scripts"]["validate"] == "uniquode.validate:main"
 
 
-def test_runserver_main_uses_expected_uvicorn_defaults(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_run(app_target: str, **kwargs: object) -> None:
-        captured["app_target"] = app_target
-        captured["kwargs"] = kwargs
-
-    monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
-
-    runserver_main([])
-
-    assert captured["app_target"] == APP_TARGET
-    assert captured["kwargs"] == {
-        "host": DEFAULT_HOST,
-        "port": DEFAULT_PORT,
-        "reload": DEFAULT_RELOAD,
-    }
-
-
 def test_runserver_parser_uses_defaults() -> None:
     args = build_parser().parse_args([])
 
     assert args.host == DEFAULT_HOST
     assert args.port == DEFAULT_PORT
     assert args.reload is None
-
-
-def test_runserver_main_uses_environment_reload(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_run(app_target: str, **kwargs: object) -> None:
-        captured["app_target"] = app_target
-        captured["kwargs"] = kwargs
-
-    monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
-    monkeypatch.setenv(RELOAD_ENV_VAR, "true")
-
-    runserver_main([])
-
-    assert captured["app_target"] == APP_TARGET
-    assert captured["kwargs"] == {
-        "host": DEFAULT_HOST,
-        "port": DEFAULT_PORT,
-        "reload": True,
-    }
-
-
-def test_runserver_main_uses_cli_overrides(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_run(app_target: str, **kwargs: object) -> None:
-        captured["app_target"] = app_target
-        captured["kwargs"] = kwargs
-
-    monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
-
-    runserver_main(["--host", "0.0.0.0", "--port", "9000", "--reload"])
-
-    assert captured["app_target"] == APP_TARGET
-    assert captured["kwargs"] == {
-        "host": "0.0.0.0",
-        "port": 9000,
-        "reload": True,
-    }
-
-
-def test_runserver_cli_reload_overrides_environment(monkeypatch) -> None:
-    captured: dict[str, object] = {}
-
-    def fake_run(app_target: str, **kwargs: object) -> None:
-        captured["app_target"] = app_target
-        captured["kwargs"] = kwargs
-
-    monkeypatch.setattr("uniquode.runserver.uvicorn.run", fake_run)
-    monkeypatch.setenv(RELOAD_ENV_VAR, "off")
-
-    runserver_main(["--reload"])
-
-    assert captured["app_target"] == APP_TARGET
-    assert captured["kwargs"] == {
-        "host": DEFAULT_HOST,
-        "port": DEFAULT_PORT,
-        "reload": True,
-    }
 
 
 def test_create_app_mounts_configurable_static_files() -> None:
@@ -182,6 +100,23 @@ def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
 
     assert settings.template_root == (tmp_path / "src/templates").resolve()
     assert settings.static_root == (tmp_path / "src/static").resolve()
+
+
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        (None, DEFAULT_RELOAD),
+        ("1", True),
+        ("true", True),
+        ("on", True),
+        ("false", False),
+        ("off", False),
+    ],
+)
+def test_env_requests_reload_normalises_values(
+    value: str | None, expected: bool
+) -> None:
+    assert env_requests_reload(value) is expected
 
 
 @pytest.mark.parametrize("prefix", ["", "/", "   "])

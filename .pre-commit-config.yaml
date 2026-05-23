@@ -14,7 +14,7 @@ repos:
       - id: check-toml
 
   - repo: https://github.com/astral-sh/ruff-pre-commit
-    rev: v0.15.13
+    rev: v0.15.14
     hooks:
       - id: ruff-check
         args: ["--fix"]
@@ -37,7 +37,7 @@ repos:
         types: [python]
 
   - repo: https://github.com/deeprave/osvcheck
-    rev: v1.2.0
+    rev: v1.2.2
     hooks:
       - id: osvcheck
 
@@ -54,7 +54,7 @@ repos:
         exclude: ^tests/
 
   - repo: https://github.com/jendrikseipp/vulture
-    rev: v2.15
+    rev: v2.16
     hooks:
       - id: vulture
         args: ["src", "vulture_whitelist.py"]

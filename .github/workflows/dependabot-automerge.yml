@@ -32,8 +32,7 @@ jobs:
       - name: Enable auto-merge for Python patch updates
         if: >-
           steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' &&
-          steps.dependabot-metadata.outputs.package-ecosystem == 'uv' &&
-          steps.dependabot-metadata.outputs.dependency-group == ''
+          steps.dependabot-metadata.outputs.package-ecosystem == 'uv'
         run: gh pr merge --auto --rebase "$PR_URL"
         env:
           GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
