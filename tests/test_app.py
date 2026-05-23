@@ -193,7 +193,7 @@ def test_partial_route_renders_fragment_only() -> None:
     assert response.status_code == 200
     assert "<!doctype html>" not in response.text.lower()
     assert 'id="theme-selector"' in response.text
-    assert '/partials/theme-mode"' in response.text
+    assert 'action="http://testserver/partials/theme-mode"' in response.text
 
 
 def test_api_route_stays_machine_oriented() -> None:
@@ -219,7 +219,11 @@ def test_theme_preference_cookie_drives_page_rendering() -> None:
 def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
     client = TestClient(create_app())
 
-    response = client.post("/partials/theme-mode", data={"theme_mode": "light"})
+    response = client.post(
+        "/partials/theme-mode",
+        data={"theme_mode": "light", "return_to": "/"},
+        headers={"HX-Request": "true"},
+    )
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "light"
@@ -228,14 +232,18 @@ def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
     }
     assert 'id="theme-selector"' in response.text
     assert '/partials/theme-mode"' in response.text
-    assert '"theme_mode":"dark"' in response.text
+    assert 'name="theme_mode" value="dark"' in response.text
     assert "Theme mode: Light." in response.text
 
 
 def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
     client = TestClient(create_app())
 
-    response = client.post("/partials/theme-mode", data={"theme_mode": "neon"})
+    response = client.post(
+        "/partials/theme-mode",
+        data={"theme_mode": "neon", "return_to": "/"},
+        headers={"HX-Request": "true"},
+    )
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "auto"
@@ -245,7 +253,20 @@ def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
     assert 'id="theme-selector"' in response.text
     assert '/partials/theme-mode"' in response.text
     assert "Theme mode: Auto." in response.text
-    assert '"theme_mode":"light"' in response.text
+    assert 'name="theme_mode" value="light"' in response.text
+
+
+def test_theme_mode_route_redirects_without_htmx() -> None:
+    client = TestClient(create_app(), follow_redirects=False)
+
+    response = client.post(
+        "/partials/theme-mode",
+        data={"theme_mode": "dark", "return_to": "/"},
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert response.cookies["theme_mode"] == "dark"
 
 
 def test_home_page_renders_reusable_theme_selector_component() -> None:
@@ -256,6 +277,8 @@ def test_home_page_renders_reusable_theme_selector_component() -> None:
     assert response.status_code == 200
     assert response.text.count('id="theme-selector"') == 1
     assert response.text.index('class="page-tools"') < response.text.index("<main")
+    assert 'method="post"' in response.text
+    assert 'name="theme_mode" value="light"' in response.text
     assert (
         'aria-label="Theme mode: Auto. Activate to switch to Light."' in response.text
     )
