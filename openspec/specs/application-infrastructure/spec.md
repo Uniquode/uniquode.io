@@ -38,7 +38,7 @@ The system SHALL define `.gitignore` entries appropriate for the Python project 
 - **THEN** it does not ignore `.agents/`
 
 ### Requirement: Source package layout
-The system SHALL use a `src/` package layout with `src/uniquode` as the importable application package.
+The system SHALL use a `src/` package layout with `src/uniquode` as the core importable application package, while allowing feature modules and web resources to live in conventional sibling locations under `src/`.
 
 #### Scenario: Package imports from source layout
 - **WHEN** the project is installed or run through `uv`
@@ -46,7 +46,15 @@ The system SHALL use a `src/` package layout with `src/uniquode` as the importab
 
 #### Scenario: Infrastructure modules are separated
 - **WHEN** a developer inspects `src/uniquode`
-- **THEN** application construction, settings, route registration, models, migrations, and template conventions have explicit package locations or documented module boundaries
+- **THEN** application construction, settings, route registration, models, migrations, and shared infrastructure have explicit package locations or documented module boundaries
+
+#### Scenario: Web resources use global roots
+- **WHEN** a developer inspects the source tree
+- **THEN** templates and static assets live in conventional global roots under `src/` rather than inside `src/uniquode`
+
+#### Scenario: Feature modules may live beside the core package
+- **WHEN** a later capability introduces a feature module such as `site`, `auth`, `api`, or `integrations`
+- **THEN** the module may live alongside `src/uniquode` and integrate through the application's route and infrastructure boundaries
 
 ### Requirement: ASGI application shell
 The system SHALL provide a FastAPI/Starlette ASGI application shell with an application factory and stable ASGI app import path.
@@ -82,15 +90,27 @@ The system SHALL establish Tortoise ORM persistence conventions without introduc
 - **THEN** route handlers do not directly instantiate or depend on database clients
 
 ### Requirement: Template conventions
-The system SHALL define where future Jinja2 server-rendered templates will live without implementing UI templates before requirements need them.
+The system SHALL define the baseline Jinja2 server-rendered template and static asset locations and provide rendering conventions without introducing product-specific UI before requirements need it.
 
-#### Scenario: Template location is documented
+#### Scenario: Template location is configurable
 - **WHEN** a developer inspects the project structure or configuration
-- **THEN** the expected location for future Jinja2 templates is clear
+- **THEN** the Jinja2 template root is supplied through settings with a default value of `src/templates/`
 
-#### Scenario: No product UI is introduced
-- **WHEN** the initialization change is reviewed
-- **THEN** it does not add product-specific templates, static assets, or front-end behavior
+#### Scenario: Static asset location is configurable
+- **WHEN** a developer inspects the project structure or configuration
+- **THEN** the static asset root is supplied through settings with a default value of `src/static/`
+
+#### Scenario: Static asset route prefix is configurable
+- **WHEN** a developer inspects the project structure or configuration
+- **THEN** the static asset route prefix is supplied through settings with a default value of `/static/`
+
+#### Scenario: Rendering conventions are explicit
+- **WHEN** a developer inspects the web foundation implementation
+- **THEN** there is a documented or code-defined rendering helper or boundary that renders templates by path from the configured template root
+
+#### Scenario: HTML dispatch and static serving are separate concerns
+- **WHEN** a developer inspects the web foundation implementation
+- **THEN** HTML request dispatch and static asset serving are wired as separate mechanisms with distinct configuration and handling boundaries
 
 ### Requirement: Baseline validation commands
 The system SHALL provide repeatable baseline validation commands for formatting, linting, type checking, and tests.
