@@ -27,6 +27,7 @@ from uniquode.settings import Settings
 from uniquode.validate import main as validate_main
 from uniquode.web.errors import EmptyBodyResponseException
 from uniquode.web.renderer import TemplateRenderer
+from uniquode.web.route_contract import _normalise_path_prefix
 
 
 def test_asgi_app_imports() -> None:
@@ -183,6 +184,12 @@ def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
     assert settings.static_root == (tmp_path / "src/static").resolve()
 
 
+@pytest.mark.parametrize("prefix", ["", "/", "   "])
+def test_route_contract_rejects_empty_or_root_prefixes(prefix: str) -> None:
+    with pytest.raises(ValueError, match="must not be empty or root-mounted"):
+        _normalise_path_prefix(prefix)
+
+
 def test_home_page_renders_full_html_document() -> None:
     client = TestClient(create_app())
 
@@ -292,6 +299,96 @@ def test_partial_route_unhandled_error_returns_fragment() -> None:
     assert "<!doctype html>" not in response.text.lower()
     assert "<section" in response.text
     assert "Internal Server Error" in response.text
+
+
+def test_missing_partial_route_returns_fragment_404() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.get("/partials/missing", headers={"HX-Request": "true"})
+
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<!doctype html>" not in response.text.lower()
+    assert "<section" in response.text
+    assert "Not Found" in response.text
+
+
+def test_http_exception_preserves_headers() -> None:
+    web_app = create_app()
+
+    @web_app.get("/api/test/auth")
+    async def auth_api() -> None:
+        raise HTTPException(
+            status_code=401,
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/api/test/auth")
+
+    assert response.status_code == 401
+    assert response.headers["www-authenticate"] == "Bearer"
+
+
+def test_method_not_allowed_preserves_allow_header() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+
+    response = client.post("/health")
+
+    assert response.status_code == 405
+    assert response.headers["allow"] == "GET"
+
+
+def test_error_handler_falls_back_when_renderer_is_missing() -> None:
+    web_app = create_app()
+    del web_app.state.renderer
+
+    @web_app.get("/boom-fallback")
+    async def boom_fallback() -> None:
+        raise RuntimeError("boom")
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/boom-fallback")
+
+    assert response.status_code == 500
+    assert response.headers["content-type"].startswith("text/plain")
+    assert "500 Internal Server Error" in response.text
+
+
+def test_page_validation_error_renders_field_summary() -> None:
+    web_app = create_app()
+
+    @web_app.get("/validate-page")
+    async def validate_page(required_count: int) -> dict[str, int]:
+        return {"required_count": required_count}
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get("/validate-page", params={"required_count": "nope"})
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("text/html")
+    assert "The request was invalid." in response.text
+    assert "<strong>required_count</strong>" in response.text
+
+
+def test_partial_validation_error_renders_fragment_field_summary() -> None:
+    web_app = create_app()
+
+    @web_app.get("/partials/validate")
+    async def validate_partial(required_count: int) -> dict[str, int]:
+        return {"required_count": required_count}
+
+    client = TestClient(web_app, raise_server_exceptions=False)
+    response = client.get(
+        "/partials/validate",
+        params={"required_count": "nope"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 422
+    assert response.headers["content-type"].startswith("text/html")
+    assert "<!doctype html>" not in response.text.lower()
+    assert "<strong>required_count</strong>" in response.text
 
 
 def test_known_http_status_uses_generic_api_fallback() -> None:

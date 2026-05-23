@@ -8,6 +8,7 @@ from public.views import (
     ThemeStatusPartialView,
 )
 from uniquode.web.dispatcher import HtmlRouteDefinition
+from uniquode.web.route_contract import API_PATH_PREFIX, PARTIAL_PATH_PREFIX
 from uniquode.web.theme import resolve_theme_mode
 
 
@@ -25,7 +26,8 @@ async def theme_state(request: Request) -> dict[str, str]:
 
 
 def build_public_route_set() -> PublicRouteSet:
-    api_router = APIRouter(prefix="/api/public")
+    normalised_api_prefix = API_PATH_PREFIX.rstrip("/")
+    api_router = APIRouter(prefix=f"{normalised_api_prefix}/public")
     api_router.add_api_route(
         "/theme",
         theme_state,
@@ -46,14 +48,14 @@ def build_public_route_set() -> PublicRouteSet:
         ),
         partial_routes=(
             HtmlRouteDefinition(
-                path="/partials/theme-selector",
+                path=f"{PARTIAL_PATH_PREFIX}/theme-selector",
                 name="public:partial:theme-selector",
                 methods=("GET",),
                 surface="partial",
                 view=ThemeStatusPartialView(),
             ),
             HtmlRouteDefinition(
-                path="/partials/theme-mode",
+                path=f"{PARTIAL_PATH_PREFIX}/theme-mode",
                 name="public:partial:theme-mode",
                 methods=("POST",),
                 surface="partial",
