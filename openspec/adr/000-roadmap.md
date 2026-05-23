@@ -16,29 +16,32 @@ The roadmap should stay aligned with accepted and provisional ADRs, OpenSpec cha
 
 - ADR 0001 establishes the implementation platform.
 - ADR 0002 establishes the runtime and deployment command conventions.
-- The next immediate implementation item remains the `runserver` command baseline.
+- The `runserver` command baseline is implemented.
+- The initial HTML-first web foundation is implemented, including:
+  - configurable template and static roots
+  - Pico CSS and `htmx` delivery
+  - semantic theme handling for `auto`, `light`, and `dark`
+  - explicit page, partial, API, and static route-surface separation
+  - foundational error handling across those surfaces
 - The current UI direction is server-rendered templates with selective dynamic enhancement.
 - The current styling direction is Pico CSS with a thin project-specific layer and planned theme support.
 - The current identity direction is local-account-first, with linked external identities.
 - The current access-control direction is group-, flag-, and scope-aware authorisation for pages, APIs, and admin surfaces.
 
+The next immediate implementation item is the identity foundation slice.
+
 ## Near-Term Roadmap
 
 ### 1. Runtime Baseline
 
-- Add the `runserver` project script defined by ADR 0002.
-- Confirm the default local runtime behaviour, including host, port, and reload expectations.
-- Add focused smoke coverage for application startup where practical.
+- Keep the `runserver` command and startup smoke coverage aligned with runtime changes.
+- Extend runtime checks only when new operational requirements appear.
 
 ### 2. Web Foundation
 
-- Establish Jinja2 template environment conventions.
-- Define base layouts, template naming, and static asset conventions.
-- Establish the Pico CSS integration and project override conventions.
-- Define the initial theme-mode behaviour for `auto`, `light`, and `dark`.
-- Define `htmx` partial rendering conventions and response boundaries.
-- Introduce route metadata conventions, including stable route names and identifiers.
-- Add a route-manifest export mechanism for management, inspection, or tooling use.
+- The first Jinja2, static asset, layout, component, theming, and route-surface conventions are in place.
+- The foundational error-handling contract is in place for page, partial, API, and static surfaces.
+- Continue this slice only for genuinely foundational gaps such as route-manifest export or other cross-cutting web-platform requirements.
 
 ### 3. Identity Foundation
 
