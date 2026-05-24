@@ -7,7 +7,7 @@ from typing import Literal
 from uniquode.database_urls import (
     SQLITE_ASYNC_DATABASE_URL_PREFIX,
     SQLITE_MEMORY_DATABASE_URL,
-    parse_sqlite_database_url,
+    resolve_database_url,
 )
 from uniquode.identity.options import IdentityOptions
 
@@ -94,7 +94,7 @@ class Settings:
         object.__setattr__(
             self,
             "database_url",
-            self._resolve_database_url(self.database_url, project_root),
+            resolve_database_url(self.database_url, project_root),
         )
         object.__setattr__(
             self,
@@ -128,21 +128,6 @@ class Settings:
             resolved_path = project_root / resolved_path
 
         return resolved_path.resolve()
-
-    @staticmethod
-    def _resolve_database_url(database_url: str, project_root: Path) -> str:
-        sqlite_url = parse_sqlite_database_url(database_url)
-        if sqlite_url is None:
-            return database_url
-
-        database_path = sqlite_url.path
-        if not database_path.is_absolute():
-            database_path = project_root / database_path
-
-        return (
-            f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}"
-            f"{database_path.resolve().as_posix()}{sqlite_url.suffix}"
-        )
 
     @staticmethod
     def _validate_identity_options(
