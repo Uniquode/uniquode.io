@@ -2,9 +2,11 @@ from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Literal, Protocol
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import Response
 
+from uniquode.web.csrf import CsrfProtector
+from uniquode.web.form_security import is_safe_method
 from uniquode.web.renderer import TemplateRenderer
 
 HtmlSurface = Literal["page", "partial"]
@@ -28,6 +30,7 @@ class HtmlRouteDefinition:
 @dataclass(slots=True)
 class HtmlDispatcher:
     renderer: TemplateRenderer
+    csrf: CsrfProtector | None = None
     _routes: list[HtmlRouteDefinition] = field(default_factory=list)
 
     def register(self, definitions: Iterable[HtmlRouteDefinition]) -> None:
@@ -41,6 +44,10 @@ class HtmlDispatcher:
         raise LookupError(f"Unknown HTML route: {route_name} [{method}]")
 
     async def dispatch(self, route_name: str, request: Request) -> Response:
+        if not is_safe_method(request.method) and self.csrf is not None:
+            if not await self.csrf.validate_request(request):
+                raise HTTPException(status_code=403, detail="Invalid CSRF token.")
+
         return await self.select_view(route_name, request.method).render(
             request, self.renderer
         )

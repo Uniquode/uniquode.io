@@ -24,7 +24,7 @@ Groups are intended primarily as permission and capability models, and may also 
 
 The access-control model must work consistently across HTML pages, dynamic partial endpoints, APIs, and administrative workflows.
 
-Identity-foundation planning separated authentication, advanced authentication, and delegated authorisation into distinct boundaries. The future internal `auth-provider` package will depend on this authorisation model for group, flag, and scope policy while remaining independent of FastAPI Users and `fastapi-users-auth-plus`.
+Identity-foundation planning separated authentication, advanced authentication, and delegated authorisation into distinct boundaries. The future internal `auth-provider` package will depend on this authorisation model for group, flag, and scope policy while remaining independent of FastAPI Users and `fastapi-users-auth-ext`.
 
 ## Decision
 
