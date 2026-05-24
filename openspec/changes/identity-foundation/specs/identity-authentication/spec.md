@@ -111,6 +111,10 @@ The system SHALL define a bootstrap mechanism for creating the initial administr
 - **WHEN** at least one administrative local user already exists
 - **THEN** the bootstrap mechanism does not silently create additional administrative users
 
+#### Scenario: Concurrent bootstrap attempts
+- **WHEN** multiple processes or tasks attempt initial administrative bootstrap at the same time
+- **THEN** a database-enforced single-writer mechanism allows only one attempt to create the initial administrative account
+
 ### Requirement: Advanced authentication extension points
 The system SHALL reserve explicit extension points for TOTP, WebAuthn/passkeys, recovery codes, and linked external identities without requiring those features in the first local-user implementation.
 

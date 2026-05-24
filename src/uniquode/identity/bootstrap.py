@@ -1,14 +1,20 @@
+import asyncio
 from dataclasses import dataclass
 from typing import Any, cast
 
-from sqlalchemy import select
+from sqlalchemy import insert, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from uniquode.identity.delivery import IdentityDelivery
 from uniquode.identity.options import IdentityOptions
 from uniquode.identity.schemas import UserCreate
 from uniquode.identity.users import create_user_manager
-from uniquode.models import User
+from uniquode.models import InitialAdminBootstrap, User
+
+_INITIAL_ADMIN_BOOTSTRAP_ID = 1
+_INITIAL_ADMIN_BOOTSTRAP_LOOKUP_ATTEMPTS = 10
+_INITIAL_ADMIN_BOOTSTRAP_LOOKUP_DELAY_SECONDS = 0.01
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +45,16 @@ async def bootstrap_initial_admin(
     if existing_admin is not None:
         return InitialAdminBootstrapResult(created=False, user=existing_admin)
 
+    if not await _claim_initial_admin_bootstrap(session):
+        existing_admin = await _wait_for_claimed_administrative_user(session)
+        if existing_admin is None:
+            raise RuntimeError(
+                "Initial admin bootstrap was already claimed, but no "
+                "administrative user exists."
+            )
+
+        return InitialAdminBootstrapResult(created=False, user=existing_admin)
+
     manager = create_user_manager(session, options, delivery)
     user = await manager.create(
         UserCreate(
@@ -50,3 +66,37 @@ async def bootstrap_initial_admin(
         safe=False,
     )
     return InitialAdminBootstrapResult(created=True, user=user)
+
+
+async def _claim_initial_admin_bootstrap(session: AsyncSession) -> bool:
+    """Atomically claim the initial-admin bootstrap slot.
+
+    The fixed primary key is the cross-process lock. Concurrent bootstrap
+    attempts cannot both insert it, so only the winner can create the initial
+    administrative account.
+    """
+    try:
+        async with session.begin_nested():
+            await session.execute(
+                insert(InitialAdminBootstrap).values(
+                    id=_INITIAL_ADMIN_BOOTSTRAP_ID,
+                )
+            )
+    except IntegrityError:
+        # End the losing transaction so the follow-up lookup can observe the
+        # winner's committed admin row.
+        await session.rollback()
+        return False
+
+    return True
+
+
+async def _wait_for_claimed_administrative_user(session: AsyncSession) -> User | None:
+    for _ in range(_INITIAL_ADMIN_BOOTSTRAP_LOOKUP_ATTEMPTS):
+        existing_admin = await find_administrative_user(session)
+        if existing_admin is not None:
+            return existing_admin
+
+        await asyncio.sleep(_INITIAL_ADMIN_BOOTSTRAP_LOOKUP_DELAY_SECONDS)
+
+    return None

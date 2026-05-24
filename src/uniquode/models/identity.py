@@ -8,10 +8,18 @@ from fastapi_users_db_sqlalchemy import (
 )
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTableUUID
 from fastapi_users_db_sqlalchemy.generics import GUID
-from sqlalchemy import ForeignKey
+from sqlalchemy import ForeignKey, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from uniquode.models.base import Base
+
+
+class InitialAdminBootstrap(Base):
+    """Singleton claim row that serialises initial admin bootstrap."""
+
+    __tablename__ = "identity_initial_admin_bootstrap"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
 
 
 class OAuthAccount(SQLAlchemyBaseOAuthAccountTableUUID, Base):
