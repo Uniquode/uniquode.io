@@ -14,6 +14,8 @@ The project also needs a consistent Python runtime, application manager, build b
 
 The project does not currently have a domain requirement that justifies NoSQL storage. MongoDB, ArangoDB, and DynamoDB do not share a practical standard abstraction for application-level portability. Attempting to support interchangeable NoSQL backends would force the persistence model down to a weak lowest-common-denominator API.
 
+The original platform baseline selected Tortoise ORM as a simple async ORM. During identity-foundation planning, the project chose FastAPI Users for baseline local identity lifecycle work. FastAPI Users currently has first-class SQLAlchemy and Beanie integrations, while Tortoise would require an unsupported custom adapter for identity-critical code. The project remains relational/PostgreSQL-oriented, so SQLAlchemy async is the better persistence baseline than adopting MongoDB/Beanie for library convenience.
+
 ## Decision
 
 Use FastAPI as the primary application framework, with Starlette as the underlying ASGI toolkit where lower-level primitives are useful.
@@ -47,7 +49,7 @@ Use PostgreSQL as the production database.
 
 Use SQLite for local development and lightweight tests where behavior remains portable. Tests that rely on PostgreSQL-specific behavior must run against PostgreSQL.
 
-Use Tortoise ORM as the application ORM and database access layer. Use Tortoise's built-in migration system for schema changes.
+Use SQLAlchemy 2 async as the application ORM and database access layer. Use Alembic for schema migrations.
 
 Application code must not couple route handlers directly to database clients. Persistence access should sit behind application services or repository-style modules where that keeps domain behavior and database mechanics separate.
 
@@ -59,9 +61,7 @@ The persistence layer must remain async-first:
 
 The application should avoid promising backend portability across unrelated NoSQL engines. If a later capability needs document, graph, or key-value storage, that requirement should be captured in a new ADR.
 
-If Tortoise fails an early validation spike, use SQLAlchemy 2 async with Alembic as the fallback.
-
-The validation spike should cover:
+The persistence validation spike should cover:
 
 - FastAPI lifespan integration.
 - PostgreSQL connection configuration.
@@ -70,6 +70,7 @@ The validation spike should cover:
 - Transaction handling.
 - Relationship modeling.
 - Type-checker friction with `ty`.
+- FastAPI Users SQLAlchemy integration.
 
 ## Consequences
 
@@ -87,7 +88,11 @@ PostgreSQL gives the production system a mature SQL database with strong integri
 
 SQLite keeps local development and many tests lightweight, while the decision explicitly prevents treating SQLite as a perfect substitute for PostgreSQL-specific behavior.
 
-Tortoise ORM keeps the application aligned with the async-first platform decision and offers a simpler Django-like model paradigm without taking on the full Django framework.
+SQLAlchemy async keeps the application aligned with the async-first platform decision while giving the project mature relational modelling, transaction, migration, and ecosystem support.
+
+Alembic gives the project a widely used migration path that fits SQLAlchemy and avoids maintaining custom migration conventions for identity-critical tables.
+
+Moving from Tortoise to SQLAlchemy avoids maintaining an unsupported FastAPI Users adapter while keeping the relational database posture. The trade-off is a more explicit ORM and migration model than Tortoise, with slightly more boilerplate and a larger API surface to learn.
 
 Choosing SQL now does not prevent later use of NoSQL for a specific capability, but that should be an explicit design decision rather than a generic portability goal.
 
@@ -96,7 +101,12 @@ Choosing SQL now does not prevent later use of NoSQL for a specific capability, 
 - Runtime and deployment command conventions are resolved by ADR 0002.
 - UI delivery architecture is resolved by ADR 0004.
 - CSS strategy and theming conventions are resolved by ADR 0003.
+- Identity and authentication architecture is resolved by ADR 0005.
 - Remaining implementation work should define:
   - template and layout hierarchy conventions;
   - static asset inclusion and delivery conventions;
   - form handling conventions.
+
+## Revision Notes
+
+- 2026-05-24: Updated persistence decision from Tortoise ORM to SQLAlchemy 2 async with Alembic after identity-foundation planning selected FastAPI Users for baseline local identity lifecycle work.
