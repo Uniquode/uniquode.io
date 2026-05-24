@@ -38,7 +38,9 @@ Allow local accounts to exist without any linked external identity.
 
 Allow a successful first-time login through an approved external provider to create a new local user account, subject to project-defined account creation policy.
 
-Use session-backed authentication as the primary browser login mechanism.
+Use session-backed authentication as the primary browser login mechanism, backed
+by database-stored FastAPI Users access tokens and delivered through HttpOnly
+cookies.
 
 Support local password authentication for local accounts.
 
@@ -50,9 +52,9 @@ Plan for passkey support as a first-class local authentication method.
 
 Plan for TOTP as an additional authentication factor for local accounts.
 
-Introduce `fastapi-users-auth-plus` as a standalone addon boundary for advanced authentication features such as TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows. Its Python import package should be `fastapi_users_auth_plus`.
+Introduce `fastapi-users-auth-ext` as a standalone addon boundary for advanced authentication features such as TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows. Its Python import package should be `auth_ext`.
 
-Design `fastapi-users-auth-plus` to depend on FastAPI Users extension points and async storage protocols rather than on `uniquode` application modules, templates, settings, or database models.
+Design `fastapi-users-auth-ext` to depend on FastAPI Users extension points and async storage protocols rather than on `uniquode` application modules, templates, settings, or database models.
 
 Support API access through session-backed requests where appropriate and through API tokens for machine-oriented access.
 
@@ -70,17 +72,17 @@ The project gets one canonical user model even when multiple login methods are a
 
 Account linking remains explicit, which reduces the risk of treating provider identities as the application's primary source of truth.
 
-Session-first browser authentication fits the HTML-first UI architecture and keeps ordinary user login flows straightforward.
+Session-first browser authentication fits the HTML-first UI architecture and keeps ordinary user login flows straightforward. Using database-backed FastAPI Users session tokens keeps browser authentication state revocable server-side rather than relying on a purely stateless JWT cookie.
 
 Using FastAPI Users reduces custom implementation for common identity lifecycle features, but it does not remove application responsibility for account policy, server-rendered UI, email delivery, and project-specific flow decisions.
 
 Adding passkeys and TOTP raises the complexity of the credential model, recovery flows, and administrative support, but it avoids painting the project into a password-only corner.
 
-Keeping advanced authentication in `fastapi-users-auth-plus` creates a reusable boundary and prevents TOTP/WebAuthn challenge flow code from becoming tightly coupled to this application. The trade-off is that the addon must maintain compatibility with FastAPI Users public extension points.
+Keeping advanced authentication in `fastapi-users-auth-ext` creates a reusable boundary and prevents TOTP/WebAuthn challenge flow code from becoming tightly coupled to this application. The trade-off is that the addon must maintain compatibility with FastAPI Users public extension points.
 
 Supporting both OAuth2 client and local OAuth2 authorisation capability creates a broader identity surface area than a simple social-login implementation. That flexibility is intentional, but it should be implemented in staged slices rather than all at once.
 
-Separating `auth-provider` from FastAPI Users and `fastapi-users-auth-plus` keeps delegated authorisation and token issuance distinct from user authentication and MFA. Authlib is expected to provide most OAuth2/OIDC protocol machinery for that later boundary.
+Separating `auth-provider` from FastAPI Users and `fastapi-users-auth-ext` keeps delegated authorisation and token issuance distinct from user authentication and MFA. Authlib is expected to provide most OAuth2/OIDC protocol machinery for that later boundary.
 
 API token support allows machine access without forcing browser-facing workflows onto non-browser consumers.
 
@@ -90,7 +92,7 @@ API token support allows machine access without forcing browser-facing workflows
 - Whether first-time provider login should always create an account or whether some providers should require invitation or administrative approval.
 - What passkey and recovery flows are required before passkey support is considered production-ready.
 - Which external provider should be implemented first.
-- Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-plus`.
+- Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-ext`.
 - Which Authlib server primitives are sufficient for the later internal `auth-provider` integration.
 
 ## Follow-Up Work
@@ -99,9 +101,9 @@ API token support allows machine access without forcing browser-facing workflows
 - Define local account bootstrap and administrative-user setup.
 - Define password, passkey, TOTP, account-linking, and recovery workflows.
 - Define the provider integration boundary and the first provider implementation slice.
-- Define the `fastapi-users-auth-plus` addon boundary and its initial storage protocols.
+- Define the `fastapi-users-auth-ext` addon boundary and its initial storage protocols.
 - Define the internal `auth-provider` boundary after the authorisation model establishes groups, flags, and scopes.
 
 ## Revision Notes
 
-- 2026-05-24: Added FastAPI Users as the baseline identity lifecycle dependency, introduced `fastapi-users-auth-plus` as the advanced-authentication addon boundary, and separated the future internal `auth-provider` OAuth2 provider boundary.
+- 2026-05-24: Added FastAPI Users as the baseline identity lifecycle dependency, introduced `fastapi-users-auth-ext` as the advanced-authentication addon boundary, and separated the future internal `auth-provider` OAuth2 provider boundary.

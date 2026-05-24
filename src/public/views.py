@@ -7,6 +7,7 @@ from urllib.parse import parse_qs
 from fastapi import Request
 from fastapi.responses import RedirectResponse, Response
 
+from uniquode.web.csrf import request_form_data
 from uniquode.web.dispatcher import HtmlView
 from uniquode.web.renderer import TemplateRenderer
 from uniquode.web.theme import (
@@ -77,7 +78,7 @@ class ThemeStatusPartialView(TemplateView):
 class ThemeModePartialView(HtmlView):
     async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
         try:
-            form_data = await request.form()
+            form_data = await request_form_data(request)
             submitted_mode = form_data.get("theme_mode", "auto")
             return_path = form_data.get("return_to", "/")
         except AssertionError:

@@ -1,4 +1,6 @@
-"""Tortoise ORM model package.
+"""SQLAlchemy ORM model package."""
 
-Domain models belong here when OpenSpec requirements introduce them.
-"""
+from uniquode.models.base import Base
+from uniquode.models.identity import AccessToken, OAuthAccount, User
+
+__all__ = ["AccessToken", "Base", "OAuthAccount", "User"]

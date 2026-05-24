@@ -27,7 +27,7 @@ The roadmap should stay aligned with accepted and provisional ADRs, OpenSpec cha
 - The current styling direction is Pico CSS with a thin project-specific layer and planned theme support.
 - The current persistence direction is SQLAlchemy 2 async with Alembic, PostgreSQL in production, and SQLite for local/lightweight tests.
 - The current identity direction is local-account-first, using FastAPI Users for baseline local account lifecycle work and reserving linked external identities.
-- The current advanced-authentication direction is a standalone `fastapi-users-auth-plus` addon for TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows.
+- The current advanced-authentication direction is a standalone `fastapi-users-auth-ext` addon for TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows.
 - The current access-control direction is group-, flag-, and scope-aware authorisation for pages, APIs, and admin surfaces.
 - The current internal OAuth2 provider direction is a deferred `auth-provider` package boundary built as an Authlib integration layer.
 
@@ -55,7 +55,7 @@ The next immediate implementation item is the identity foundation slice.
 - Define account bootstrap for the initial administrative user.
 - Establish password-based local login flows.
 - Reserve extension points for passkeys, TOTP, recovery codes, and external identity linking.
-- Create the standalone `fastapi-users-auth-plus` package/module boundary for future advanced authentication.
+- Create the standalone `fastapi-users-auth-ext` package/module boundary for future advanced authentication.
 
 ### 4. Authorisation Foundation
 
@@ -69,7 +69,7 @@ The next immediate implementation item is the identity foundation slice.
 - Add the external identity model and linking flows.
 - Implement the first provider integration.
 - Add provider-based account creation rules.
-- Add TOTP and WebAuthn/passkey support through `fastapi-users-auth-plus`.
+- Add TOTP and WebAuthn/passkey support through `fastapi-users-auth-ext`.
 - Add recovery-code and account-recovery policy.
 
 ### 6. API and OAuth2
@@ -104,6 +104,6 @@ The next immediate implementation item is the identity foundation slice.
 - How Pico should be packaged and whether any CSS asset build step is required.
 - Whether user-defined flags should exist only on groups or also directly on users.
 - Which external provider should be implemented first.
-- Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-plus`.
+- Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-ext`.
 - Which Authlib primitives are sufficient for the later internal `auth-provider` implementation.
 - Whether public pages need content-management features early or can begin as static templates backed by application services.

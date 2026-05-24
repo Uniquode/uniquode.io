@@ -1,16 +1,51 @@
+import asyncio
 import inspect
 import json
+import logging
+import re
 import tomllib
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.routing import APIRoute
+from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.testclient import TestClient
+from fastapi_users import FastAPIUsers
+from fastapi_users.authentication import AuthenticationBackend, CookieTransport
+from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy import select, text
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
+import uniquode.identity.users as identity_users
 from uniquode.app import create_app
 from uniquode.asgi import app
+from uniquode.identity.bootstrap import (
+    InitialAdminCredentials,
+    bootstrap_initial_admin,
+)
+from uniquode.identity.options import IdentityOptions
+from uniquode.identity.schemas import UserCreate
+from uniquode.identity.users import (
+    create_authentication_backend,
+    create_database_strategy,
+    create_user_manager,
+    require_anonymous_user,
+    require_current_user,
+)
+from uniquode.models import AccessToken, Base, OAuthAccount, User
+from uniquode.persistence import (
+    Database,
+    close_database,
+    create_database,
+    create_database_engine,
+    create_session_factory,
+    is_supported_database_url,
+    session_scope,
+    sqlite_database_path,
+)
 from uniquode.routes.health import health
 from uniquode.runserver import (
     DEFAULT_HOST,
@@ -19,11 +54,20 @@ from uniquode.runserver import (
     build_parser,
     env_requests_reload,
 )
-from uniquode.settings import Settings
-from uniquode.validate import main as validate_main
+from uniquode.settings import SQLITE_MEMORY_DATABASE_URL, Settings
+from uniquode.web.csrf import (
+    CSRF_COOKIE_NAME,
+    CSRF_FIELD_NAME,
+    CSRF_HEADER_NAME,
+    CsrfProtector,
+)
 from uniquode.web.errors import EmptyBodyResponseException
 from uniquode.web.renderer import TemplateRenderer
 from uniquode.web.route_contract import _normalise_path_prefix
+
+CSRF_INPUT_PATTERN = re.compile(
+    rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
+)
 
 
 def test_asgi_app_imports() -> None:
@@ -98,8 +142,1121 @@ def test_missing_static_asset_does_not_render_html_error_page() -> None:
 def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
+    assert settings.database_url == (
+        f"sqlite+aiosqlite:///{(tmp_path / 'uniquode.sqlite3').resolve().as_posix()}"
+    )
     assert settings.template_root == (tmp_path / "src/templates").resolve()
     assert settings.static_root == (tmp_path / "src/static").resolve()
+    assert settings.migrations_root == (tmp_path / "src/uniquode/migrations").resolve()
+    assert settings.alembic_config == (tmp_path / "alembic.ini").resolve()
+
+
+def test_settings_default_database_url_uses_async_sqlalchemy_driver() -> None:
+    assert Settings().database_url.endswith("/uniquode.sqlite3")
+    assert Settings().database_url != SQLITE_MEMORY_DATABASE_URL
+    assert is_supported_database_url(Settings().database_url)
+    assert is_supported_database_url("postgresql+asyncpg://user:pass@db/app")
+    assert is_supported_database_url(SQLITE_MEMORY_DATABASE_URL)
+    assert not is_supported_database_url("sqlite://:memory:")
+
+
+def test_settings_resolves_sqlite_database_url_without_moving_query_into_path(
+    tmp_path,
+) -> None:
+    settings = Settings(
+        project_root=tmp_path,
+        database_url="sqlite+aiosqlite:///uniquode.sqlite3?mode=ro#fragment",
+    )
+
+    assert settings.database_url == (
+        f"sqlite+aiosqlite:///"
+        f"{(tmp_path / 'uniquode.sqlite3').resolve().as_posix()}?mode=ro#fragment"
+    )
+
+
+def test_sqlite_database_path_ignores_url_query_and_fragment() -> None:
+    assert sqlite_database_path("sqlite+aiosqlite:///uniquode.sqlite3?mode=ro") == (
+        Path("uniquode.sqlite3")
+    )
+    assert sqlite_database_path(
+        "sqlite+aiosqlite:///uniquode.sqlite3#fragment"
+    ) == Path("uniquode.sqlite3")
+
+
+def test_settings_include_identity_options() -> None:
+    settings = Settings()
+    options = settings.identity_options
+
+    assert settings.csrf_token_secret
+    assert settings.csrf_cookie_secure is False
+    assert settings.csrf_token_secret_configured is False
+    assert options.account_creation_policy == "admin-created"
+    assert options.session_cookie_name == "uniquode_session"
+    assert options.session_cookie_secure is True
+    assert options.session_lifetime_seconds == 2_592_000
+    assert options.token_secrets_configured is False
+    assert options.integration_enabled("oauth-account-linking") is False
+    assert options.integration_enabled("advanced-authentication") is False
+
+
+def test_identity_options_generate_local_token_secrets() -> None:
+    first = IdentityOptions()
+    second = IdentityOptions()
+
+    assert first.reset_password_token_secret
+    assert first.verification_token_secret
+    assert first.reset_password_token_secret != second.reset_password_token_secret
+    assert first.verification_token_secret != second.verification_token_secret
+
+
+def test_settings_logs_generated_local_csrf_token_secret(caplog) -> None:
+    caplog.set_level(logging.INFO, logger="uniquode.settings")
+
+    settings = Settings()
+
+    assert settings.csrf_token_secret_configured is False
+    assert "Generated startup-local CSRF token secret." in caplog.text
+
+
+def test_identity_options_reject_invalid_session_lifetime() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Session lifetime must be a positive number of seconds",
+    ):
+        IdentityOptions(session_lifetime_seconds=0)
+
+
+def test_identity_options_reject_blank_token_secrets() -> None:
+    with pytest.raises(
+        ValueError, match="Reset password token secret must not be blank"
+    ):
+        IdentityOptions(
+            reset_password_token_secret="",
+            verification_token_secret="verification-secret",
+        )
+
+    with pytest.raises(ValueError, match="Verification token secret must not be blank"):
+        IdentityOptions(
+            reset_password_token_secret="reset-secret",
+            verification_token_secret="   ",
+        )
+
+
+def test_non_local_settings_require_configured_identity_token_secrets() -> None:
+    with pytest.raises(
+        ValueError,
+        match="Non-local deployments must configure identity reset",
+    ):
+        Settings(deployment_environment="production")
+
+    settings = Settings(
+        deployment_environment="production",
+        csrf_token_secret="production-csrf-secret",
+        identity_options=IdentityOptions(
+            reset_password_token_secret="production-reset-secret",
+            verification_token_secret="production-verification-secret",
+        ),
+    )
+
+    assert settings.identity_options.token_secrets_configured is True
+    assert settings.csrf_token_secret_configured is True
+    assert settings.csrf_cookie_secure is True
+
+
+def test_non_local_settings_require_configured_csrf_token_secret() -> None:
+    identity_options = IdentityOptions(
+        reset_password_token_secret="production-reset-secret",
+        verification_token_secret="production-verification-secret",
+    )
+
+    with pytest.raises(
+        ValueError,
+        match="Non-local deployments must configure a stable CSRF token secret",
+    ):
+        Settings(
+            deployment_environment="production",
+            identity_options=identity_options,
+        )
+
+    with pytest.raises(ValueError, match="CSRF token secret must not be blank"):
+        Settings(
+            deployment_environment="production",
+            csrf_token_secret="   ",
+            identity_options=identity_options,
+        )
+
+    with pytest.raises(
+        ValueError,
+        match="Non-local deployments must use secure CSRF cookies",
+    ):
+        Settings(
+            deployment_environment="production",
+            csrf_token_secret="production-csrf-secret",
+            csrf_cookie_secure=False,
+            identity_options=identity_options,
+        )
+
+
+def test_identity_options_expose_integration_flags() -> None:
+    options = IdentityOptions(
+        oauth_account_linking_enabled=True,
+        advanced_authentication_enabled=True,
+    )
+
+    assert options.integration_enabled("oauth-account-linking") is True
+    assert options.integration_enabled("advanced-authentication") is True
+
+
+def test_create_app_configures_database_and_identity_boundaries() -> None:
+    web_app = create_app()
+
+    try:
+        assert isinstance(web_app.state.database, Database)
+        assert isinstance(web_app.state.fastapi_users, FastAPIUsers)
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_database_engine_uses_configured_url() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+
+    try:
+        assert isinstance(engine, AsyncEngine)
+        assert str(engine.url) == settings.database_url
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_create_database_builds_async_session_factory() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    database = create_database(settings)
+
+    try:
+        assert isinstance(database.engine, AsyncEngine)
+        assert isinstance(database.session_factory, async_sessionmaker)
+    finally:
+        asyncio.run(close_database(database))
+
+
+def test_session_scope_yields_async_session() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_session() -> None:
+        async with session_scope(session_factory) as session:
+            assert isinstance(session, AsyncSession)
+            result = await session.execute(text("select 1"))
+            assert result.scalar_one() == 1
+
+    try:
+        asyncio.run(assert_session())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_identity_models_define_fastapi_users_columns() -> None:
+    user_columns = set(User.__table__.columns.keys())
+    oauth_columns = set(OAuthAccount.__table__.columns.keys())
+    access_token_columns = set(AccessToken.__table__.columns.keys())
+
+    assert {
+        "id",
+        "email",
+        "hashed_password",
+        "is_active",
+        "is_superuser",
+        "is_verified",
+    }.issubset(user_columns)
+    assert {
+        "id",
+        "oauth_name",
+        "access_token",
+        "expires_at",
+        "refresh_token",
+        "account_id",
+        "account_email",
+        "user_id",
+    }.issubset(oauth_columns)
+    assert {"token", "created_at", "user_id"}.issubset(access_token_columns)
+    assert User.__tablename__ == "identity_user"
+    assert OAuthAccount.__tablename__ == "identity_oauth_account"
+    assert AccessToken.__tablename__ == "identity_access_token"
+
+
+def test_oauth_account_model_links_to_local_user() -> None:
+    oauth_foreign_keys = OAuthAccount.__table__.columns["user_id"].foreign_keys
+    access_token_foreign_keys = AccessToken.__table__.columns["user_id"].foreign_keys
+
+    assert {str(foreign_key.column) for foreign_key in oauth_foreign_keys} == {
+        "identity_user.id"
+    }
+    assert {str(foreign_key.column) for foreign_key in access_token_foreign_keys} == {
+        "identity_user.id"
+    }
+    assert User.oauth_accounts.property.mapper.class_ is OAuthAccount
+
+
+def test_sqlalchemy_metadata_creates_identity_tables() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+
+    async def assert_tables() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+            table_names = await connection.run_sync(
+                lambda sync_connection: sqlalchemy_inspect(
+                    sync_connection
+                ).get_table_names()
+            )
+
+        assert "identity_user" in table_names
+        assert "identity_oauth_account" in table_names
+        assert "identity_access_token" in table_names
+
+    try:
+        asyncio.run(assert_tables())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_identity_authentication_backend_uses_http_only_session_cookie() -> None:
+    options = IdentityOptions(
+        session_cookie_name="u_test_session",
+        session_cookie_secure=True,
+        session_lifetime_seconds=3600,
+    )
+
+    backend = create_authentication_backend(options)
+
+    assert isinstance(backend, AuthenticationBackend)
+    assert backend.name == "session"
+    assert isinstance(backend.transport, CookieTransport)
+    assert backend.transport.cookie_name == "u_test_session"
+    assert backend.transport.cookie_max_age == 3600
+    assert backend.transport.cookie_secure is True
+    assert backend.transport.cookie_httponly is True
+
+
+def test_user_manager_creates_and_authenticates_user() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_user_flow() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            manager = create_user_manager(session, settings.identity_options)
+            created_user = await manager.create(
+                UserCreate(email="person@example.com", password="correct horse"),
+                safe=True,
+            )
+
+            assert created_user.email == "person@example.com"
+            assert created_user.hashed_password != "correct horse"
+
+            credentials = OAuth2PasswordRequestForm(
+                username="person@example.com",
+                password="correct horse",
+            )
+            authenticated_user = await manager.authenticate(credentials)
+
+            assert authenticated_user is not None
+            assert authenticated_user.id == created_user.id
+
+    try:
+        asyncio.run(assert_user_flow())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_database_strategy_persists_and_destroys_session_token() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_strategy_flow() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            manager = create_user_manager(session, settings.identity_options)
+            user = await manager.create(
+                UserCreate(email="session@example.com", password="correct horse"),
+                safe=True,
+            )
+            strategy = create_database_strategy(session, settings.identity_options)
+
+            token = await strategy.write_token(user)
+            assert token
+
+            token_user = await strategy.read_token(token, manager)
+            assert token_user is not None
+            assert token_user.id == user.id
+
+            await strategy.destroy_token(token, user)
+            assert await strategy.read_token(token, manager) is None
+
+    try:
+        asyncio.run(assert_strategy_flow())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+class CaptureIdentityDelivery:
+    def __init__(self) -> None:
+        self.reset_tokens: list[tuple[str, str]] = []
+        self.verification_tokens: list[tuple[str, str]] = []
+
+    async def send_reset_password_token(
+        self,
+        user: User,
+        token: str,
+        request: Request | None = None,
+    ) -> None:
+        self.reset_tokens.append((user.email, token))
+
+    async def send_verification_token(
+        self,
+        user: User,
+        token: str,
+        request: Request | None = None,
+    ) -> None:
+        self.verification_tokens.append((user.email, token))
+
+
+def seed_identity_user(
+    web_app: FastAPI,
+    *,
+    email: str = "person@example.com",
+    password: str = "correct horse",
+    is_active: bool = True,
+    is_verified: bool = False,
+) -> None:
+    async def seed_user() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            await manager.create(
+                UserCreate(
+                    email=email,
+                    password=password,
+                    is_active=is_active,
+                    is_verified=is_verified,
+                ),
+                safe=False,
+            )
+
+    asyncio.run(seed_user())
+
+
+def csrf_token_from(response) -> str:
+    match = CSRF_INPUT_PATTERN.search(response.text)
+    assert match is not None
+    return match.group(1)
+
+
+def csrf_data(response, data: dict[str, str] | None = None) -> dict[str, str]:
+    return {CSRF_FIELD_NAME: csrf_token_from(response)} | dict(data or {})
+
+
+def app_request_with_session_cookie(
+    web_app: FastAPI,
+    *,
+    session_cookie_name: str,
+    session_token: str,
+) -> Request:
+    return Request(
+        {
+            "type": "http",
+            "method": "POST",
+            "path": "/logout",
+            "headers": [
+                (
+                    b"cookie",
+                    f"{session_cookie_name}={session_token}".encode("latin-1"),
+                ),
+            ],
+            "app": web_app,
+        }
+    )
+
+
+def test_identity_login_logout_and_current_user_routes() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+
+        login_page = client.get("/login")
+        assert login_page.status_code == 200
+        assert "Sign in" in login_page.text
+        assert CSRF_COOKIE_NAME in login_page.cookies
+        assert f'name="{CSRF_FIELD_NAME}"' in login_page.text
+
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert login_response.headers["location"] == "/account"
+        assert login_response.cookies["uniquode_session"]
+        assert "HttpOnly" in login_response.headers["set-cookie"]
+
+        current_user = client.get("/api/identity/current-user")
+        assert current_user.status_code == 200
+        assert current_user.json() == {
+            "authenticated": True,
+            "email": "person@example.com",
+            "is_verified": False,
+        }
+
+        account_page = client.get("/account")
+        assert account_page.status_code == 200
+        assert "person@example.com" in account_page.text
+
+        logout_page = client.get("/logout")
+        assert logout_page.status_code == 200
+        assert "End the current browser session." in logout_page.text
+
+        logout_response = client.post("/logout", data=csrf_data(logout_page))
+        assert logout_response.status_code == 303
+        assert logout_response.headers["location"] == "/"
+        assert "Max-Age=0" in logout_response.headers["set-cookie"]
+
+        logged_out_user = client.get("/api/identity/current-user")
+        assert logged_out_user.json() == {"authenticated": False}
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_destroy_session_token_removes_expired_stored_token() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                session_cookie_secure=False,
+                session_lifetime_seconds=1,
+            ),
+        )
+    )
+    session_token = "expired-session-token"
+
+    async def seed_expired_session_token() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            user = await manager.create(
+                UserCreate(email="expired@example.com", password="correct horse"),
+                safe=True,
+            )
+            session.add(
+                AccessToken(
+                    token=session_token,
+                    user_id=user.id,
+                    created_at=datetime.now(UTC) - timedelta(minutes=1),
+                )
+            )
+            await session.commit()
+
+    async def assert_token_removed() -> None:
+        request = app_request_with_session_cookie(
+            web_app,
+            session_cookie_name=web_app.state.settings.identity_options.session_cookie_name,
+            session_token=session_token,
+        )
+        await identity_users.destroy_session_token(request)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            result = await session.execute(
+                select(AccessToken).where(AccessToken.token == session_token)
+            )
+            assert result.scalar_one_or_none() is None
+
+    try:
+        asyncio.run(seed_expired_session_token())
+        asyncio.run(assert_token_removed())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_requires_csrf_before_session_cookie() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+
+        response = client.post(
+            "/login",
+            data={
+                "email": "person@example.com",
+                "password": "correct horse",
+                "return_to": "/account",
+            },
+        )
+
+        assert response.status_code == 403
+        assert "Invalid CSRF token." in response.text
+        assert "uniquode_session" not in response.cookies
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+@pytest.mark.parametrize(
+    "return_to",
+    [
+        "https://evil.example/phish",
+        "//evil.example/phish",
+        "/\\evil.example/phish",
+    ],
+)
+def test_identity_login_normalises_unsafe_return_to(return_to: str) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+
+        login_page = client.get("/login", params={"return_to": return_to})
+        assert login_page.status_code == 200
+        assert 'name="return_to" type="hidden" value="/account"' in login_page.text
+        assert return_to not in login_page.text
+
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": return_to,
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert login_response.headers["location"] == "/account"
+        assert login_response.cookies["uniquode_session"]
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_rejects_invalid_credentials() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+
+        response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "incorrect",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert response.status_code == 401
+        assert "Email or password is incorrect." in response.text
+        assert 'id="login-form-error" role="alert"' in response.text
+        assert (
+            'aria-describedby="login-form-error" aria-invalid="true" autofocus'
+            in response.text
+        )
+        assert (
+            response.text.count(
+                'aria-describedby="login-form-error" aria-invalid="true"'
+            )
+            == 2
+        )
+        assert "uniquode_session" not in response.cookies
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_rejects_inactive_user() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_active=False)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+
+        response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert response.status_code == 401
+        assert "Email or password is incorrect." in response.text
+        assert "uniquode_session" not in response.cookies
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_existing_session_cookie_rejects_deactivated_user() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def deactivate_user() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            await session.execute(
+                User.__table__.update()
+                .where(User.__table__.c.email == "person@example.com")
+                .values(is_active=False)
+            )
+            await session.commit()
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+        assert login_response.cookies["uniquode_session"]
+
+        asyncio.run(deactivate_user())
+
+        current_user = client.get("/api/identity/current-user")
+
+        assert current_user.status_code == 200
+        assert current_user.json() == {"authenticated": False}
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_dependency_helpers_handle_required_and_anonymous_users() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    @web_app.get("/test/required-user")
+    async def required_user(request: Request) -> dict[str, str]:
+        user = await require_current_user(request)
+        return {"email": user.email}
+
+    @web_app.get("/test/anonymous-user")
+    async def anonymous_user(request: Request) -> dict[str, bool]:
+        await require_anonymous_user(request)
+        return {"anonymous": True}
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+
+        unauthenticated_required = client.get("/test/required-user")
+        assert unauthenticated_required.status_code == 401
+        assert unauthenticated_required.headers["content-type"].startswith("text/html")
+        assert "Authentication required." in unauthenticated_required.text
+
+        anonymous_response = client.get("/test/anonymous-user")
+        assert anonymous_response.status_code == 200
+        assert anonymous_response.json() == {"anonymous": True}
+
+        login_page = client.get("/login")
+        client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        authenticated_required = client.get("/test/required-user")
+        assert authenticated_required.status_code == 200
+        assert authenticated_required.json() == {"email": "person@example.com"}
+
+        authenticated_anonymous = client.get("/test/anonymous-user")
+        assert authenticated_anonymous.status_code == 403
+        assert "Already authenticated." in authenticated_anonymous.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_resolve_current_user_caches_result_per_request(monkeypatch) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+    read_count = 0
+
+    @web_app.get("/test/current-user-cache")
+    async def current_user_cache(request: Request) -> dict[str, object]:
+        first = await identity_users.resolve_current_user(request)
+        second = await identity_users.resolve_current_user(request)
+        return {
+            "first": first.email if first is not None else None,
+            "second": second.email if second is not None else None,
+            "same_object": first is second,
+        }
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+
+        original_create_database_strategy = identity_users.create_database_strategy
+
+        def counting_create_database_strategy(session, options):
+            strategy = original_create_database_strategy(session, options)
+
+            class CountingStrategy:
+                async def read_token(self, token, user_manager):
+                    nonlocal read_count
+                    read_count += 1
+                    return await strategy.read_token(token, user_manager)
+
+                async def destroy_token(self, token, user):
+                    return await strategy.destroy_token(token, user)
+
+            return CountingStrategy()
+
+        monkeypatch.setattr(
+            identity_users,
+            "create_database_strategy",
+            counting_create_database_strategy,
+        )
+
+        response = client.get("/test/current-user-cache")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "first": "person@example.com",
+            "second": "person@example.com",
+            "same_object": True,
+        }
+        assert read_count == 1
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_password_reset_route_uses_delivery_hook() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset",
+            data=csrf_data(reset_page, {"email": "person@example.com"}),
+        )
+
+        assert response.status_code == 200
+        assert delivery.reset_tokens
+        assert delivery.reset_tokens[0][0] == "person@example.com"
+
+        confirm_response = client.post(
+            "/password/reset/confirm",
+            data=csrf_data(
+                response,
+                {
+                    "token": delivery.reset_tokens[0][1],
+                    "password": "new correct horse",
+                },
+            ),
+        )
+
+        assert confirm_response.status_code == 200
+        assert "Password reset complete." in confirm_response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_password_reset_confirm_returns_html_error_for_invalid_token() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset/confirm",
+            data=csrf_data(
+                reset_page,
+                {"token": "invalid", "password": "new correct horse"},
+            ),
+        )
+
+        assert response.status_code == 400
+        assert response.headers["content-type"].startswith("text/html")
+        assert "The reset token is invalid or expired." in response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_password_reset_request_ignores_inactive_user() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app, is_active=False)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset",
+            data=csrf_data(reset_page, {"email": "person@example.com"}),
+        )
+
+        assert response.status_code == 200
+        assert "If the account exists, a reset link has been queued." in response.text
+        assert delivery.reset_tokens == []
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_verification_route_uses_delivery_hook() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        verify_page = client.get("/verify")
+
+        response = client.post(
+            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+        )
+
+        assert response.status_code == 200
+        assert delivery.verification_tokens
+        assert delivery.verification_tokens[0][0] == "person@example.com"
+
+        confirm_response = client.post(
+            "/verify/confirm",
+            data=csrf_data(response, {"token": delivery.verification_tokens[0][1]}),
+        )
+
+        assert confirm_response.status_code == 200
+        assert "Email verification complete." in confirm_response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+@pytest.mark.parametrize(
+    ("is_active", "is_verified"),
+    [
+        (False, False),
+        (True, True),
+    ],
+)
+def test_verification_request_ignores_ineligible_user(
+    is_active: bool,
+    is_verified: bool,
+) -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(
+            web_app,
+            is_active=is_active,
+            is_verified=is_verified,
+        )
+        client = TestClient(web_app, follow_redirects=False)
+        verify_page = client.get("/verify")
+
+        response = client.post(
+            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+        )
+
+        assert response.status_code == 200
+        assert (
+            "If the account can be verified, a verification link has been queued."
+            in response.text
+        )
+        assert delivery.verification_tokens == []
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_verification_confirm_returns_html_error_for_invalid_token() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        verify_page = client.get("/verify")
+
+        response = client.post(
+            "/verify/confirm",
+            data=csrf_data(verify_page, {"token": "invalid"}),
+        )
+
+        assert response.status_code == 400
+        assert response.headers["content-type"].startswith("text/html")
+        assert "The verification token is invalid or expired." in response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_initial_admin_bootstrap_creates_first_admin() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_bootstrap() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            result = await bootstrap_initial_admin(
+                session,
+                settings.identity_options,
+                InitialAdminCredentials(
+                    email="admin@example.com",
+                    password="correct horse",
+                ),
+            )
+
+            assert result.created is True
+            assert result.user.email == "admin@example.com"
+            assert result.user.is_superuser is True
+            assert result.user.is_verified is True
+
+    try:
+        asyncio.run(assert_bootstrap())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_initial_admin_bootstrap_does_not_create_second_admin() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_bootstrap() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            first = await bootstrap_initial_admin(
+                session,
+                settings.identity_options,
+                InitialAdminCredentials(
+                    email="admin@example.com",
+                    password="correct horse",
+                ),
+            )
+            second = await bootstrap_initial_admin(
+                session,
+                settings.identity_options,
+                InitialAdminCredentials(
+                    email="other-admin@example.com",
+                    password="correct horse",
+                ),
+            )
+
+            assert first.created is True
+            assert second.created is False
+            assert second.user.id == first.user.id
+            assert second.user.email == "admin@example.com"
+
+    try:
+        asyncio.run(assert_bootstrap())
+    finally:
+        asyncio.run(close_database(engine))
 
 
 @pytest.mark.parametrize(
@@ -372,10 +1529,11 @@ def test_theme_preference_cookie_drives_page_rendering() -> None:
 
 def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
     client = TestClient(create_app())
+    home_page = client.get("/")
 
     response = client.post(
         "/partials/theme-mode",
-        data={"theme_mode": "light", "return_to": "/"},
+        data=csrf_data(home_page, {"theme_mode": "light", "return_to": "/"}),
         headers={"HX-Request": "true"},
     )
 
@@ -393,10 +1551,11 @@ def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
 
 def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
     client = TestClient(create_app())
+    home_page = client.get("/")
 
     response = client.post(
         "/partials/theme-mode",
-        data={"theme_mode": "neon", "return_to": "/"},
+        data=csrf_data(home_page, {"theme_mode": "neon", "return_to": "/"}),
         headers={"HX-Request": "true"},
     )
 
@@ -414,16 +1573,66 @@ def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
 
 def test_theme_mode_route_redirects_without_htmx() -> None:
     client = TestClient(create_app(), follow_redirects=False)
+    home_page = client.get("/")
 
     response = client.post(
         "/partials/theme-mode",
-        data={"theme_mode": "dark", "return_to": "/"},
+        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": "/"}),
     )
 
     assert response.status_code == 303
     assert response.headers["location"] == "/"
     assert response.cookies["theme_mode"] == "dark"
     assert "HttpOnly" in response.headers["set-cookie"]
+
+
+def test_theme_mode_route_requires_csrf() -> None:
+    client = TestClient(create_app())
+
+    response = client.post(
+        "/partials/theme-mode",
+        data={"theme_mode": "dark", "return_to": "/"},
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 403
+    assert "Invalid CSRF token." in response.text
+    assert "theme_mode" not in response.cookies
+
+
+def test_theme_mode_route_accepts_csrf_header() -> None:
+    client = TestClient(create_app())
+    home_page = client.get("/")
+
+    response = client.post(
+        "/partials/theme-mode",
+        data={"theme_mode": "dark", "return_to": "/"},
+        headers={
+            "HX-Request": "true",
+            CSRF_HEADER_NAME: csrf_token_from(home_page),
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.cookies["theme_mode"] == "dark"
+
+
+def test_theme_mode_route_rejects_csrf_header_without_cookie() -> None:
+    token_client = TestClient(create_app())
+    home_page = token_client.get("/")
+
+    client = TestClient(create_app())
+    response = client.post(
+        "/partials/theme-mode",
+        data={"theme_mode": "dark", "return_to": "/"},
+        headers={
+            "HX-Request": "true",
+            CSRF_HEADER_NAME: csrf_token_from(home_page),
+        },
+    )
+
+    assert response.status_code == 403
+    assert "theme_mode" not in response.cookies
 
 
 def test_home_page_renders_reusable_theme_selector_component() -> None:
@@ -475,6 +1684,29 @@ def test_template_renderer_falls_back_when_route_name_is_missing() -> None:
     assert b'id="theme-selector"' in response.body
 
 
+def test_template_renderer_rejects_internal_context_overrides() -> None:
+    renderer = TemplateRenderer(
+        Path(__file__).resolve().parents[1] / "src/templates",
+        csrf=CsrfProtector("test-secret"),
+    )
+    request = Request({"type": "http", "headers": [], "method": "GET", "path": "/"})
+
+    with pytest.raises(ValueError, match="csrf_token"):
+        renderer.render_page(
+            "components/theme_selector.html",
+            request,
+            {
+                "theme_mode": "auto",
+                "theme_label": "Auto",
+                "theme_attribute": "",
+                "theme_next_mode": "light",
+                "theme_icon_name": "computer",
+                "theme_update_path": "/partials/theme-mode",
+                "csrf_token": "caller-controlled",
+            },
+        )
+
+
 def test_project_stylesheet_defines_semantic_theme_tokens() -> None:
     stylesheet = (
         Path(__file__).resolve().parents[1] / "src/static/styles/app.css"
@@ -498,107 +1730,3 @@ def test_base_layout_uses_theme_tokens_without_template_colour_branching() -> No
     assert "#0f766e" not in layout_template
     assert "#f7f9f8" not in layout_template
     assert "#eef4f2" not in layout_template
-
-
-def test_validate_command_checks_web_foundation(capsys) -> None:
-    exit_code = validate_main(["web"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "web: ok" in captured.out
-
-
-def test_validate_command_unknown_target_raises_system_exit(capsys) -> None:
-    with pytest.raises(
-        SystemExit, match="Unknown validation target\\(s\\): foo"
-    ) as excinfo:
-        validate_main(["foo"])
-
-    captured = capsys.readouterr()
-    assert "foo" in str(excinfo.value)
-    assert captured.out == ""
-    assert captured.err == ""
-
-
-def test_validate_command_accepts_normalisable_static_url_path(capsys) -> None:
-    exit_code = validate_main(["web", "--static-url-path", "static"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "web: ok" in captured.out
-
-
-def test_validate_command_rejects_blank_static_url_path(capsys) -> None:
-    exit_code = validate_main(["web", "--static-url-path", "   "])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "Static URL path must not be empty." in captured.out
-
-
-def test_validate_command_reports_missing_templates(tmp_path, capsys) -> None:
-    settings = Settings(
-        template_root=tmp_path / "templates",
-        static_root=tmp_path / "static",
-    )
-    settings.static_root.mkdir()
-
-    exit_code = validate_main(
-        [
-            "web",
-            "--template-root",
-            str(settings.template_root),
-            "--static-root",
-            str(settings.static_root),
-        ]
-    )
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "Missing template" in captured.out
-
-
-def test_validate_command_reports_missing_theme_tokens(tmp_path, capsys) -> None:
-    template_root = tmp_path / "templates"
-    static_root = tmp_path / "static"
-    (template_root / "public/pages").mkdir(parents=True)
-    (template_root / "public/partials").mkdir(parents=True)
-    (template_root / "layouts").mkdir(parents=True)
-    (template_root / "components").mkdir(parents=True)
-    (template_root / "errors").mkdir(parents=True)
-    (static_root / "styles").mkdir(parents=True)
-
-    source_root = Path(__file__).resolve().parents[1]
-    template_paths = (
-        "public/pages/home.html",
-        "layouts/page.html",
-        "components/theme_switcher.html",
-        "components/theme_selector.html",
-        "errors/base.html",
-    )
-    for template_path in template_paths:
-        source = source_root / "src/templates" / template_path
-        destination = template_root / template_path
-        destination.write_text(source.read_text())
-
-    (static_root / "styles/app.css").write_text(":root {}")
-
-    exit_code = validate_main(
-        [
-            "web",
-            "--template-root",
-            str(template_root),
-            "--static-root",
-            str(static_root),
-        ]
-    )
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert "Missing theme token" in captured.out
-    assert "Missing theme selector" in captured.out
