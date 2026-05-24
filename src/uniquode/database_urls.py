@@ -57,6 +57,21 @@ def parse_sqlite_database_url(database_url: str) -> SqliteDatabaseUrl | None:
     )
 
 
+def resolve_database_url(database_url: str, project_root: Path) -> str:
+    sqlite_url = parse_sqlite_database_url(database_url)
+    if sqlite_url is None:
+        return database_url
+
+    database_path = sqlite_url.path
+    if not database_path.is_absolute():
+        database_path = project_root / database_path
+
+    return (
+        f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}"
+        f"{database_path.resolve().as_posix()}{sqlite_url.suffix}"
+    )
+
+
 def sqlite_database_path(database_url: str) -> Path | None:
     sqlite_url = parse_sqlite_database_url(database_url)
     return sqlite_url.path if sqlite_url is not None else None

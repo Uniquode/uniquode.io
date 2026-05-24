@@ -9,9 +9,9 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
-from uniquode.database_urls import is_supported_database_url, parse_sqlite_database_url
+from uniquode.database_urls import is_supported_database_url, resolve_database_url
 from uniquode.models import Base
-from uniquode.settings import DEFAULT_DATABASE_URL, SQLITE_ASYNC_DATABASE_URL_PREFIX
+from uniquode.settings import DEFAULT_DATABASE_URL
 
 config = context.config
 
@@ -29,18 +29,7 @@ def _project_root() -> Path:
 
 
 def _default_database_url() -> str:
-    sqlite_url = parse_sqlite_database_url(DEFAULT_DATABASE_URL)
-    if sqlite_url is None:
-        return DEFAULT_DATABASE_URL
-
-    database_path = sqlite_url.path
-    if not database_path.is_absolute():
-        database_path = _project_root() / database_path
-
-    return (
-        f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}"
-        f"{database_path.resolve().as_posix()}{sqlite_url.suffix}"
-    )
+    return resolve_database_url(DEFAULT_DATABASE_URL, _project_root())
 
 
 def _database_url() -> str:
