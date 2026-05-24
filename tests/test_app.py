@@ -14,8 +14,8 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.testclient import TestClient
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
+from sqlalchemy import func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
-from sqlalchemy import select, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
@@ -35,7 +35,7 @@ from uniquode.identity.users import (
     require_anonymous_user,
     require_current_user,
 )
-from uniquode.models import AccessToken, Base, OAuthAccount, User
+from uniquode.models import AccessToken, Base, InitialAdminBootstrap, OAuthAccount, User
 from uniquode.persistence import (
     Database,
     close_database,
@@ -1252,6 +1252,57 @@ def test_initial_admin_bootstrap_does_not_create_second_admin() -> None:
             assert second.created is False
             assert second.user.id == first.user.id
             assert second.user.email == "admin@example.com"
+
+    try:
+        asyncio.run(assert_bootstrap())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_initial_admin_bootstrap_is_single_writer_under_concurrency(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "identity.sqlite3"
+    settings = Settings(
+        database_url=f"sqlite+aiosqlite:///{database_path.as_posix()}",
+    )
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_bootstrap() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async def run_bootstrap(email: str):
+            async with session_scope(session_factory) as session:
+                return await bootstrap_initial_admin(
+                    session,
+                    settings.identity_options,
+                    InitialAdminCredentials(
+                        email=email,
+                        password="correct horse",
+                    ),
+                )
+
+        first, second = await asyncio.gather(
+            run_bootstrap("first-admin@example.com"),
+            run_bootstrap("second-admin@example.com"),
+        )
+
+        async with session_scope(session_factory) as session:
+            admins = (
+                (await session.execute(select(User).where(User.is_superuser.is_(True))))
+                .scalars()
+                .all()
+            )
+            bootstrap_claim_count = await session.scalar(
+                select(func.count()).select_from(InitialAdminBootstrap)
+            )
+
+        assert len([result for result in (first, second) if result.created]) == 1
+        assert len(admins) == 1
+        assert bootstrap_claim_count == 1
+        assert {first.user.id, second.user.id} == {admins[0].id}
 
     try:
         asyncio.run(assert_bootstrap())

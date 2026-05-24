@@ -19,6 +19,11 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.create_table(
+        "identity_initial_admin_bootstrap",
+        sa.Column("id", sa.Integer(), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_table(
         "identity_user",
         sa.Column("id", generics.GUID(), nullable=False),
         sa.Column("email", sa.String(length=320), nullable=False),
@@ -73,6 +78,7 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_table("identity_initial_admin_bootstrap")
     op.drop_index(
         op.f("ix_identity_oauth_account_oauth_name"),
         table_name="identity_oauth_account",

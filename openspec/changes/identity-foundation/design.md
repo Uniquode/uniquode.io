@@ -191,6 +191,10 @@ Rationale: closed account creation is the least risky default for an early
 identity foundation. It avoids accidentally opening sign-up before authorisation,
 abuse controls, email delivery, and operational support are complete.
 
+Initial administrative bootstrap must use a database-enforced singleton claim,
+not only an application-level "does an admin exist?" check. This keeps the
+first-admin path single-writer across multiple processes or tasks.
+
 ### Use async protocols for addon storage
 
 The addon core will define small async protocols for credential stores and
