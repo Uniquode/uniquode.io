@@ -293,6 +293,7 @@ def _set_env_value(
     default: str | None = None,
 ) -> None:
     if env.is_set(env_name):
+        _reject_blank_env_value(env, env_name)
         values[setting_name] = env.get(env_name)
     elif default is not None:
         values[setting_name] = default
@@ -305,6 +306,7 @@ def _set_env_path(
     env_name: str,
 ) -> None:
     if env.is_set(env_name):
+        _reject_blank_env_value(env, env_name)
         values[setting_name] = Path(env.get(env_name))
 
 

@@ -29,18 +29,22 @@ from uniquode.asgi import app
 from uniquode.configuration import ConfigurationError
 from uniquode.environment import (
     ENV_ADVANCED_AUTH,
+    ENV_ALEMBIC_CONFIG,
     ENV_APP_ENV,
     ENV_APP_NAME,
     ENV_APP_RELOAD,
     ENV_CSRF_SECRET,
     ENV_CSRF_SECURE,
     ENV_DATABASE_URL,
+    ENV_MIGRATIONS_ROOT,
     ENV_OAUTH_LINKING,
     ENV_RESET_SECRET,
     ENV_SESSION_COOKIE,
     ENV_SESSION_LIFETIME,
     ENV_SESSION_SECURE,
+    ENV_STATIC_ROOT,
     ENV_STATIC_URL,
+    ENV_TEMPLATE_ROOT,
     ENV_VERIFICATION_SECRET,
     load_environment,
 )
@@ -338,14 +342,35 @@ def test_load_settings_reads_local_dotenv(tmp_path) -> None:
     assert settings.identity_options.session_lifetime_seconds == 120
 
 
+def test_load_settings_resolves_env_paths_from_project_root(tmp_path) -> None:
+    settings = load_settings(
+        environ={
+            ENV_ALEMBIC_CONFIG: "config/alembic.ini",
+            ENV_MIGRATIONS_ROOT: "database/migrations",
+            ENV_STATIC_ROOT: "assets",
+            ENV_TEMPLATE_ROOT: "templates",
+        },
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.alembic_config == (tmp_path / "config/alembic.ini").resolve()
+    assert settings.migrations_root == (tmp_path / "database/migrations").resolve()
+    assert settings.static_root == (tmp_path / "assets").resolve()
+    assert settings.template_root == (tmp_path / "templates").resolve()
+
+
 @pytest.mark.parametrize(
     ("env_name", "expected_message"),
     [
+        (ENV_DATABASE_URL, "DATABASE_URL must not be blank"),
         (ENV_SESSION_SECURE, "SESSION_SECURE must not be blank"),
         (ENV_SESSION_LIFETIME, "SESSION_LIFETIME must not be blank"),
+        (ENV_STATIC_URL, "STATIC_URL must not be blank"),
+        (ENV_TEMPLATE_ROOT, "TEMPLATE_ROOT must not be blank"),
     ],
 )
-def test_load_settings_rejects_blank_typed_env_values(
+def test_load_settings_rejects_blank_env_values(
     tmp_path,
     env_name: str,
     expected_message: str,
