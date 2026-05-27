@@ -2,6 +2,7 @@ import asyncio
 import inspect
 import json
 import logging
+import os
 import re
 import tomllib
 from datetime import UTC, datetime, timedelta
@@ -19,9 +20,30 @@ from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
+import uniquode.asgi as asgi_module
+import uniquode.environment as environment_module
 import uniquode.identity.users as identity_users
+import uniquode.runserver as runserver_module
 from uniquode.app import create_app
 from uniquode.asgi import app
+from uniquode.configuration import ConfigurationError
+from uniquode.environment import (
+    ENV_ADVANCED_AUTH,
+    ENV_APP_ENV,
+    ENV_APP_NAME,
+    ENV_APP_RELOAD,
+    ENV_CSRF_SECRET,
+    ENV_CSRF_SECURE,
+    ENV_DATABASE_URL,
+    ENV_OAUTH_LINKING,
+    ENV_RESET_SECRET,
+    ENV_SESSION_COOKIE,
+    ENV_SESSION_LIFETIME,
+    ENV_SESSION_SECURE,
+    ENV_STATIC_URL,
+    ENV_VERIFICATION_SECRET,
+    load_environment,
+)
 from uniquode.identity.bootstrap import (
     InitialAdminCredentials,
     bootstrap_initial_admin,
@@ -51,10 +73,12 @@ from uniquode.runserver import (
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_RELOAD,
+    RELOAD_ENV_VAR,
     build_parser,
     env_requests_reload,
+    runtime_project_root,
 )
-from uniquode.settings import SQLITE_MEMORY_DATABASE_URL, Settings
+from uniquode.settings import SQLITE_MEMORY_DATABASE_URL, Settings, load_settings
 from uniquode.web.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_FIELD_NAME,
@@ -72,6 +96,28 @@ CSRF_INPUT_PATTERN = re.compile(
 
 def test_asgi_app_imports() -> None:
     assert isinstance(app, FastAPI)
+
+
+def test_asgi_loader_reports_configuration_errors_without_traceback(
+    monkeypatch,
+    capsys,
+) -> None:
+    def raise_configuration_error():
+        raise ConfigurationError("APP_ENV must be local, staging, or production.")
+
+    monkeypatch.setattr(asgi_module, "create_app", raise_configuration_error)
+
+    with pytest.raises(SystemExit) as excinfo:
+        asgi_module.load_asgi_app()
+
+    message = (
+        "Application configuration failed: "
+        "APP_ENV must be local, staging, or production."
+    )
+    captured = capsys.readouterr()
+    assert str(excinfo.value) == message
+    assert captured.err.strip() == message
+    assert "Traceback" not in captured.err
 
 
 def test_create_app_returns_fresh_app_with_baseline_routes() -> None:
@@ -107,6 +153,68 @@ def test_runserver_parser_uses_defaults() -> None:
     assert args.host == DEFAULT_HOST
     assert args.port == DEFAULT_PORT
     assert args.reload is None
+    assert RELOAD_ENV_VAR == "APP_RELOAD"
+
+
+def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    class FakeEnv:
+        def get(self, name: str, default: str | None = None) -> str | None:
+            observed["reload_env_name"] = name
+            return default
+
+    def fake_load_environment(**kwargs: object) -> FakeEnv:
+        observed.update(kwargs)
+        return FakeEnv()
+
+    def fake_uvicorn_run(*_args: object, **kwargs: object) -> None:
+        observed["uvicorn_kwargs"] = kwargs
+
+    monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
+    monkeypatch.setattr(runserver_module.uvicorn, "run", fake_uvicorn_run)
+
+    runserver_module.main([])
+
+    assert observed["project_root"] == runtime_project_root()
+    assert observed["reload_env_name"] == ENV_APP_RELOAD
+    assert observed["uvicorn_kwargs"] == {
+        "host": DEFAULT_HOST,
+        "port": DEFAULT_PORT,
+        "reload": DEFAULT_RELOAD,
+    }
+
+
+def test_load_environment_reads_dotenv_without_mutating_process_environment(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    monkeypatch.delenv(ENV_APP_RELOAD, raising=False)
+    (tmp_path / ".env").write_text("APP_RELOAD=true\n", encoding="utf-8")
+
+    env = load_environment(environ={}, project_root=tmp_path)
+
+    assert env.get(ENV_APP_RELOAD) == "true"
+    assert ENV_APP_RELOAD not in os.environ
+
+
+def test_load_environment_wraps_loader_failures_without_raw_detail(
+    monkeypatch,
+) -> None:
+    def raise_sensitive_error(**_kwargs: object) -> None:
+        raise RuntimeError("DATABASE_URL=postgresql://user:secret@example/app")
+
+    monkeypatch.setattr(environment_module, "Env", raise_sensitive_error)
+
+    with pytest.raises(
+        ConfigurationError,
+        match="Environment loader failed while initialising envex",
+    ) as excinfo:
+        load_environment(environ={}, read_dotenv=False)
+
+    assert "RuntimeError" in str(excinfo.value)
+    assert "secret" not in str(excinfo.value)
+    assert "DATABASE_URL" not in str(excinfo.value)
 
 
 def test_create_app_mounts_configurable_static_files() -> None:
@@ -174,6 +282,98 @@ def test_settings_resolves_sqlite_database_url_without_moving_query_into_path(
     )
 
 
+def test_load_settings_uses_environment_values(tmp_path) -> None:
+    database_url = "postgresql+asyncpg://user:password@db.example/app"
+    settings = load_settings(
+        environ={
+            ENV_APP_NAME: "env-app",
+            ENV_APP_ENV: "production",
+            ENV_DATABASE_URL: database_url,
+            ENV_CSRF_SECRET: "csrf-secret",
+            ENV_CSRF_SECURE: "true",
+            ENV_RESET_SECRET: "reset-secret",
+            ENV_VERIFICATION_SECRET: "verification-secret",
+            ENV_SESSION_COOKIE: "session-id",
+            ENV_SESSION_LIFETIME: "3600",
+            ENV_OAUTH_LINKING: "on",
+            ENV_ADVANCED_AUTH: "1",
+            ENV_STATIC_URL: "assets",
+        },
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.app_name == "env-app"
+    assert settings.deployment_environment == "production"
+    assert settings.database_url == database_url
+    assert settings.csrf_token_secret == "csrf-secret"
+    assert settings.csrf_cookie_secure is True
+    assert settings.identity_options.session_cookie_name == "session-id"
+    assert settings.identity_options.session_lifetime_seconds == 3600
+    assert settings.identity_options.reset_password_token_secret == "reset-secret"
+    assert settings.identity_options.verification_token_secret == "verification-secret"
+    assert settings.identity_options.oauth_account_linking_enabled is True
+    assert settings.identity_options.advanced_authentication_enabled is True
+    assert settings.static_mount_path == "/assets"
+
+
+def test_load_settings_reads_local_dotenv(tmp_path) -> None:
+    (tmp_path / ".env").write_text(
+        "\n".join(
+            [
+                "APP_NAME=dotenv-app",
+                "DATABASE_URL=sqlite+aiosqlite:///dotenv.sqlite3",
+                "SESSION_LIFETIME=120",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_settings(environ={}, project_root=tmp_path)
+
+    assert settings.app_name == "dotenv-app"
+    assert settings.database_url == (
+        f"sqlite+aiosqlite:///{(tmp_path / 'dotenv.sqlite3').resolve().as_posix()}"
+    )
+    assert settings.identity_options.session_lifetime_seconds == 120
+
+
+@pytest.mark.parametrize(
+    ("env_name", "expected_message"),
+    [
+        (ENV_SESSION_SECURE, "SESSION_SECURE must not be blank"),
+        (ENV_SESSION_LIFETIME, "SESSION_LIFETIME must not be blank"),
+    ],
+)
+def test_load_settings_rejects_blank_typed_env_values(
+    tmp_path,
+    env_name: str,
+    expected_message: str,
+) -> None:
+    with pytest.raises(ConfigurationError, match=expected_message):
+        load_settings(
+            environ={env_name: ""},
+            project_root=tmp_path,
+            read_dotenv=False,
+        )
+
+
+def test_explicit_settings_ignore_environment_values(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv(ENV_APP_NAME, "env-app")
+    monkeypatch.setenv(ENV_DATABASE_URL, "sqlite+aiosqlite:///env.sqlite3")
+
+    settings = Settings(
+        app_name="explicit-app",
+        database_url="sqlite+aiosqlite:///explicit.sqlite3",
+        project_root=tmp_path,
+    )
+
+    assert settings.app_name == "explicit-app"
+    assert settings.database_url == (
+        f"sqlite+aiosqlite:///{(tmp_path / 'explicit.sqlite3').resolve().as_posix()}"
+    )
+
+
 def test_sqlite_database_path_ignores_url_query_and_fragment() -> None:
     assert sqlite_database_path("sqlite+aiosqlite:///uniquode.sqlite3?mode=ro") == (
         Path("uniquode.sqlite3")
@@ -220,7 +420,7 @@ def test_settings_logs_generated_local_csrf_token_secret(caplog) -> None:
 
 def test_identity_options_reject_invalid_session_lifetime() -> None:
     with pytest.raises(
-        ValueError,
+        ConfigurationError,
         match="Session lifetime must be a positive number of seconds",
     ):
         IdentityOptions(session_lifetime_seconds=0)
@@ -228,14 +428,16 @@ def test_identity_options_reject_invalid_session_lifetime() -> None:
 
 def test_identity_options_reject_blank_token_secrets() -> None:
     with pytest.raises(
-        ValueError, match="Reset password token secret must not be blank"
+        ConfigurationError, match="Reset password token secret must not be blank"
     ):
         IdentityOptions(
             reset_password_token_secret="",
             verification_token_secret="verification-secret",
         )
 
-    with pytest.raises(ValueError, match="Verification token secret must not be blank"):
+    with pytest.raises(
+        ConfigurationError, match="Verification token secret must not be blank"
+    ):
         IdentityOptions(
             reset_password_token_secret="reset-secret",
             verification_token_secret="   ",
@@ -244,7 +446,7 @@ def test_identity_options_reject_blank_token_secrets() -> None:
 
 def test_non_local_settings_require_configured_identity_token_secrets() -> None:
     with pytest.raises(
-        ValueError,
+        ConfigurationError,
         match="Non-local deployments must configure identity reset",
     ):
         Settings(deployment_environment="production")
@@ -263,6 +465,53 @@ def test_non_local_settings_require_configured_identity_token_secrets() -> None:
     assert settings.csrf_cookie_secure is True
 
 
+def test_non_local_settings_require_secure_session_cookies() -> None:
+    identity_options = IdentityOptions(
+        session_cookie_secure=False,
+        reset_password_token_secret="production-reset-secret",
+        verification_token_secret="production-verification-secret",
+    )
+
+    with pytest.raises(
+        ConfigurationError,
+        match="Non-local deployments must use secure session cookies",
+    ):
+        Settings(
+            deployment_environment="production",
+            csrf_token_secret="production-csrf-secret",
+            identity_options=identity_options,
+        )
+
+
+def test_local_settings_allow_insecure_session_cookies() -> None:
+    settings = Settings(
+        identity_options=IdentityOptions(session_cookie_secure=False),
+    )
+
+    assert settings.deployment_environment == "local"
+    assert settings.identity_options.session_cookie_secure is False
+
+
+def test_load_settings_rejects_insecure_non_local_session_cookie_env(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match="Non-local deployments must use secure session cookies",
+    ):
+        load_settings(
+            environ={
+                ENV_APP_ENV: "production",
+                ENV_CSRF_SECRET: "production-csrf-secret",
+                ENV_RESET_SECRET: "production-reset-secret",
+                ENV_VERIFICATION_SECRET: "production-verification-secret",
+                ENV_SESSION_SECURE: "false",
+            },
+            project_root=tmp_path,
+            read_dotenv=False,
+        )
+
+
 def test_non_local_settings_require_configured_csrf_token_secret() -> None:
     identity_options = IdentityOptions(
         reset_password_token_secret="production-reset-secret",
@@ -270,7 +519,7 @@ def test_non_local_settings_require_configured_csrf_token_secret() -> None:
     )
 
     with pytest.raises(
-        ValueError,
+        ConfigurationError,
         match="Non-local deployments must configure a stable CSRF token secret",
     ):
         Settings(
@@ -278,7 +527,7 @@ def test_non_local_settings_require_configured_csrf_token_secret() -> None:
             identity_options=identity_options,
         )
 
-    with pytest.raises(ValueError, match="CSRF token secret must not be blank"):
+    with pytest.raises(ConfigurationError, match="CSRF token secret must not be blank"):
         Settings(
             deployment_environment="production",
             csrf_token_secret="   ",
@@ -286,7 +535,7 @@ def test_non_local_settings_require_configured_csrf_token_secret() -> None:
         )
 
     with pytest.raises(
-        ValueError,
+        ConfigurationError,
         match="Non-local deployments must use secure CSRF cookies",
     ):
         Settings(
@@ -313,6 +562,23 @@ def test_create_app_configures_database_and_identity_boundaries() -> None:
     try:
         assert isinstance(web_app.state.database, Database)
         assert isinstance(web_app.state.fastapi_users, FastAPIUsers)
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_app_without_explicit_settings_uses_environment(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{(tmp_path / 'app.sqlite3').as_posix()}"
+    monkeypatch.setenv(ENV_APP_NAME, "environment-app")
+    monkeypatch.setenv(ENV_DATABASE_URL, database_url)
+
+    web_app = create_app()
+
+    try:
+        assert web_app.title == "environment-app"
+        assert web_app.state.settings.database_url == database_url
     finally:
         asyncio.run(close_database(web_app.state.database))
 

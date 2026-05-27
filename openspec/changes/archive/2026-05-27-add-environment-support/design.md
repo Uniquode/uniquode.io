@@ -47,6 +47,13 @@ Rationale: envex provides the type-safe environment interface requested for the
 project, includes `.env` support, and already understands database URL style
 configuration. Centralising on it keeps configuration behaviour consistent.
 
+Environment variable names should stay concise. Conventional names such as
+`DATABASE_URL` should be used as-is. App-specific names should use short,
+readable names such as `APP_ENV`, `APP_NAME`, `APP_RELOAD`, `CSRF_SECRET`,
+`CSRF_SECURE`, `RESET_SECRET`, `VERIFICATION_SECRET`, `SESSION_COOKIE`,
+`SESSION_SECURE`, `SESSION_LIFETIME`, `OAUTH_LINKING`, and `ADVANCED_AUTH`
+rather than a long project-name prefix.
+
 ### Keep explicit settings construction
 
 `Settings(...)` should remain usable with explicit values. Environment loading

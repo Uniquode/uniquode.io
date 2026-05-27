@@ -1,11 +1,15 @@
 import argparse
+import sys
 from pathlib import Path
+from typing import TextIO
 
-from uniquode.settings import Settings
+from uniquode.configuration import ConfigurationError
+from uniquode.settings import Settings, load_settings
 from uniquode.validation import (
     ValidationResult,
     get_validation_target,
     redact_secret_value,
+    validate_environment,
     validate_persistence,
     validate_web,
     validation_target_names,
@@ -20,6 +24,7 @@ __all__ = (
     "build_parser",
     "main",
     "redact_secret_value",
+    "validate_environment",
     "validate_persistence",
     "validate_web",
 )
@@ -91,9 +96,10 @@ def _resolve_targets(targets: list[str]) -> tuple[str, ...]:
 
 
 def _build_settings(args: argparse.Namespace) -> Settings:
-    defaults = Settings()
+    defaults = load_settings()
     return Settings(
         app_name=defaults.app_name,
+        deployment_environment=defaults.deployment_environment,
         database_url=(
             args.database_url
             if args.database_url is not None
@@ -122,12 +128,21 @@ def _build_settings(args: argparse.Namespace) -> Settings:
             if args.static_url_path is not None
             else defaults.static_url_path
         ),
+        csrf_token_secret=defaults.csrf_token_secret,
+        csrf_cookie_secure=defaults.csrf_cookie_secure,
+        identity_options=defaults.identity_options,
     )
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    settings = _build_settings(args)
+    try:
+        settings = _build_settings(args)
+    except ConfigurationError as exc:
+        print("configuration: failed", file=sys.stderr)
+        print(f"- {exc}", file=sys.stderr)
+        return 1
+
     exit_code = 0
 
     for target in _resolve_targets(args.targets):
@@ -140,16 +155,19 @@ def main(argv: list[str] | None = None) -> int:
             continue
 
         exit_code = 1
-        print(f"{result.name}: failed")
+        print(f"{result.name}: failed", file=sys.stderr)
         if args.verbose:
-            _print_verbose_checks(result)
+            _print_verbose_checks(result, file=sys.stderr)
         for error in result.errors:
-            print(f"- {error}")
+            print(f"- {error}", file=sys.stderr)
 
     return exit_code
 
 
-def _print_verbose_checks(result: ValidationResult) -> None:
+def _print_verbose_checks(
+    result: ValidationResult, *, file: TextIO | None = None
+) -> None:
+    output = sys.stdout if file is None else file
     for check in result.checks:
         status = "ok" if check.passed else "failed"
-        print(f"  - {status}: {check.description}")
+        print(f"  - {status}: {check.description}", file=output)
