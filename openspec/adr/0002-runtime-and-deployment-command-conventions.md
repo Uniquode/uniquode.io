@@ -48,7 +48,7 @@ The `runserver` command uses the following baseline local defaults:
 
 The `runserver` command should support explicit local overrides for host and port.
 
-The `--reload` flag should enable reload explicitly. When `--reload` is not supplied, the `U_RELOAD` environment variable may enable reload when set to a truthy value.
+The `--reload` flag should enable reload explicitly. When `--reload` is not supplied, the `APP_RELOAD` environment variable may enable reload when set to a truthy value.
 
 Production deployment must preserve ASGI handoff. If a process manager is needed, use an ASGI-compatible deployment path, such as Gunicorn with a Uvicorn worker or another deployment system that runs the same `uniquode.asgi:app` target.
 

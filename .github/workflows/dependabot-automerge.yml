@@ -29,11 +29,23 @@ jobs:
         with:
           github-token: "${{ secrets.GITHUB_TOKEN }}"
 
+      - name: Generate auto-merge app token
+        id: app-token
+        if: >-
+          steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' &&
+          steps.dependabot-metadata.outputs.package-ecosystem == 'uv'
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: "${{ vars.AUTOMERGE_APP_CLIENT_ID }}"
+          private-key: "${{ secrets.AUTOMERGE_APP_PRIVATE_KEY }}"
+          permission-contents: write
+          permission-pull-requests: write
+
       - name: Enable auto-merge for Python patch updates
         if: >-
           steps.dependabot-metadata.outputs.update-type == 'version-update:semver-patch' &&
           steps.dependabot-metadata.outputs.package-ecosystem == 'uv'
         run: gh pr merge --auto --rebase "$PR_URL"
         env:
-          GH_TOKEN: "${{ secrets.GITHUB_TOKEN }}"
+          GH_TOKEN: "${{ steps.app-token.outputs.token }}"
           PR_URL: "${{ github.event.pull_request.html_url }}"

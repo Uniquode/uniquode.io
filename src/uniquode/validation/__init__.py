@@ -1,4 +1,5 @@
 from uniquode.validation.core import ValidationCheck, ValidationResult
+from uniquode.validation.environment import validate_environment
 from uniquode.validation.persistence import redact_secret_value, validate_persistence
 from uniquode.validation.registry import (
     VALIDATION_TARGETS,
@@ -13,6 +14,7 @@ __all__ = (
     "ValidationResult",
     "get_validation_target",
     "redact_secret_value",
+    "validate_environment",
     "validate_persistence",
     "validate_web",
     "validation_target_names",

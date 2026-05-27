@@ -1,4 +1,10 @@
-## ADDED Requirements
+# environment-configuration Specification
+
+## Purpose
+Define how application runtime configuration, local dotenv workflows, database
+URLs, and secret-safe validation are provided through envex-backed settings.
+
+## Requirements
 
 ### Requirement: Environment-backed settings
 The system SHALL load application runtime configuration from environment
@@ -8,6 +14,13 @@ variables through the `envex` module.
 - **WHEN** the application is created without explicit settings
 - **THEN** it uses envex-backed environment configuration for supported runtime
   settings
+
+#### Scenario: Environment names remain concise
+- **WHEN** supported application environment variables are documented or
+  validated
+- **THEN** conventional names such as `DATABASE_URL` are used directly and
+  app-specific names use concise names such as `APP_ENV`, `APP_RELOAD`, and
+  `CSRF_SECRET`
 
 #### Scenario: Explicit settings remain available
 - **WHEN** tests or callers construct `Settings` with explicit values
