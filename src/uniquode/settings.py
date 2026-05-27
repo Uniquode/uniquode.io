@@ -1,15 +1,28 @@
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from secrets import token_urlsafe
-from typing import Literal
+from typing import Any, Final, Literal, cast, get_args
 
+from envex import Env
+
+from uniquode.configuration import ConfigurationError
 from uniquode.database_urls import (
     SQLITE_ASYNC_DATABASE_URL_PREFIX,
     SQLITE_MEMORY_DATABASE_URL,
     resolve_database_url,
 )
-from uniquode.identity.options import IdentityOptions
+from uniquode.environment import (
+    IDENTITY_ENV_SETTINGS,
+    SETTINGS_ENV_SETTINGS,
+    EnvironmentSetting,
+    load_environment,
+)
+from uniquode.identity.options import (
+    IdentityOptions,
+    is_generate_local_identity_secret,
+)
 
 __all__ = (
     "DEFAULT_ALEMBIC_CONFIG",
@@ -18,13 +31,26 @@ __all__ = (
     "DEFAULT_MIGRATIONS_ROOT",
     "DEFAULT_STATIC_ROOT",
     "DEFAULT_TEMPLATE_ROOT",
+    "ALLOWED_DEPLOYMENT_ENVIRONMENTS",
+    "ConfigurationError",
+    "DEPLOYMENT_ENVIRONMENT_ERROR",
     "DeploymentEnvironment",
     "SQLITE_ASYNC_DATABASE_URL_PREFIX",
     "SQLITE_MEMORY_DATABASE_URL",
     "Settings",
+    "load_settings",
 )
 
 DeploymentEnvironment = Literal["local", "staging", "production"]
+ALLOWED_DEPLOYMENT_ENVIRONMENTS: Final[tuple[DeploymentEnvironment, ...]] = cast(
+    tuple[DeploymentEnvironment, ...],
+    get_args(DeploymentEnvironment),
+)
+DEPLOYMENT_ENVIRONMENT_ERROR: Final = (
+    "Deployment environment must be one of: "
+    + ", ".join(ALLOWED_DEPLOYMENT_ENVIRONMENTS)
+    + "."
+)
 
 DEFAULT_TEMPLATE_ROOT = Path("src/templates")
 DEFAULT_STATIC_ROOT = Path("src/static")
@@ -59,6 +85,8 @@ class Settings:
     def __post_init__(self) -> None:
         project_root = self.project_root.resolve()
         object.__setattr__(self, "project_root", project_root)
+        if self.deployment_environment not in ALLOWED_DEPLOYMENT_ENVIRONMENTS:
+            raise ConfigurationError(DEPLOYMENT_ENVIRONMENT_ERROR)
         csrf_cookie_secure = (
             self.deployment_environment != "local"
             if self.csrf_cookie_secure is None
@@ -134,13 +162,34 @@ class Settings:
         deployment_environment: DeploymentEnvironment,
         identity_options: IdentityOptions,
     ) -> None:
-        if deployment_environment == "local":
-            return
+        if deployment_environment != "local" and (
+            is_generate_local_identity_secret(
+                identity_options.reset_password_token_secret
+            )
+            or is_generate_local_identity_secret(
+                identity_options.verification_token_secret
+            )
+        ):
+            raise ConfigurationError(
+                "Non-local deployments must not use generated local identity "
+                "secret sentinels."
+            )
 
-        if not identity_options.token_secrets_configured:
-            raise ValueError(
+        if (
+            deployment_environment != "local"
+            and not identity_options.token_secrets_configured
+        ):
+            raise ConfigurationError(
                 "Non-local deployments must configure identity reset and "
                 "verification token secrets."
+            )
+
+        if (
+            deployment_environment != "local"
+            and not identity_options.session_cookie_secure
+        ):
+            raise ConfigurationError(
+                "Non-local deployments must use secure session cookies."
             )
 
     @staticmethod
@@ -149,7 +198,7 @@ class Settings:
             return False
 
         if not csrf_token_secret.strip():
-            raise ValueError("CSRF token secret must not be blank.")
+            raise ConfigurationError("CSRF token secret must not be blank.")
 
         return True
 
@@ -163,13 +212,133 @@ class Settings:
             return
 
         if not csrf_secret_configured:
-            raise ValueError(
+            raise ConfigurationError(
                 "Non-local deployments must configure a stable CSRF token secret."
             )
 
         if not csrf_cookie_secure:
-            raise ValueError("Non-local deployments must use secure CSRF cookies.")
+            raise ConfigurationError(
+                "Non-local deployments must use secure CSRF cookies."
+            )
 
     @property
     def static_mount_path(self) -> str:
         return f"/{self.static_url_path.strip('/')}"
+
+
+def load_settings(
+    *,
+    environ: Mapping[str, str] | None = None,
+    project_root: Path | None = None,
+    read_dotenv: bool = True,
+) -> Settings:
+    """Build settings from envex-backed runtime configuration.
+
+    Values loaded from the supplied environment mapping or process environment,
+    plus `.env` when enabled, override `Settings` defaults. Callers that need
+    fully explicit configuration should instantiate `Settings(...)` directly.
+
+    The environment is copied before envex reads `.env`, so this function does
+    not mutate `os.environ`. `project_root` is used as the dotenv search root and
+    as the base for resolving relative configured paths and SQLite database URLs.
+    """
+    env = load_environment(
+        environ=environ,
+        project_root=project_root,
+        read_dotenv=read_dotenv,
+    )
+    settings_kwargs: dict[str, Any] = {}
+    if project_root is not None:
+        settings_kwargs["project_root"] = project_root
+    _set_env_fields(env, settings_kwargs, SETTINGS_ENV_SETTINGS)
+
+    identity_options = _identity_options_from_environment(env)
+    if identity_options is not None:
+        settings_kwargs["identity_options"] = identity_options
+
+    return Settings(**settings_kwargs)
+
+
+def _identity_options_from_environment(env: Env) -> IdentityOptions | None:
+    if not any(env.is_set(env_setting.name) for env_setting in IDENTITY_ENV_SETTINGS):
+        return None
+
+    identity_kwargs: dict[str, Any] = {}
+    _set_env_fields(env, identity_kwargs, IDENTITY_ENV_SETTINGS)
+    return IdentityOptions(**identity_kwargs)
+
+
+def _set_env_fields(
+    env: Env,
+    values: dict[str, Any],
+    env_settings: tuple[EnvironmentSetting, ...],
+) -> None:
+    for env_setting in env_settings:
+        if env_setting.value_type == "path":
+            _set_env_path(env, values, env_setting.field_name, env_setting.name)
+        elif env_setting.value_type == "bool":
+            _set_env_bool(env, values, env_setting.field_name, env_setting.name)
+        elif env_setting.value_type == "int":
+            _set_env_int(env, values, env_setting.field_name, env_setting.name)
+        else:
+            _set_env_value(env, values, env_setting.field_name, env_setting.name)
+
+
+def _set_env_value(
+    env: Env,
+    values: dict[str, Any],
+    setting_name: str,
+    env_name: str,
+    *,
+    default: str | None = None,
+) -> None:
+    if env.is_set(env_name):
+        _reject_blank_env_value(env, env_name)
+        values[setting_name] = env.get(env_name)
+    elif default is not None:
+        values[setting_name] = default
+
+
+def _set_env_path(
+    env: Env,
+    values: dict[str, Any],
+    setting_name: str,
+    env_name: str,
+) -> None:
+    if env.is_set(env_name):
+        _reject_blank_env_value(env, env_name)
+        values[setting_name] = Path(env.get(env_name))
+
+
+def _set_env_bool(
+    env: Env,
+    values: dict[str, Any],
+    setting_name: str,
+    env_name: str,
+) -> None:
+    if env.is_set(env_name):
+        _reject_blank_env_value(env, env_name)
+        try:
+            values[setting_name] = env.bool(env_name)
+        except ValueError as exc:
+            raise ConfigurationError(f"{env_name} must be a boolean value.") from exc
+
+
+def _set_env_int(
+    env: Env,
+    values: dict[str, Any],
+    setting_name: str,
+    env_name: str,
+) -> None:
+    if env.is_set(env_name):
+        _reject_blank_env_value(env, env_name)
+        try:
+            values[setting_name] = cast(int, env.int(env_name))
+        except ValueError as exc:
+            raise ConfigurationError(f"{env_name} must be an integer value.") from exc
+
+
+def _reject_blank_env_value(env: Env, env_name: str) -> None:
+    raw_value = env.get(env_name)
+    if raw_value is None or not raw_value.strip():
+        raise ConfigurationError(f"{env_name} must not be blank.")

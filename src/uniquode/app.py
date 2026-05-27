@@ -8,7 +8,7 @@ from uniquode.identity.delivery import NullIdentityDelivery
 from uniquode.identity.users import create_fastapi_users
 from uniquode.persistence import close_database, create_database
 from uniquode.routes import register_routes
-from uniquode.settings import Settings
+from uniquode.settings import Settings, load_settings
 from uniquode.web.csrf import CsrfProtector
 from uniquode.web.dispatcher import HtmlDispatcher
 from uniquode.web.errors import register_error_handlers
@@ -26,7 +26,7 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
-    app_settings = settings or Settings()
+    app_settings = settings or load_settings()
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
     app.state.settings = app_settings
     app.state.database = create_database(app_settings)

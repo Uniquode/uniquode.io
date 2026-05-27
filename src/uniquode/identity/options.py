@@ -2,10 +2,16 @@ from dataclasses import dataclass, field
 from secrets import token_urlsafe
 from typing import Literal
 
+from uniquode.configuration import ConfigurationError
+
 AccountCreationPolicy = Literal["admin-created"]
 IdentityIntegration = Literal["oauth-account-linking", "advanced-authentication"]
 
 _GENERATE_LOCAL_SECRET = "__generate-local-identity-secret__"
+
+
+def is_generate_local_identity_secret(value: str) -> bool:
+    return value == _GENERATE_LOCAL_SECRET
 
 
 @dataclass(frozen=True, slots=True)
@@ -22,7 +28,9 @@ class IdentityOptions:
 
     def __post_init__(self) -> None:
         if self.session_lifetime_seconds <= 0:
-            raise ValueError("Session lifetime must be a positive number of seconds.")
+            raise ConfigurationError(
+                "Session lifetime must be a positive number of seconds."
+            )
 
         self._reject_blank_secret(
             "Reset password token secret",
@@ -32,11 +40,11 @@ class IdentityOptions:
             "Verification token secret",
             self.verification_token_secret,
         )
-        reset_secret_configured = (
-            self.reset_password_token_secret != _GENERATE_LOCAL_SECRET
+        reset_secret_configured = not is_generate_local_identity_secret(
+            self.reset_password_token_secret
         )
-        verification_secret_configured = (
-            self.verification_token_secret != _GENERATE_LOCAL_SECRET
+        verification_secret_configured = not is_generate_local_identity_secret(
+            self.verification_token_secret
         )
 
         if not reset_secret_configured:
@@ -66,5 +74,5 @@ class IdentityOptions:
 
     @staticmethod
     def _reject_blank_secret(label: str, value: str) -> None:
-        if value != _GENERATE_LOCAL_SECRET and not value.strip():
-            raise ValueError(f"{label} must not be blank.")
+        if not is_generate_local_identity_secret(value) and not value.strip():
+            raise ConfigurationError(f"{label} must not be blank.")
