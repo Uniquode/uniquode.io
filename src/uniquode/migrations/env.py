@@ -9,6 +9,7 @@ from sqlalchemy import pool
 from sqlalchemy.engine import Connection
 from sqlalchemy.ext.asyncio import async_engine_from_config
 
+from auth_ext.sqlalchemy import Base as AuthExtBase
 from uniquode.database_urls import is_supported_database_url, resolve_database_url
 from uniquode.models import Base
 from uniquode.settings import DEFAULT_DATABASE_URL
@@ -18,7 +19,7 @@ config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-target_metadata = Base.metadata
+target_metadata = [Base.metadata, AuthExtBase.metadata]
 
 
 def _project_root() -> Path:

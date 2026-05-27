@@ -1,8 +1,8 @@
 from fastapi import FastAPI
 
 from public.routes import build_public_route_set
-from uniquode.identity.routes import build_identity_route_set
 from uniquode.routes.health import router as health_router
+from uniquode.routes.identity import build_identity_route_set
 from uniquode.web.dispatcher import register_html_routes
 
 

@@ -2,7 +2,7 @@ from dataclasses import dataclass, field
 from secrets import token_urlsafe
 from typing import Literal
 
-from uniquode.configuration import ConfigurationError
+from auth_ext.configuration import ConfigurationError
 
 AccountCreationPolicy = Literal["admin-created"]
 IdentityIntegration = Literal["oauth-account-linking", "advanced-authentication"]

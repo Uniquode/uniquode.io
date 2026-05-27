@@ -2,11 +2,12 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from fastapi import Request
+from fastapi import APIRouter, Request
 from fastapi.responses import RedirectResponse, Response
 from starlette.datastructures import FormData
 
-from uniquode.identity.users import (
+from auth_ext.options import IdentityOptions
+from auth_ext.sessions import (
     authenticate_user,
     clear_session_cookie,
     create_session_token,
@@ -19,9 +20,29 @@ from uniquode.identity.users import (
     verify_user,
 )
 from uniquode.web.csrf import request_form_data
-from uniquode.web.dispatcher import HtmlView
+from uniquode.web.dispatcher import HtmlRouteDefinition, HtmlView
 from uniquode.web.renderer import TemplateRenderer
+from uniquode.web.route_contract import API_PATH_PREFIX
 from uniquode.web.theme import theme_template_context
+
+
+@dataclass(frozen=True, slots=True)
+class IdentityRouteSet:
+    page_routes: tuple[HtmlRouteDefinition, ...]
+    api_router: APIRouter
+
+
+async def current_user_state(request: Request) -> dict[str, object]:
+    user = await resolve_current_user(request)
+    if user is None:
+        return {"authenticated": False}
+
+    return {
+        "authenticated": True,
+        "email": user.email,
+        # Keep this optional state endpoint out of authorisation decisions.
+        "is_verified": user.is_verified,
+    }
 
 
 def _identity_context(request: Request, **extra: Any) -> dict[str, Any]:
@@ -38,6 +59,14 @@ def _identity_context(request: Request, **extra: Any) -> dict[str, Any]:
 def _form_value(form_data: FormData, name: str, default: str = "") -> str:
     value = form_data.get(name, default)
     return value if isinstance(value, str) else default
+
+
+def _identity_options(request: Request) -> IdentityOptions:
+    options = getattr(request.app.state, "identity_options", None)
+    if not isinstance(options, IdentityOptions):
+        raise RuntimeError("Identity options are not configured on the application.")
+
+    return options
 
 
 def normalise_return_to(value: str | None, default: str = "/account") -> str:
@@ -99,7 +128,7 @@ class LoginSubmitView(HtmlView):
 
         token = await create_session_token(request, user)
         response = RedirectResponse(url=return_to, status_code=303)
-        set_session_cookie(response, token, request.app.state.settings.identity_options)
+        set_session_cookie(response, token, _identity_options(request))
         return response
 
 
@@ -108,7 +137,7 @@ class LogoutSubmitView(HtmlView):
     async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
         await destroy_session_token(request)
         response = RedirectResponse(url="/", status_code=303)
-        clear_session_cookie(response, request.app.state.settings.identity_options)
+        clear_session_cookie(response, _identity_options(request))
         return response
 
 
@@ -242,3 +271,98 @@ class VerificationConfirmView(HtmlView):
             context,
             status_code=200 if did_verify else 400,
         )
+
+
+def build_identity_route_set() -> IdentityRouteSet:
+    normalised_api_prefix = API_PATH_PREFIX.rstrip("/")
+    api_router = APIRouter(prefix=f"{normalised_api_prefix}/identity")
+    api_router.add_api_route(
+        "/current-user",
+        current_user_state,
+        methods=["GET"],
+        include_in_schema=False,
+        name="identity:api:current-user",
+    )
+
+    return IdentityRouteSet(
+        page_routes=(
+            HtmlRouteDefinition(
+                path="/login",
+                name="identity:login",
+                methods=("GET",),
+                surface="page",
+                view=LoginPageView(),
+            ),
+            HtmlRouteDefinition(
+                path="/login",
+                name="identity:login-submit",
+                methods=("POST",),
+                surface="page",
+                view=LoginSubmitView(),
+            ),
+            HtmlRouteDefinition(
+                path="/logout",
+                name="identity:logout-page",
+                methods=("GET",),
+                surface="page",
+                view=LogoutPageView(),
+            ),
+            HtmlRouteDefinition(
+                path="/logout",
+                name="identity:logout",
+                methods=("POST",),
+                surface="page",
+                view=LogoutSubmitView(),
+            ),
+            HtmlRouteDefinition(
+                path="/account",
+                name="identity:account",
+                methods=("GET",),
+                surface="page",
+                view=AccountPageView(),
+            ),
+            HtmlRouteDefinition(
+                path="/password/reset",
+                name="identity:password-reset",
+                methods=("GET",),
+                surface="page",
+                view=PasswordResetPageView(),
+            ),
+            HtmlRouteDefinition(
+                path="/password/reset",
+                name="identity:password-reset-request",
+                methods=("POST",),
+                surface="page",
+                view=PasswordResetRequestView(),
+            ),
+            HtmlRouteDefinition(
+                path="/password/reset/confirm",
+                name="identity:password-reset-confirm",
+                methods=("POST",),
+                surface="page",
+                view=PasswordResetConfirmView(),
+            ),
+            HtmlRouteDefinition(
+                path="/verify",
+                name="identity:verify",
+                methods=("GET",),
+                surface="page",
+                view=VerificationPageView(),
+            ),
+            HtmlRouteDefinition(
+                path="/verify",
+                name="identity:verify-request",
+                methods=("POST",),
+                surface="page",
+                view=VerificationRequestView(),
+            ),
+            HtmlRouteDefinition(
+                path="/verify/confirm",
+                name="identity:verify-confirm",
+                methods=("POST",),
+                surface="page",
+                view=VerificationConfirmView(),
+            ),
+        ),
+        api_router=api_router,
+    )
