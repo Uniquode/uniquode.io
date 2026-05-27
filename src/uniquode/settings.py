@@ -7,6 +7,10 @@ from typing import Any, Final, Literal, cast, get_args
 
 from envex import Env
 
+from auth_ext.options import (
+    IdentityOptions,
+    is_generate_local_identity_secret,
+)
 from uniquode.configuration import ConfigurationError
 from uniquode.database_urls import (
     SQLITE_ASYNC_DATABASE_URL_PREFIX,
@@ -18,10 +22,6 @@ from uniquode.environment import (
     SETTINGS_ENV_SETTINGS,
     EnvironmentSetting,
     load_environment,
-)
-from uniquode.identity.options import (
-    IdentityOptions,
-    is_generate_local_identity_secret,
 )
 
 __all__ = (

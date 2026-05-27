@@ -20,10 +20,30 @@ from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
+import auth_ext.sessions as identity_users
 import uniquode.asgi as asgi_module
 import uniquode.environment as environment_module
-import uniquode.identity.users as identity_users
 import uniquode.runserver as runserver_module
+from auth_ext.bootstrap import (
+    InitialAdminCredentials,
+    bootstrap_initial_admin,
+)
+from auth_ext.options import IdentityOptions
+from auth_ext.schemas import UserCreate
+from auth_ext.sessions import (
+    create_authentication_backend,
+    create_database_strategy,
+    create_user_manager,
+    require_anonymous_user,
+    require_current_user,
+)
+from auth_ext.sqlalchemy.models import (
+    AccessToken,
+    Base,
+    InitialAdminBootstrap,
+    OAuthAccount,
+    User,
+)
 from uniquode.app import create_app
 from uniquode.asgi import app
 from uniquode.configuration import ConfigurationError
@@ -48,20 +68,6 @@ from uniquode.environment import (
     ENV_VERIFICATION_SECRET,
     load_environment,
 )
-from uniquode.identity.bootstrap import (
-    InitialAdminCredentials,
-    bootstrap_initial_admin,
-)
-from uniquode.identity.options import IdentityOptions
-from uniquode.identity.schemas import UserCreate
-from uniquode.identity.users import (
-    create_authentication_backend,
-    create_database_strategy,
-    create_user_manager,
-    require_anonymous_user,
-    require_current_user,
-)
-from uniquode.models import AccessToken, Base, InitialAdminBootstrap, OAuthAccount, User
 from uniquode.persistence import (
     Database,
     close_database,

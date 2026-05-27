@@ -1,3 +1,4 @@
+import ast
 import asyncio
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -49,7 +50,21 @@ def test_auth_ext_package_is_independent_from_application_modules() -> None:
 
     for package_name in ("auth_ext", "auth_provider"):
         for path in (source_root / package_name).rglob("*.py"):
-            assert "uniquode" not in path.read_text()
+            tree = ast.parse(path.read_text(), filename=str(path))
+            imported_modules = {
+                alias.name
+                for node in ast.walk(tree)
+                if isinstance(node, ast.Import)
+                for alias in node.names
+            } | {
+                node.module
+                for node in ast.walk(tree)
+                if isinstance(node, ast.ImportFrom) and node.module is not None
+            }
+            assert not any(
+                module == "uniquode" or module.startswith("uniquode.")
+                for module in imported_modules
+            )
 
 
 def test_auth_ext_no_challenge_policy_allows_direct_login() -> None:

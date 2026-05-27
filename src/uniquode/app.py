@@ -4,8 +4,8 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from uniquode.identity.delivery import NullIdentityDelivery
-from uniquode.identity.users import create_fastapi_users
+from auth_ext.delivery import NullIdentityDelivery
+from auth_ext.sessions import create_fastapi_users
 from uniquode.persistence import close_database, create_database
 from uniquode.routes import register_routes
 from uniquode.settings import Settings, load_settings
@@ -30,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
     app.state.settings = app_settings
     app.state.database = create_database(app_settings)
+    app.state.identity_options = app_settings.identity_options
     app.state.identity_delivery = NullIdentityDelivery()
     app.state.fastapi_users = create_fastapi_users(app_settings.identity_options)
     csrf_cookie_secure = app_settings.csrf_cookie_secure

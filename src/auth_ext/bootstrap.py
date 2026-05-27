@@ -6,11 +6,11 @@ from sqlalchemy import insert, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from uniquode.identity.delivery import IdentityDelivery
-from uniquode.identity.options import IdentityOptions
-from uniquode.identity.schemas import UserCreate
-from uniquode.identity.users import create_user_manager
-from uniquode.models import InitialAdminBootstrap, User
+from auth_ext.delivery import IdentityDelivery
+from auth_ext.manager import create_user_manager
+from auth_ext.options import IdentityOptions
+from auth_ext.schemas import UserCreate
+from auth_ext.sqlalchemy.models import InitialAdminBootstrap, User
 
 _INITIAL_ADMIN_BOOTSTRAP_ID = 1
 _INITIAL_ADMIN_BOOTSTRAP_LOOKUP_ATTEMPTS = 10
@@ -72,8 +72,8 @@ async def _claim_initial_admin_bootstrap(session: AsyncSession) -> bool:
     """Atomically claim the initial-admin bootstrap slot.
 
     The fixed primary key is the cross-process lock. Concurrent bootstrap
-    attempts cannot both insert it, so only the winner can create the initial
-    administrative account.
+    attempts cannot both insert it, so an IntegrityError means another writer
+    already claimed the slot and this caller should wait for that admin user.
     """
     try:
         async with session.begin_nested():
@@ -83,8 +83,6 @@ async def _claim_initial_admin_bootstrap(session: AsyncSession) -> bool:
                 )
             )
     except IntegrityError:
-        # End the losing transaction so the follow-up lookup can observe the
-        # winner's committed admin row.
         await session.rollback()
         return False
 

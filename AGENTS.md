@@ -16,6 +16,12 @@ Read `.todo/context.md` at session start when present. Update it at meaningful m
 Use `.agents/skills` on demand.
 Use `.agents/steering/` on demand; start with `.agents/steering/README.md` when unsure which file applies.
 
+# Linear And GitHub
+
+Use Linear issue keys in branch names and pull request titles so Linear can associate GitHub work automatically.
+Prefer branch names like `feature/ut-123-short-description` and PR titles prefixed with `UT-123`.
+Do not rely on manually added Linear resource links to trigger Linear status automation.
+
 # Stitch
 
 The repository Stitch project is `uniquode.io` with project resource name `projects/5961352154368593199`.

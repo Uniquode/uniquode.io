@@ -1,7 +1,7 @@
 from html.parser import HTMLParser
 
 from public.routes import build_public_route_set
-from uniquode.identity.routes import build_identity_route_set
+from uniquode.routes.identity import build_identity_route_set
 from uniquode.settings import Settings
 from uniquode.validation.core import (
     ValidationCheck,

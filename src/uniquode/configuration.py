@@ -1,2 +1,3 @@
-class ConfigurationError(ValueError):
-    """Raised when runtime configuration is invalid."""
+from auth_ext.configuration import ConfigurationError
+
+__all__ = ("ConfigurationError",)

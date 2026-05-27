@@ -3,23 +3,25 @@ from __future__ import annotations
 import logging
 import uuid
 from collections.abc import AsyncIterator, Callable
+from typing import cast
 
 from fastapi import HTTPException, Request, status
 from fastapi.responses import Response
 from fastapi.security import OAuth2PasswordRequestForm
-from fastapi_users import BaseUserManager, FastAPIUsers, UUIDIDMixin
+from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.authentication.strategy.db import DatabaseStrategy
 from fastapi_users.exceptions import FastAPIUsersException, UserNotExists
-from fastapi_users.password import PasswordHelper
-from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
-from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyAccessTokenDatabase
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from uniquode.identity.delivery import IdentityDelivery, NullIdentityDelivery
-from uniquode.identity.options import IdentityOptions
-from uniquode.models import AccessToken, OAuthAccount, User
-from uniquode.persistence import Database, session_scope
+from auth_ext.delivery import IdentityDelivery, NullIdentityDelivery
+from auth_ext.manager import UserManager, create_user_manager
+from auth_ext.options import IdentityOptions
+from auth_ext.sqlalchemy.models import AccessToken, User
+from auth_ext.sqlalchemy.sessions import (
+    create_database_strategy,
+    delete_session_token_by_value,
+)
 
 _CURRENT_USER_CACHE_TOKEN_ATTR = "identity_current_user_token"
 _CURRENT_USER_CACHE_VALUE_ATTR = "identity_current_user"
@@ -27,87 +29,22 @@ _CURRENT_USER_CACHE_MISSING = object()
 logger = logging.getLogger(__name__)
 
 
-class UserManager(UUIDIDMixin, BaseUserManager[User, uuid.UUID]):
-    """FastAPI Users manager for the canonical local account model."""
-
-    def __init__(
-        self,
-        user_db: SQLAlchemyUserDatabase[User, uuid.UUID],
-        options: IdentityOptions,
-        delivery: IdentityDelivery | None = None,
-        password_helper: PasswordHelper | None = None,
-    ) -> None:
-        super().__init__(user_db, password_helper)
-        self.delivery = delivery or NullIdentityDelivery()
-        self.reset_password_token_secret = options.reset_password_token_secret
-        self.verification_token_secret = options.verification_token_secret
-
-    async def on_after_forgot_password(
-        self,
-        user: User,
-        token: str,
-        request: Request | None = None,
-    ) -> None:
-        await self.delivery.send_reset_password_token(user, token, request)
-
-    async def on_after_request_verify(
-        self,
-        user: User,
-        token: str,
-        request: Request | None = None,
-    ) -> None:
-        await self.delivery.send_verification_token(user, token, request)
-
-
-def create_password_helper() -> PasswordHelper:
-    return PasswordHelper()
-
-
-def create_user_database(
-    session: AsyncSession,
-) -> SQLAlchemyUserDatabase[User, uuid.UUID]:
-    return SQLAlchemyUserDatabase(session, User, OAuthAccount)
-
-
-def create_user_manager(
-    session: AsyncSession,
-    options: IdentityOptions,
-    delivery: IdentityDelivery | None = None,
-) -> UserManager:
-    return UserManager(
-        create_user_database(session),
-        options,
-        delivery,
-        create_password_helper(),
-    )
-
-
-def create_access_token_database(
-    session: AsyncSession,
-) -> SQLAlchemyAccessTokenDatabase[AccessToken]:
-    return SQLAlchemyAccessTokenDatabase(session, AccessToken)
-
-
-def create_database_strategy(
-    session: AsyncSession,
-    options: IdentityOptions,
-) -> DatabaseStrategy[User, uuid.UUID, AccessToken]:
-    return DatabaseStrategy(
-        create_access_token_database(session),
-        lifetime_seconds=options.session_lifetime_seconds,
-    )
-
-
-def _database_from_request(request: Request) -> Database:
+def _session_factory_from_request(
+    request: Request,
+) -> async_sessionmaker[AsyncSession]:
     database = getattr(request.app.state, "database", None)
-    if not isinstance(database, Database):
+    if database is None:
         raise RuntimeError("Database is not configured on the application.")
 
-    return database
+    session_factory = getattr(database, "session_factory", None)
+    if session_factory is None:
+        raise RuntimeError("Database session factory is not configured.")
+
+    return cast(async_sessionmaker[AsyncSession], session_factory)
 
 
 def _identity_options_from_request(request: Request) -> IdentityOptions:
-    options = request.app.state.settings.identity_options
+    options = getattr(request.app.state, "identity_options", None)
     if not isinstance(options, IdentityOptions):
         raise RuntimeError("Identity options are not configured on the application.")
 
@@ -126,8 +63,8 @@ def create_user_manager_dependency(
     options: IdentityOptions,
 ) -> Callable[[Request], AsyncIterator[UserManager]]:
     async def get_user_manager(request: Request) -> AsyncIterator[UserManager]:
-        database = _database_from_request(request)
-        async with session_scope(database.session_factory) as session:
+        session_factory = _session_factory_from_request(request)
+        async with session_factory() as session:
             yield create_user_manager(session, options, _delivery_from_request(request))
 
     return get_user_manager
@@ -139,8 +76,8 @@ def create_database_strategy_dependency(
     async def get_database_strategy(
         request: Request,
     ) -> AsyncIterator[DatabaseStrategy[User, uuid.UUID, AccessToken]]:
-        database = _database_from_request(request)
-        async with session_scope(database.session_factory) as session:
+        session_factory = _session_factory_from_request(request)
+        async with session_factory() as session:
             yield create_database_strategy(session, options)
 
     return get_database_strategy
@@ -230,8 +167,8 @@ async def resolve_current_user(request: Request) -> User | None:
     if token is None:
         return _cache_current_user(request, token, None)
 
-    database = _database_from_request(request)
-    async with session_scope(database.session_factory) as session:
+    session_factory = _session_factory_from_request(request)
+    async with session_factory() as session:
         manager = create_user_manager(
             session,
             options,
@@ -240,7 +177,7 @@ async def resolve_current_user(request: Request) -> User | None:
         strategy = create_database_strategy(session, options)
         user = await strategy.read_token(token, manager)
         if user is not None and not user.is_active:
-            await _delete_session_token_by_value(session, token)
+            await delete_session_token_by_value(session, token)
             return _cache_current_user(request, token, None)
 
         return _cache_current_user(request, token, user)
@@ -276,10 +213,10 @@ async def authenticate_user(
     password: str,
 ) -> User | None:
     options = _identity_options_from_request(request)
-    database = _database_from_request(request)
+    session_factory = _session_factory_from_request(request)
     credentials = OAuth2PasswordRequestForm(username=email, password=password)
 
-    async with session_scope(database.session_factory) as session:
+    async with session_factory() as session:
         manager = create_user_manager(
             session,
             options,
@@ -294,9 +231,9 @@ async def authenticate_user(
 
 async def create_session_token(request: Request, user: User) -> str:
     options = _identity_options_from_request(request)
-    database = _database_from_request(request)
+    session_factory = _session_factory_from_request(request)
 
-    async with session_scope(database.session_factory) as session:
+    async with session_factory() as session:
         strategy = create_database_strategy(session, options)
         return await strategy.write_token(user)
 
@@ -307,25 +244,18 @@ async def destroy_session_token(request: Request) -> None:
     if token is None:
         return
 
-    database = _database_from_request(request)
-    async with session_scope(database.session_factory) as session:
-        await _delete_session_token_by_value(session, token)
+    session_factory = _session_factory_from_request(request)
+    async with session_factory() as session:
+        await delete_session_token_by_value(session, token)
 
     _cache_current_user(request, token, None)
 
 
-async def _delete_session_token_by_value(session: AsyncSession, token: str) -> None:
-    access_token_database = create_access_token_database(session)
-    access_token = await access_token_database.get_by_token(token)
-    if access_token is not None:
-        await access_token_database.delete(access_token)
-
-
 async def request_password_reset(request: Request, email: str) -> None:
     options = _identity_options_from_request(request)
-    database = _database_from_request(request)
+    session_factory = _session_factory_from_request(request)
 
-    async with session_scope(database.session_factory) as session:
+    async with session_factory() as session:
         manager = create_user_manager(
             session,
             options,
@@ -348,9 +278,9 @@ async def request_password_reset(request: Request, email: str) -> None:
 
 async def reset_password(request: Request, token: str, password: str) -> bool:
     options = _identity_options_from_request(request)
-    database = _database_from_request(request)
+    session_factory = _session_factory_from_request(request)
 
-    async with session_scope(database.session_factory) as session:
+    async with session_factory() as session:
         manager = create_user_manager(
             session,
             options,
@@ -366,9 +296,9 @@ async def reset_password(request: Request, token: str, password: str) -> bool:
 
 async def request_verification(request: Request, email: str) -> None:
     options = _identity_options_from_request(request)
-    database = _database_from_request(request)
+    session_factory = _session_factory_from_request(request)
 
-    async with session_scope(database.session_factory) as session:
+    async with session_factory() as session:
         manager = create_user_manager(
             session,
             options,
@@ -391,9 +321,9 @@ async def request_verification(request: Request, email: str) -> None:
 
 async def verify_user(request: Request, token: str) -> bool:
     options = _identity_options_from_request(request)
-    database = _database_from_request(request)
+    session_factory = _session_factory_from_request(request)
 
-    async with session_scope(database.session_factory) as session:
+    async with session_factory() as session:
         manager = create_user_manager(
             session,
             options,

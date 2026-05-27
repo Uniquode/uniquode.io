@@ -9,9 +9,11 @@ from fastapi_users_db_sqlalchemy import (
 from fastapi_users_db_sqlalchemy.access_token import SQLAlchemyBaseAccessTokenTableUUID
 from fastapi_users_db_sqlalchemy.generics import GUID
 from sqlalchemy import ForeignKey, Integer
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 
-from uniquode.models.base import Base
+
+class Base(DeclarativeBase):
+    """Declarative base for authentication extension SQLAlchemy models."""
 
 
 class InitialAdminBootstrap(Base):
