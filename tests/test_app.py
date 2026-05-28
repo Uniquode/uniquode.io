@@ -446,6 +446,11 @@ def test_identity_options_accept_public_signup_policy() -> None:
     assert options.account_creation_policy == "public-signup"
 
 
+def test_identity_options_reject_invalid_account_creation_policy() -> None:
+    with pytest.raises(ConfigurationError, match="Account creation policy"):
+        IdentityOptions(account_creation_policy="public_signup")  # type: ignore[arg-type]
+
+
 def test_load_settings_reads_account_creation_policy_env(tmp_path) -> None:
     settings = load_settings(
         environ={ENV_ACCOUNT_CREATION_POLICY: "public-signup"},
@@ -932,6 +937,52 @@ def test_authentication_ceremony_finalisation_rejects_inactive_user() -> None:
         async with session_scope(web_app.state.database.session_factory) as session:
             result = await session.execute(select(AccessToken))
             assert result.scalars().all() == []
+
+    try:
+        asyncio.run(assert_finalisation())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_authentication_ceremony_finalisation_reloads_user_state() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_finalisation() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            user = await manager.create(
+                UserCreate(
+                    email="stale-ceremony@example.com", password="correct horse"
+                ),
+                safe=True,
+            )
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            current_user = await session.get(User, user.id)
+            assert current_user is not None
+            current_user.is_active = False
+            await session.commit()
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.complete_authentication_ceremony(request, user)
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INACTIVE_USER
+        assert result.value is None
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            token_result = await session.execute(select(AccessToken))
+            assert token_result.scalars().all() == []
 
     try:
         asyncio.run(assert_finalisation())
