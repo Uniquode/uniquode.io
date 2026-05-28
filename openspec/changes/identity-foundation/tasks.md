@@ -21,7 +21,7 @@
 
 ## 2. Deferred Identity Foundation Sub-Specs
 
-- [ ] 2.1 Define the baseline local identity sub-spec after `identity-refactor`
+- [x] 2.1 Define the baseline local identity sub-spec after `identity-refactor`
   lands.
 - [ ] 2.2 Define the persistent development database sub-spec for `UT-178`
   separately from the structural refactor.
@@ -34,3 +34,35 @@
   support so independent modules such as `auth_ext` can provide base templates
   while applications can override them without moving template ownership into
   this slice.
+
+## 4. `identity-authentication` Sub-Spec / `UT-207`
+
+- [x] 4.1 Audit the current authentication implementation against the
+  `identity-authentication` spec and record the baseline plan in
+  `.todo/identity-authentication-plan.md`.
+- [x] 4.2 Tighten the `identity-authentication` spec and design around the
+  authentication ceremony model, optional public signup, and global
+  inactive-account eligibility.
+- [x] 4.3 Add minimal `auth_ext` ceremony result/finalisation APIs so password,
+  future passkey, future MFA, and future provider paths can all complete login
+  through the same session-issuance boundary.
+- [x] 4.4 Route host password login through ceremony finalisation while
+  preserving the current invalid-credential response, same-origin return target
+  handling, and cookie-backed session behaviour.
+- [x] 4.5 Centralise active-account eligibility checks before session issuance,
+  current-user resolution, reset-password completion, verification completion,
+  and future authenticator completion paths.
+- [x] 4.6 Add account creation policy support for explicitly enabled public
+  signup while keeping `admin-created` as the default.
+- [x] 4.7 Add host-owned signup routing and templates only when public signup is
+  enabled, using FastAPI Users account creation primitives through the
+  `auth_ext` boundary.
+- [x] 4.8 Keep TOTP, WebAuthn/passkeys, recovery codes, and external OAuth2
+  providers as ceremony extension points only in this slice; do not implement
+  their concrete authenticators yet.
+- [x] 4.9 Add focused behaviour tests for ceremony finalisation, inactive-account
+  exclusion, disabled/enabled signup policy, and preservation of existing
+  browser-session, reset-password, and verification flows.
+- [x] 4.10 Run `uv run ruff format --check`, `uv run ruff check`,
+  `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
+  `uv run openspec validate identity-foundation --strict`.

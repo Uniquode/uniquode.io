@@ -8,7 +8,7 @@ from uniquode.web.dispatcher import register_html_routes
 
 def register_routes(app: FastAPI) -> None:
     public_route_set = build_public_route_set()
-    identity_route_set = build_identity_route_set()
+    identity_route_set = build_identity_route_set(app.state.identity_options)
     app.include_router(health_router)
     register_html_routes(app, app.state.html_dispatcher, public_route_set.page_routes)
     register_html_routes(app, app.state.html_dispatcher, identity_route_set.page_routes)

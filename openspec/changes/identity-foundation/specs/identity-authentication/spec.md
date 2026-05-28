@@ -22,12 +22,50 @@ The system SHALL use FastAPI Users for the baseline local account lifecycle and 
 - **WHEN** FastAPI Users provides account lifecycle or authentication primitives
 - **THEN** application code still owns account creation policy, user-facing templates, email delivery, redirects, and project-specific error handling
 
+### Requirement: Baseline authentication ceremony
+The system SHALL model login as an authentication ceremony that can include
+passwords, passkeys, MFA codes, recovery codes, or later provider callbacks
+before final browser authentication state is established.
+
+#### Scenario: Login surface supports multiple authenticators
+- **WHEN** a user reaches the login surface
+- **THEN** the system can offer available authenticators such as password
+  sign-in and future passkey challenges without requiring separate login
+  surfaces
+
+#### Scenario: Session is issued only after ceremony completion
+- **WHEN** an authentication ceremony has intermediate successful steps but
+  still requires another authenticator
+- **THEN** the system does not establish final browser authentication state
+  until the configured ceremony requirements are satisfied
+
+#### Scenario: Inactive accounts cannot complete a ceremony
+- **WHEN** any authentication ceremony step resolves to an inactive local user
+- **THEN** the system rejects or neutralises the step before final browser
+  authentication state can be established
+
+#### Scenario: Finalisation rechecks account eligibility
+- **WHEN** the system is about to issue final browser authentication state
+- **THEN** it rechecks that the local user is active and eligible rather than
+  trusting an earlier ceremony step
+
 ### Requirement: Password-based local sign-in
-The system SHALL provide password-based local sign-in for local user accounts through the FastAPI Users identity boundary.
+The system SHALL provide password-based local sign-in for local user accounts as
+one possible step in the authentication ceremony through the FastAPI Users
+identity boundary.
 
 #### Scenario: Valid credentials create authenticated browser state
-- **WHEN** an active local user submits valid password credentials
-- **THEN** the system authenticates the local account and establishes the configured browser authentication state
+- **WHEN** an active local user submits valid password credentials and no
+  additional authenticator is required
+- **THEN** the system authenticates the local account and establishes the
+  configured browser authentication state
+
+#### Scenario: Valid credentials can continue the ceremony
+- **WHEN** an active local user submits valid password credentials and policy
+  requires another authenticator
+- **THEN** the system keeps the authentication ceremony incomplete and requests
+  the next required authenticator instead of issuing final browser
+  authentication state
 
 #### Scenario: Invalid credentials do not authenticate
 - **WHEN** a login attempt submits invalid credentials
@@ -37,6 +75,12 @@ The system SHALL provide password-based local sign-in for local user accounts th
 - **WHEN** an inactive local user submits valid password credentials
 - **THEN** the system rejects the attempt without establishing authenticated
   browser state
+
+#### Scenario: Blank passwords are not accepted
+- **WHEN** a password-based account creation or reset flow receives an empty or
+  whitespace-only password
+- **THEN** the identity boundary rejects the password without storing usable
+  password credentials
 
 #### Scenario: Login redirects stay same-origin
 - **WHEN** a login request includes a return target
@@ -76,9 +120,40 @@ The system SHALL provide password reset and email verification flows with applic
 - **THEN** the system returns the same neutral public response without exposing
   account state through status codes
 
+#### Scenario: Inactive accounts cannot complete token flows
+- **WHEN** a password reset or verification confirmation token resolves to an
+  inactive local user
+- **THEN** the system rejects the confirmation without activating,
+  authenticating, or otherwise making the account eligible
+
+#### Scenario: Public token confirmations preserve internal failure reasons
+- **WHEN** a password reset or verification confirmation fails
+- **THEN** the identity boundary can expose branchable internal failure reasons
+  while public routes still return neutral user-facing responses
+
 #### Scenario: Library does not own email delivery
 - **WHEN** email-related account flows are implemented
 - **THEN** the application provides sender configuration, message templates, delivery integration, and throttling policy
+
+### Requirement: Optional public signup
+The system SHALL keep public self-registration disabled by default while
+allowing the host application to enable a public signup flow through explicit
+identity policy.
+
+#### Scenario: Public signup disabled by default
+- **WHEN** the application uses the default account creation policy
+- **THEN** public signup routes or flows are not exposed
+
+#### Scenario: Public signup enabled intentionally
+- **WHEN** the account creation policy explicitly allows public signup
+- **THEN** the application can expose a host-owned signup route that creates a
+  local account through the identity boundary
+
+#### Scenario: Signup follows account eligibility policy
+- **WHEN** a public signup flow creates a local account
+- **THEN** account activation, verification, and session issuance follow the
+  configured identity policy rather than implicitly authenticating every newly
+  created account
 
 ### Requirement: Identity token signing secrets
 The system SHALL require deployment-specific reset-password and verification token signing secrets outside local development.
@@ -118,9 +193,17 @@ The system SHALL define a bootstrap mechanism for creating the initial administr
 ### Requirement: Advanced authentication extension points
 The system SHALL reserve explicit extension points for TOTP, WebAuthn/passkeys, recovery codes, and linked external identities without requiring those features in the first local-user implementation.
 
-#### Scenario: Baseline login can be extended by second factor
-- **WHEN** future policy requires a second factor for a user
-- **THEN** the identity foundation can route successful primary authentication into an advanced-authentication challenge before final login completion
+#### Scenario: Baseline ceremony can require additional authenticators
+- **WHEN** future policy requires TOTP, WebAuthn/passkey, recovery-code, or
+  another authenticator for a user
+- **THEN** the identity foundation can keep the authentication ceremony open
+  until the required authenticator is satisfied
+
+#### Scenario: Passkey can participate at login
+- **WHEN** future passkey support is enabled for a user
+- **THEN** the login surface can offer a passkey challenge as part of the
+  authentication ceremony before or instead of password entry where policy
+  allows
 
 #### Scenario: Linked identity storage is planned
 - **WHEN** future OAuth provider login support is implemented

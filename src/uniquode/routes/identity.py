@@ -2,7 +2,7 @@ from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import RedirectResponse, Response
 from starlette.datastructures import FormData
 
@@ -10,7 +10,8 @@ from auth_ext.options import IdentityOptions
 from auth_ext.sessions import (
     authenticate_user,
     clear_session_cookie,
-    create_session_token,
+    complete_authentication_ceremony,
+    create_local_user_from_signup,
     destroy_session_token,
     request_password_reset,
     request_verification,
@@ -69,6 +70,10 @@ def _identity_options(request: Request) -> IdentityOptions:
     return options
 
 
+def _public_signup_enabled(request: Request) -> bool:
+    return _identity_options(request).account_creation_policy == "public-signup"
+
+
 def normalise_return_to(value: str | None, default: str = "/account") -> str:
     candidate = (value or "").strip()
     if (
@@ -95,6 +100,7 @@ class LoginPageView(HtmlView):
         context = _identity_context(
             request,
             page_title="Sign in",
+            public_signup_enabled=_public_signup_enabled(request),
             return_to=normalise_return_to(request.query_params.get("return_to")),
         )
         return renderer.render_page(self.template_name, request, context)
@@ -126,9 +132,28 @@ class LoginSubmitView(HtmlView):
                 status_code=401,
             )
 
-        token = await create_session_token(request, user)
+        ceremony_result = await complete_authentication_ceremony(request, user)
+        if ceremony_result.is_failure() or ceremony_result.value is None:
+            context = _identity_context(
+                request,
+                page_title="Sign in",
+                email=email,
+                return_to=return_to,
+                form_error="Email or password is incorrect.",
+            )
+            return renderer.render_page(
+                self.template_name,
+                request,
+                context,
+                status_code=401,
+            )
+
         response = RedirectResponse(url=return_to, status_code=303)
-        set_session_cookie(response, token, _identity_options(request))
+        set_session_cookie(
+            response,
+            ceremony_result.value,
+            _identity_options(request),
+        )
         return response
 
 
@@ -139,6 +164,52 @@ class LogoutSubmitView(HtmlView):
         response = RedirectResponse(url="/", status_code=303)
         clear_session_cookie(response, _identity_options(request))
         return response
+
+
+@dataclass(frozen=True, slots=True)
+class SignupPageView(HtmlView):
+    template_name: str = "identity/pages/signup.html"
+
+    async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
+        if not _public_signup_enabled(request):
+            raise HTTPException(status_code=404)
+
+        context = _identity_context(request, page_title="Create account")
+        return renderer.render_page(self.template_name, request, context)
+
+
+@dataclass(frozen=True, slots=True)
+class SignupSubmitView(HtmlView):
+    template_name: str = "identity/pages/signup.html"
+
+    async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
+        if not _public_signup_enabled(request):
+            raise HTTPException(status_code=404)
+
+        form_data = await request_form_data(request)
+        email = _form_value(form_data, "email").strip()
+        password = _form_value(form_data, "password")
+        creation_result = await create_local_user_from_signup(
+            request,
+            email,
+            password,
+        )
+        created = creation_result.is_ok()
+        context = _identity_context(
+            request,
+            page_title="Create account",
+            email=email,
+            form_message=("Account created. You can now sign in." if created else None),
+            form_error=(
+                None if created else "Unable to create account with those details."
+            ),
+        )
+        return renderer.render_page(
+            self.template_name,
+            request,
+            context,
+            status_code=201 if created else 400,
+        )
 
 
 @dataclass(frozen=True, slots=True)
@@ -256,7 +327,8 @@ class VerificationConfirmView(HtmlView):
     async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
         form_data = await request_form_data(request)
         token = _form_value(form_data, "token")
-        did_verify = await verify_user(request, token)
+        verification_result = await verify_user(request, token)
+        did_verify = verification_result.is_ok()
         context = _identity_context(
             request,
             page_title="Verify email",
@@ -273,7 +345,9 @@ class VerificationConfirmView(HtmlView):
         )
 
 
-def build_identity_route_set() -> IdentityRouteSet:
+def build_identity_route_set(
+    options: IdentityOptions | None = None,
+) -> IdentityRouteSet:
     normalised_api_prefix = API_PATH_PREFIX.rstrip("/")
     api_router = APIRouter(prefix=f"{normalised_api_prefix}/identity")
     api_router.add_api_route(
@@ -284,22 +358,44 @@ def build_identity_route_set() -> IdentityRouteSet:
         name="identity:api:current-user",
     )
 
-    return IdentityRouteSet(
-        page_routes=(
-            HtmlRouteDefinition(
-                path="/login",
-                name="identity:login",
-                methods=("GET",),
-                surface="page",
-                view=LoginPageView(),
-            ),
-            HtmlRouteDefinition(
-                path="/login",
-                name="identity:login-submit",
-                methods=("POST",),
-                surface="page",
-                view=LoginSubmitView(),
-            ),
+    page_routes = [
+        HtmlRouteDefinition(
+            path="/login",
+            name="identity:login",
+            methods=("GET",),
+            surface="page",
+            view=LoginPageView(),
+        ),
+        HtmlRouteDefinition(
+            path="/login",
+            name="identity:login-submit",
+            methods=("POST",),
+            surface="page",
+            view=LoginSubmitView(),
+        ),
+    ]
+    if options is not None and options.account_creation_policy == "public-signup":
+        page_routes.extend(
+            [
+                HtmlRouteDefinition(
+                    path="/signup",
+                    name="identity:signup",
+                    methods=("GET",),
+                    surface="page",
+                    view=SignupPageView(),
+                ),
+                HtmlRouteDefinition(
+                    path="/signup",
+                    name="identity:signup-submit",
+                    methods=("POST",),
+                    surface="page",
+                    view=SignupSubmitView(),
+                ),
+            ]
+        )
+
+    page_routes.extend(
+        [
             HtmlRouteDefinition(
                 path="/logout",
                 name="identity:logout-page",
@@ -363,6 +459,10 @@ def build_identity_route_set() -> IdentityRouteSet:
                 surface="page",
                 view=VerificationConfirmView(),
             ),
-        ),
+        ]
+    )
+
+    return IdentityRouteSet(
+        page_routes=tuple(page_routes),
         api_router=api_router,
     )
