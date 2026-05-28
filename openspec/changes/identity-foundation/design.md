@@ -120,6 +120,14 @@ persistence contracts, service APIs, and FastAPI/FastAPI Users integration.
 identity options, selects concrete persistence adapters, mounts routers, and
 renders the site-specific HTML interface.
 
+`auth_ext` is currently incubated inside this repository, but its API should be
+shaped as if it may later be extracted as a standalone
+`fastapi-users-auth-ext` distribution. The top-level package API should stay
+focused on host-facing, storage-agnostic concepts. SQLAlchemy is the first
+concrete adapter, not the package's core abstraction, so SQLAlchemy-specific
+models and helpers should remain under the adapter boundary unless current host
+integration has no practical alternative.
+
 Rationale: the identity model is valuable beyond this one site. Keeping
 `auth_ext` host-agnostic prevents the current application from shaping APIs
 that should be portable across FastAPI applications.
@@ -180,6 +188,11 @@ or a specific HTML layout.
 `uniquode` owns server-rendered pages, partials, redirects, and presentation.
 The host can call package services directly or mount package routers where that
 is appropriate, but user-facing templates remain host-owned.
+
+Package-owned templates are intentionally deferred. Future work should extend
+the template engine so independent modules such as `auth_ext` can provide base
+templates while the application can override them. That loader and override
+model is outside this identity package slice.
 
 ### Gate Integrations Through Identity Options
 

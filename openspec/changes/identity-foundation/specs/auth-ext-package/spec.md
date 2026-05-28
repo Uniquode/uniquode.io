@@ -5,6 +5,11 @@ The system SHALL expand `auth_ext` into a reusable identity and authentication
 package that is independent of the `uniquode` application and suitable for use
 by other FastAPI applications.
 
+#### Scenario: Package is incubated in repository
+- **WHEN** `auth_ext` is developed before standalone publication
+- **THEN** it can remain inside the current source tree while preserving an API
+  shape suitable for later extraction as `fastapi-users-auth-ext`
+
 #### Scenario: Package does not import host application code
 - **WHEN** a developer inspects the `auth_ext` package
 - **THEN** it does not import from `uniquode` or depend on application
@@ -15,6 +20,12 @@ by other FastAPI applications.
   protocols are needed
 - **THEN** those contracts are defined by `auth_ext` rather than by the host
   application
+
+#### Scenario: Public API avoids adapter leakage
+- **WHEN** host applications import from the top-level `auth_ext` package
+- **THEN** the exported API favours host-facing, storage-agnostic concepts and
+  does not expose SQLAlchemy-specific implementation details unless a current
+  integration requirement forces that exposure
 
 #### Scenario: Host application integrates package
 - **WHEN** `uniquode` needs identity capabilities
@@ -35,6 +46,12 @@ dependency, user-manager, and authentication-backend integration points.
 - **THEN** `auth_ext` exposes stable host-facing services, options,
   and integration helpers rather than requiring hosts to depend on private
   FastAPI Users details
+
+#### Scenario: Flow results are presentation-neutral
+- **WHEN** `auth_ext` exposes flow helpers for authentication or account
+  lifecycle behaviour
+- **THEN** those helpers return package-owned outcomes or values that do not
+  depend on templates, redirects, htmx, or JSON response formats
 
 #### Scenario: Route replacement is explicit
 - **WHEN** an `auth_ext` flow must replace a FastAPI Users route such as
@@ -62,6 +79,12 @@ rather than coupling its core to a specific host application database module.
 - **WHEN** the first host integration is implemented
 - **THEN** the package provides or supports a SQLAlchemy async adapter suitable
   for SQLite and PostgreSQL
+
+#### Scenario: SQLAlchemy is not the core abstraction
+- **WHEN** package core code needs storage access
+- **THEN** it depends on narrow `auth_ext` contracts where practical, while
+  SQLAlchemy-specific models and helpers remain in the SQLAlchemy adapter
+  boundary
 
 ### Requirement: Advanced authentication extension points
 The `auth_ext` package SHALL define extension points for MFA and advanced
@@ -95,3 +118,9 @@ The `auth_ext` package SHALL avoid imposing product UI assumptions.
 - **WHEN** a flow needs user-facing text, email content, or page structure
 - **THEN** the host application supplies presentation through its own templates
   and delivery mechanisms
+
+#### Scenario: Package templates are deferred
+- **WHEN** reusable package-owned base templates are considered
+- **THEN** they are deferred until a later template-engine/module override
+  change defines how independent modules provide defaults and host
+  applications override them
