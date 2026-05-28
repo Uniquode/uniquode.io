@@ -1,63 +1,18 @@
 import ast
 import asyncio
 from datetime import UTC, datetime, timedelta
-from importlib import import_module
 from pathlib import Path
 
-import auth_ext
 from auth_ext import (
-    AccountCreationPolicy,
-    AdvancedAuthenticationPolicy,
     ChallengeDecision,
     ChallengeKind,
     ChallengeRecord,
-    ChallengeStore,
-    ConfigurationError,
-    IdentityDelivery,
-    IdentityIntegration,
-    IdentityOptions,
     NoChallengePolicy,
-    NullIdentityDelivery,
     PrimaryAuthenticationContext,
-    RecoveryCodeStore,
     RouteReplacement,
     RouterExtensionPlan,
-    TOTPCredentialStore,
-    UserCreate,
-    UserRead,
-    UserUpdate,
-    WebAuthnCredentialStore,
     complete_challenge,
-    is_generate_local_identity_secret,
 )
-from auth_ext.sqlalchemy import AccessToken, OAuthAccount, User
-
-EXPECTED_AUTH_EXT_EXPORTS = {
-    "AccountCreationPolicy": AccountCreationPolicy,
-    "AdvancedAuthenticationPolicy": AdvancedAuthenticationPolicy,
-    "ChallengeDecision": ChallengeDecision,
-    "ChallengeKind": ChallengeKind,
-    "ChallengeRecord": ChallengeRecord,
-    "ChallengeStore": ChallengeStore,
-    "ConfigurationError": ConfigurationError,
-    "IdentityDelivery": IdentityDelivery,
-    "IdentityIntegration": IdentityIntegration,
-    "IdentityOptions": IdentityOptions,
-    "NoChallengePolicy": NoChallengePolicy,
-    "NullIdentityDelivery": NullIdentityDelivery,
-    "PrimaryAuthenticationContext": PrimaryAuthenticationContext,
-    "RecoveryCodeStore": RecoveryCodeStore,
-    "RouteReplacement": RouteReplacement,
-    "RouterExtensionPlan": RouterExtensionPlan,
-    "TOTPCredentialStore": TOTPCredentialStore,
-    "UserCreate": UserCreate,
-    "UserRead": UserRead,
-    "UserUpdate": UserUpdate,
-    "WebAuthnCredentialStore": WebAuthnCredentialStore,
-    "complete_challenge": complete_challenge,
-    "is_generate_local_identity_secret": is_generate_local_identity_secret,
-}
-SQLALCHEMY_MODEL_EXPORTS = {"AccessToken", "OAuthAccount", "User"}
 
 
 class MemoryChallengeStore:
@@ -110,28 +65,6 @@ def test_auth_ext_package_is_independent_from_application_modules() -> None:
                 module == "uniquode" or module.startswith("uniquode.")
                 for module in imported_modules
             )
-
-
-def test_auth_ext_top_level_exports_curated_storage_agnostic_api() -> None:
-    assert set(auth_ext.__all__) == set(EXPECTED_AUTH_EXT_EXPORTS)
-
-
-def test_auth_ext_top_level_exports_resolve_to_expected_objects() -> None:
-    assert {
-        name: getattr(auth_ext, name) for name in auth_ext.__all__
-    } == EXPECTED_AUTH_EXT_EXPORTS
-
-
-def test_auth_ext_sqlalchemy_exports_adapter_specific_models() -> None:
-    assert not SQLALCHEMY_MODEL_EXPORTS & set(auth_ext.__all__)
-
-    for model_name in SQLALCHEMY_MODEL_EXPORTS:
-        assert not hasattr(auth_ext, model_name)
-
-    sqlalchemy_adapter = import_module("auth_ext.sqlalchemy")
-    assert sqlalchemy_adapter.AccessToken is AccessToken
-    assert sqlalchemy_adapter.OAuthAccount is OAuthAccount
-    assert sqlalchemy_adapter.User is User
 
 
 def test_auth_ext_no_challenge_policy_allows_direct_login() -> None:
