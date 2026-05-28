@@ -121,6 +121,7 @@ class LoginSubmitView(HtmlView):
             context = _identity_context(
                 request,
                 page_title="Sign in",
+                public_signup_enabled=_public_signup_enabled(request),
                 email=email,
                 return_to=return_to,
                 form_error="Email or password is incorrect.",
@@ -137,6 +138,7 @@ class LoginSubmitView(HtmlView):
             context = _identity_context(
                 request,
                 page_title="Sign in",
+                public_signup_enabled=_public_signup_enabled(request),
                 email=email,
                 return_to=return_to,
                 form_error="Email or password is incorrect.",
@@ -374,6 +376,8 @@ def build_identity_route_set(
             view=LoginSubmitView(),
         ),
     ]
+    # Route exposure is fixed at startup; the views still re-check runtime
+    # policy in case host state is mutated after registration.
     if options is not None and options.account_creation_policy == "public-signup":
         page_routes.extend(
             [

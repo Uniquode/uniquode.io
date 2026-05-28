@@ -1506,6 +1506,41 @@ def test_identity_login_rejects_invalid_credentials() -> None:
         asyncio.run(close_database(web_app.state.database))
 
 
+def test_identity_login_failure_preserves_public_signup_link() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+
+        response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "incorrect",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert response.status_code == 401
+        assert "Create account" in response.text
+        assert str(web_app.url_path_for("identity:signup")) in response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 def test_identity_login_rejects_inactive_user() -> None:
     web_app = create_app(
         Settings(
