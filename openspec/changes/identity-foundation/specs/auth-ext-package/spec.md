@@ -90,16 +90,22 @@ rather than coupling its core to a specific host application database module.
 The `auth_ext` package SHALL define extension points for MFA and advanced
 authentication without requiring those features in the first structural slice.
 
-#### Scenario: MFA challenge can pause login
-- **WHEN** primary authentication succeeds and policy requires advanced
-  authentication
-- **THEN** the package can create short-lived challenge state instead of
+#### Scenario: Authentication ceremony can remain incomplete
+- **WHEN** an authentication ceremony has a successful password, passkey,
+  provider, or recovery step but policy still requires another authenticator
+- **THEN** the package can represent the next required step instead of
   immediately issuing final browser authentication state
 
-#### Scenario: Challenge completion can finish login
+#### Scenario: Challenge completion can finish ceremony
 - **WHEN** a user completes a valid TOTP, WebAuthn, or recovery-code challenge
-- **THEN** the package can complete login through the configured FastAPI Users
-  authentication backend
+- **THEN** the package can complete the authentication ceremony through the
+  configured FastAPI Users authentication backend when policy requirements are
+  satisfied
+
+#### Scenario: Passkey can be a login-screen authenticator
+- **WHEN** WebAuthn/passkey support is enabled
+- **THEN** the package can expose passkey challenge state that a host login
+  surface can offer before or instead of password entry where policy allows
 
 #### Scenario: Advanced credential storage remains portable
 - **WHEN** TOTP, WebAuthn, or recovery-code state is introduced

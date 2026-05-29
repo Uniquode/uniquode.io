@@ -215,6 +215,25 @@ Rationale: this matches the HTML-first browser model better than a purely
 stateless JWT cookie, keeps authenticated browser state revocable, and still
 uses FastAPI Users' public authentication-backend abstraction.
 
+### Model Login As An Authentication Ceremony
+
+Login should be modelled as an authentication ceremony that can contain one or
+more authentication steps before final browser session state is issued. A
+password check, passkey challenge, TOTP code, recovery code, or future external
+provider callback can all participate in that ceremony.
+
+Password authentication success must not be treated as unconditional login
+completion. If policy requires another factor, password success is an
+intermediate ceremony outcome that keeps the user on the login surface and asks
+for the next required authenticator. Likewise, passkey authentication should be
+available directly from the login surface and may complete the ceremony without
+password or MFA steps when policy allows.
+
+This keeps MFA and passkeys from being tacked onto an already-completed login.
+`auth_ext` extension points should therefore describe ceremony state,
+available authenticators, required next steps, and final completion rather than
+only exposing an "after password login" hook.
+
 ### Protect Server-Rendered Forms With Shared CSRF Checks
 
 Server-rendered page and partial routes must use a shared CSRF mechanism for
@@ -227,23 +246,43 @@ The CSRF nonce cookie is HttpOnly and SameSite=Strict. Local development may use
 an insecure cookie for HTTP-only development servers, but non-local deployments
 must use a secure CSRF cookie and a stable explicitly configured signing secret.
 
-### Keep First Account Creation Closed
+### Keep Public Signup Explicitly Gated
 
-The first implementation uses an `admin-created` account creation policy.
-Public self-registration is not exposed. New local accounts are created through
-controlled administrative/bootstrap paths until invitation or self-registration
-requirements are accepted explicitly.
+The default implementation uses an `admin-created` account creation policy.
+Public self-registration is not exposed unless the host application explicitly
+enables it through identity options. If public signup is enabled, the host owns
+the signup route, templates, redirects, and post-create policy while `auth_ext`
+provides the identity boundary around local account creation.
+
+Newly created accounts must still follow the configured activation,
+verification, and ceremony-completion policy. Signup should not imply immediate
+browser authentication unless that is explicitly allowed by the account policy.
 
 Initial administrative bootstrap must use a database-enforced singleton claim,
 not only an application-level "does an admin exist?" check. This keeps the
 first-admin path single-writer across multiple processes or tasks.
 
+### Treat Inactive Accounts As Globally Ineligible
+
+Inactive local accounts must be excluded at every authentication boundary. That
+includes password sign-in, existing browser-session resolution, password reset
+and verification token completion, future passkey and MFA challenge
+completion, future external-provider callbacks, and final ceremony
+finalisation.
+
+The implementation should centralise this check as close as possible to
+identity-session finalisation and token completion helpers. Individual routes
+can still provide neutral responses, but they should not each carry their own
+slightly different definition of account eligibility.
+
 ### Treat Advanced Authentication as Identity Package Scope
 
 TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows are `auth_ext`
-responsibilities. They may be staged behind baseline local authentication, but
-their storage protocols, challenge lifecycle, and login completion hooks should
-be designed inside the reusable package boundary.
+responsibilities. They are not implemented in the baseline local-user slice,
+but the baseline login ceremony must leave room for them as first-class
+authenticators rather than bolt-on post-login checks. Their storage protocols,
+ceremony state, challenge lifecycle, and completion rules should be designed
+inside the reusable package boundary when those feature slices are selected.
 
 Rationale: advanced authentication is part of the identity model, not a
 `uniquode` site feature. Hosts should be able to reuse these `auth_ext`
@@ -291,9 +330,14 @@ tokens, consent, and scopes through explicit interfaces.
 - [Risk] Optional integrations can be accidentally exposed before they are
   configured or supported. Mitigation: require `auth_ext` feature options for
   integration routes and account-linking flows.
-- [Risk] MFA login can accidentally bypass second-factor policy through OAuth or
-  another primary login path. Mitigation: centralise the post-primary-auth
-  decision that chooses direct login versus challenge creation.
+- [Risk] MFA login can accidentally bypass second-factor policy through a
+  password, passkey, OAuth, or recovery path. Mitigation: centralise final
+  authentication ceremony completion so no browser session is issued until the
+  configured policy requirements have been satisfied.
+- [Risk] Inactive-account checks can drift across password, session, token, and
+  future provider/challenge paths. Mitigation: centralise active-account
+  eligibility checks in identity helpers used before final session issuance and
+  token-flow completion.
 
 ## Migration Plan
 
@@ -314,9 +358,11 @@ tokens, consent, and scopes through explicit interfaces.
 7. Add FastAPI Users integration in `auth_ext`: local user model,
    access-token model, database adapter wiring, database-backed cookie auth
    backend, and user manager.
-8. Add package services and host-facing APIs for login, logout, current-user,
-   password reset, email verification, and initial administrative bootstrap.
+8. Add package services and host-facing APIs for the baseline authentication
+   ceremony, logout, current-user, password reset, email verification, and
+   initial administrative bootstrap.
 9. Add `uniquode` host integration that adapts settings, selects persistence,
    mounts routes, and renders server-owned identity pages.
-10. Keep advanced-authentication extension skeletons inside the reusable
+10. Add explicitly gated public signup only when account policy enables it.
+11. Keep advanced-authentication extension skeletons inside the reusable
     `auth_ext` package boundary.

@@ -6,7 +6,9 @@ Status: Provisional
 
 ## Context
 
-The application needs a real user model rather than a single administrative login. Users must be able to sign in through local credentials and through federated identity providers.
+The application needs a real user model rather than a single administrative
+login. Users must be able to sign in through local credentials, passkeys, and
+federated identity providers.
 
 The platform is browser-first and session-oriented for human users, but the project also expects API consumers and future OAuth2-based integrations.
 
@@ -16,6 +18,8 @@ The system must support:
 - account creation through external login providers that creates a local account;
 - linked external identities for a local user;
 - local sign-in through passwords and future passkeys;
+- login ceremonies that can offer password, passkey, external-provider, TOTP,
+  recovery-code, or later authenticator steps before final session issuance;
 - additional authentication factors, including TOTP;
 - browser sessions for user login;
 - API access through sessions and/or API tokens;
@@ -44,6 +48,18 @@ cookies.
 
 Support local password authentication for local accounts.
 
+Model browser login as an authentication ceremony rather than as a single
+password-first flow. A password check, passkey challenge, external-provider
+callback, TOTP code, recovery code, or other authenticator can be one step in
+that ceremony. Final browser session state is issued only when the configured
+policy requirements for the ceremony are satisfied.
+
+Password success is therefore not always login completion. If policy requires
+another authenticator, password success leaves the ceremony incomplete and the
+login surface asks for the next required step. Passkeys and trusted external
+providers may also be offered directly from the login surface and can complete
+the ceremony without password or local MFA when policy allows.
+
 Use FastAPI Users for baseline local account lifecycle and authentication primitives where they fit the project identity model.
 
 Keep application ownership of account creation policy, user-facing templates, email delivery, redirects, and project-specific error handling around FastAPI Users flows.
@@ -60,6 +76,11 @@ Support API access through session-backed requests where appropriate and through
 
 Support OAuth2 client behaviour for external identity-provider integration.
 
+Allow configured external OAuth2 providers to participate in the authentication
+ceremony. Provider success may complete the ceremony directly when the provider
+is trusted for the requested policy, or may lead to additional local
+authentication steps when policy requires them.
+
 Support local OAuth2 authorisation capability where project requirements call for it, while keeping the local account as the canonical user identity.
 
 Design provider integration behind an extension boundary so additional providers such as Google, Apple, GitHub, and others can be added without changing the local account model.
@@ -72,11 +93,22 @@ The project gets one canonical user model even when multiple login methods are a
 
 Account linking remains explicit, which reduces the risk of treating provider identities as the application's primary source of truth.
 
-Session-first browser authentication fits the HTML-first UI architecture and keeps ordinary user login flows straightforward. Using database-backed FastAPI Users session tokens keeps browser authentication state revocable server-side rather than relying on a purely stateless JWT cookie.
+Session-first browser authentication fits the HTML-first UI architecture and
+keeps ordinary user login flows straightforward once an authentication ceremony
+has completed. Using database-backed FastAPI Users session tokens keeps browser
+authentication state revocable server-side rather than relying on a purely
+stateless JWT cookie.
 
 Using FastAPI Users reduces custom implementation for common identity lifecycle features, but it does not remove application responsibility for account policy, server-rendered UI, email delivery, and project-specific flow decisions.
 
-Adding passkeys and TOTP raises the complexity of the credential model, recovery flows, and administrative support, but it avoids painting the project into a password-only corner.
+Modelling login as a ceremony keeps passkeys, external providers, TOTP, and
+recovery codes from becoming bolt-on post-login checks. It also allows a single
+login surface to progressively offer or request the authenticators required by
+policy.
+
+Adding passkeys and TOTP raises the complexity of the credential model,
+recovery flows, and administrative support, but it avoids painting the project
+into a password-only corner.
 
 Keeping advanced authentication in `fastapi-users-auth-ext` creates a reusable boundary and prevents TOTP/WebAuthn challenge flow code from becoming tightly coupled to this application. The trade-off is that the addon must maintain compatibility with FastAPI Users public extension points.
 
@@ -90,6 +122,8 @@ API token support allows machine access without forcing browser-facing workflows
 
 - Whether API tokens belong only to users or may also belong to future system integrations or service accounts.
 - Whether first-time provider login should always create an account or whether some providers should require invitation or administrative approval.
+- Which external providers may satisfy local MFA policy by themselves and which
+  should require additional local authenticators.
 - What passkey and recovery flows are required before passkey support is considered production-ready.
 - Which external provider should be implemented first.
 - Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-ext`.
@@ -99,7 +133,8 @@ API token support allows machine access without forcing browser-facing workflows
 
 - Define the user, credential, session, external identity, and API token models.
 - Define local account bootstrap and administrative-user setup.
-- Define password, passkey, TOTP, account-linking, and recovery workflows.
+- Define authentication ceremony state and password, passkey, TOTP,
+  account-linking, provider, and recovery workflows.
 - Define the provider integration boundary and the first provider implementation slice.
 - Define the `fastapi-users-auth-ext` addon boundary and its initial storage protocols.
 - Define the internal `auth-provider` boundary after the authorisation model establishes groups, flags, and scopes.
@@ -107,3 +142,6 @@ API token support allows machine access without forcing browser-facing workflows
 ## Revision Notes
 
 - 2026-05-24: Added FastAPI Users as the baseline identity lifecycle dependency, introduced `fastapi-users-auth-ext` as the advanced-authentication addon boundary, and separated the future internal `auth-provider` OAuth2 provider boundary.
+- 2026-05-28: Reframed browser login as an authentication ceremony that can
+  include password, passkey, external-provider, TOTP, and recovery-code steps
+  before final session issuance.

@@ -4,11 +4,13 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 from auth_ext import (
+    ERROR_ALREADY_EXISTS,
     ChallengeDecision,
     ChallengeKind,
     ChallengeRecord,
     NoChallengePolicy,
     PrimaryAuthenticationContext,
+    Result,
     RouteReplacement,
     RouterExtensionPlan,
     complete_challenge,
@@ -65,6 +67,30 @@ def test_auth_ext_package_is_independent_from_application_modules() -> None:
                 module == "uniquode" or module.startswith("uniquode.")
                 for module in imported_modules
             )
+
+
+def test_auth_ext_result_carries_success_values_and_failure_reason() -> None:
+    result = Result.ok({"id": "user-1"})
+
+    assert result.is_ok() is True
+    assert result.is_failure() is False
+    assert result.value == {"id": "user-1"}
+    assert result.error_type is None
+
+    failure = Result.failure(ERROR_ALREADY_EXISTS, "Already exists.")
+
+    assert failure.is_failure() is True
+    assert failure.is_ok() is False
+    assert failure.error_type == ERROR_ALREADY_EXISTS
+    assert failure.message == "Already exists."
+    assert failure.value is None
+
+    empty_success = Result.ok()
+
+    assert empty_success.is_ok() is True
+    assert empty_success.is_failure() is False
+    assert empty_success.value is None
+    assert empty_success.error_type is None
 
 
 def test_auth_ext_no_challenge_policy_allows_direct_login() -> None:

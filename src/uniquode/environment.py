@@ -20,6 +20,7 @@ class EnvironmentSetting:
     value_type: EnvironmentValueType = "str"
 
 
+ENV_ACCOUNT_CREATION_POLICY: Final = "ACCOUNT_CREATION_POLICY"
 ENV_ADVANCED_AUTH: Final = "ADVANCED_AUTH"
 ENV_ALEMBIC_CONFIG: Final = "ALEMBIC_CONFIG"
 ENV_APP_ENV: Final = "APP_ENV"
@@ -52,6 +53,7 @@ SETTINGS_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
     EnvironmentSetting(ENV_TEMPLATE_ROOT, "template_root", "path"),
 )
 IDENTITY_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
+    EnvironmentSetting(ENV_ACCOUNT_CREATION_POLICY, "account_creation_policy"),
     EnvironmentSetting(ENV_ADVANCED_AUTH, "advanced_authentication_enabled", "bool"),
     EnvironmentSetting(ENV_OAUTH_LINKING, "oauth_account_linking_enabled", "bool"),
     EnvironmentSetting(ENV_RESET_SECRET, "reset_password_token_secret"),

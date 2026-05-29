@@ -15,6 +15,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from fastapi.testclient import TestClient
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
+from fastapi_users.exceptions import InvalidPasswordException
 from sqlalchemy import func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
@@ -24,6 +25,14 @@ import auth_ext.sessions as identity_users
 import uniquode.asgi as asgi_module
 import uniquode.environment as environment_module
 import uniquode.runserver as runserver_module
+from auth_ext import (
+    ERROR_ALREADY_EXISTS,
+    ERROR_IDENTITY_CHANGED,
+    ERROR_INACTIVE_USER,
+    ERROR_INVALID_EMAIL,
+    ERROR_INVALID_PASSWORD,
+    ERROR_INVALID_TOKEN,
+)
 from auth_ext.bootstrap import (
     InitialAdminCredentials,
     bootstrap_initial_admin,
@@ -48,6 +57,7 @@ from uniquode.app import create_app
 from uniquode.asgi import app
 from uniquode.configuration import ConfigurationError
 from uniquode.environment import (
+    ENV_ACCOUNT_CREATION_POLICY,
     ENV_ADVANCED_AUTH,
     ENV_ALEMBIC_CONFIG,
     ENV_APP_ENV,
@@ -430,6 +440,27 @@ def test_settings_include_identity_options() -> None:
     assert options.integration_enabled("advanced-authentication") is False
 
 
+def test_identity_options_accept_public_signup_policy() -> None:
+    options = IdentityOptions(account_creation_policy="public-signup")
+
+    assert options.account_creation_policy == "public-signup"
+
+
+def test_identity_options_reject_invalid_account_creation_policy() -> None:
+    with pytest.raises(ConfigurationError, match="Account creation policy"):
+        IdentityOptions(account_creation_policy="public_signup")  # type: ignore[arg-type]
+
+
+def test_load_settings_reads_account_creation_policy_env(tmp_path) -> None:
+    settings = load_settings(
+        environ={ENV_ACCOUNT_CREATION_POLICY: "public-signup"},
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.identity_options.account_creation_policy == "public-signup"
+
+
 def test_identity_options_generate_local_token_secrets() -> None:
     first = IdentityOptions()
     second = IdentityOptions()
@@ -803,6 +834,162 @@ def test_database_strategy_persists_and_destroys_session_token() -> None:
         asyncio.run(close_database(engine))
 
 
+def test_user_manager_rejects_blank_passwords() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_password_validation() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            manager = create_user_manager(session, settings.identity_options)
+            with pytest.raises(InvalidPasswordException):
+                await manager.create(
+                    UserCreate(email="blank-password@example.com", password="   "),
+                    safe=True,
+                )
+
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+
+    try:
+        asyncio.run(assert_password_validation())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_authentication_ceremony_finalisation_creates_active_user_session() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_finalisation() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            user = await manager.create(
+                UserCreate(email="ceremony@example.com", password="correct horse"),
+                safe=True,
+            )
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.complete_authentication_ceremony(request, user)
+
+        assert result.is_ok() is True
+        assert result.value
+
+        session_request = app_request_with_session_cookie(
+            web_app,
+            session_cookie_name=web_app.state.settings.identity_options.session_cookie_name,
+            session_token=result.value,
+        )
+        resolved_user = await identity_users.resolve_current_user(session_request)
+        assert resolved_user is not None
+        assert resolved_user.email == "ceremony@example.com"
+
+    try:
+        asyncio.run(assert_finalisation())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_authentication_ceremony_finalisation_rejects_inactive_user() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_finalisation() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            user = await manager.create(
+                UserCreate(
+                    email="inactive-ceremony@example.com",
+                    password="correct horse",
+                    is_active=False,
+                ),
+                safe=False,
+            )
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.complete_authentication_ceremony(request, user)
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INACTIVE_USER
+        assert result.value is None
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            result = await session.execute(select(AccessToken))
+            assert result.scalars().all() == []
+
+    try:
+        asyncio.run(assert_finalisation())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_authentication_ceremony_finalisation_reloads_user_state() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_finalisation() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            user = await manager.create(
+                UserCreate(
+                    email="stale-ceremony@example.com", password="correct horse"
+                ),
+                safe=True,
+            )
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            current_user = await session.get(User, user.id)
+            assert current_user is not None
+            current_user.is_active = False
+            await session.commit()
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.complete_authentication_ceremony(request, user)
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INACTIVE_USER
+        assert result.value is None
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            token_result = await session.execute(select(AccessToken))
+            assert token_result.scalars().all() == []
+
+    try:
+        asyncio.run(assert_finalisation())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 class CaptureIdentityDelivery:
     def __init__(self) -> None:
         self.reset_tokens: list[tuple[str, str]] = []
@@ -944,6 +1131,259 @@ def test_identity_login_logout_and_current_user_routes() -> None:
 
         logged_out_user = client.get("/api/identity/current-user")
         assert logged_out_user.json() == {"authenticated": False}
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_is_not_exposed_by_default() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        client = TestClient(web_app, follow_redirects=False)
+
+        assert client.get("/signup").status_code == 404
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_route_rechecks_policy_when_mounted() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+    web_app.state.identity_options = IdentityOptions(session_cookie_secure=False)
+
+    try:
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+
+        assert client.get("/signup").status_code == 404
+        submit_response = client.post(
+            "/signup",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "signup@example.com",
+                    "password": "correct horse",
+                },
+            ),
+        )
+        assert submit_response.status_code == 404
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_enabled_creates_user_without_session() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    async def create_schema() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+    try:
+        asyncio.run(create_schema())
+        client = TestClient(web_app, follow_redirects=False)
+        signup_page = client.get("/signup")
+
+        assert signup_page.status_code == 200
+        assert "Create account" in signup_page.text
+
+        signup_response = client.post(
+            "/signup",
+            data=csrf_data(
+                signup_page,
+                {
+                    "email": "signup@example.com",
+                    "password": "correct horse",
+                },
+            ),
+        )
+
+        assert signup_response.status_code == 201
+        assert "Account created. You can now sign in." in signup_response.text
+        assert "uniquode_session" not in signup_response.cookies
+
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "signup@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert login_response.cookies["uniquode_session"]
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_reports_existing_account_to_caller() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    async def assert_duplicate_result() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        request = Request({"type": "http", "app": web_app})
+        first_result = await identity_users.create_local_user_from_signup(
+            request,
+            email="signup@example.com",
+            password="correct horse",
+        )
+        duplicate_result = await identity_users.create_local_user_from_signup(
+            request,
+            email="signup@example.com",
+            password="correct horse",
+        )
+
+        assert first_result.is_ok() is True
+        assert first_result.value is not None
+        assert isinstance(first_result.value["id"], str)
+        assert first_result.value["email"] == "signup@example.com"
+        assert duplicate_result.is_failure() is True
+        assert duplicate_result.error_type == ERROR_ALREADY_EXISTS
+        assert duplicate_result.value is None
+
+    try:
+        asyncio.run(assert_duplicate_result())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_rejects_blank_password_before_user_creation() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    async def assert_blank_password_result() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.create_local_user_from_signup(
+            request,
+            email="signup@example.com",
+            password="",
+        )
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INVALID_PASSWORD
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+
+    try:
+        asyncio.run(assert_blank_password_result())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_rejects_malformed_email_before_user_creation() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    async def assert_invalid_email_result() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.create_local_user_from_signup(
+            request,
+            email="not-an-email",
+            password="correct horse",
+        )
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INVALID_EMAIL
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+
+    try:
+        asyncio.run(assert_invalid_email_result())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_route_returns_form_error_for_malformed_email() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    async def create_schema() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+    try:
+        asyncio.run(create_schema())
+        client = TestClient(web_app, follow_redirects=False)
+        signup_page = client.get("/signup")
+
+        response = client.post(
+            "/signup",
+            data=csrf_data(
+                signup_page,
+                {
+                    "email": "not-an-email",
+                    "password": "correct horse",
+                },
+            ),
+        )
+
+        assert response.status_code == 400
+        assert "Unable to create account with those details." in response.text
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -1113,6 +1553,41 @@ def test_identity_login_rejects_invalid_credentials() -> None:
             == 2
         )
         assert "uniquode_session" not in response.cookies
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_failure_preserves_public_signup_link() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+
+        response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "incorrect",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert response.status_code == 401
+        assert "Create account" in response.text
+        assert str(web_app.url_path_for("identity:signup")) in response.text
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -1379,6 +1854,40 @@ def test_password_reset_confirm_returns_html_error_for_invalid_token() -> None:
         asyncio.run(close_database(web_app.state.database))
 
 
+def test_password_reset_confirm_rejects_blank_password() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset",
+            data=csrf_data(reset_page, {"email": "person@example.com"}),
+        )
+        assert response.status_code == 200
+        assert delivery.reset_tokens
+
+        confirm_response = client.post(
+            "/password/reset/confirm",
+            data=csrf_data(
+                response,
+                {
+                    "token": delivery.reset_tokens[0][1],
+                    "password": " ",
+                },
+            ),
+        )
+
+        assert confirm_response.status_code == 400
+        assert "The reset token is invalid or expired." in confirm_response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 def test_password_reset_request_ignores_inactive_user() -> None:
     web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
     delivery = CaptureIdentityDelivery()
@@ -1430,6 +1939,112 @@ def test_verification_route_uses_delivery_hook() -> None:
         asyncio.run(close_database(web_app.state.database))
 
 
+def test_verification_confirm_rejects_user_deactivated_after_token_request() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    async def deactivate_user() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            await session.execute(
+                User.__table__.update()
+                .where(User.__table__.c.email == "person@example.com")
+                .values(is_active=False)
+            )
+            await session.commit()
+
+    async def assert_unverified() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            result = await session.execute(
+                select(User).where(User.email == "person@example.com")
+            )
+            user = result.scalar_one()
+            assert user.is_verified is False
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        verify_page = client.get("/verify")
+
+        response = client.post(
+            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+        )
+        assert response.status_code == 200
+        assert delivery.verification_tokens
+
+        asyncio.run(deactivate_user())
+        token = delivery.verification_tokens[0][1]
+        verification_result = asyncio.run(
+            identity_users.verify_user(Request({"type": "http", "app": web_app}), token)
+        )
+        assert verification_result.is_failure() is True
+        assert verification_result.error_type == ERROR_INACTIVE_USER
+
+        confirm_response = client.post(
+            "/verify/confirm",
+            data=csrf_data(response, {"token": token}),
+        )
+
+        assert confirm_response.status_code == 400
+        assert "The verification token is invalid or expired." in confirm_response.text
+        asyncio.run(assert_unverified())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_verification_confirm_rejects_email_changed_after_token_request() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    async def change_email() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            await session.execute(
+                User.__table__.update()
+                .where(User.__table__.c.email == "person@example.com")
+                .values(email="renamed@example.com")
+            )
+            await session.commit()
+
+    async def assert_unverified() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            result = await session.execute(
+                select(User).where(User.email == "renamed@example.com")
+            )
+            user = result.scalar_one()
+            assert user.is_verified is False
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        verify_page = client.get("/verify")
+
+        response = client.post(
+            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+        )
+        assert response.status_code == 200
+        assert delivery.verification_tokens
+
+        asyncio.run(change_email())
+        token = delivery.verification_tokens[0][1]
+        verification_result = asyncio.run(
+            identity_users.verify_user(Request({"type": "http", "app": web_app}), token)
+        )
+        assert verification_result.is_failure() is True
+        assert verification_result.error_type == ERROR_IDENTITY_CHANGED
+
+        confirm_response = client.post(
+            "/verify/confirm",
+            data=csrf_data(response, {"token": token}),
+        )
+
+        assert confirm_response.status_code == 400
+        assert "The verification token is invalid or expired." in confirm_response.text
+        asyncio.run(assert_unverified())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 @pytest.mark.parametrize(
     ("is_active", "is_verified"),
     [
@@ -1475,6 +2090,15 @@ def test_verification_confirm_returns_html_error_for_invalid_token() -> None:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
         verify_page = client.get("/verify")
+        verification_result = asyncio.run(
+            identity_users.verify_user(
+                Request({"type": "http", "app": web_app}),
+                "invalid",
+            )
+        )
+
+        assert verification_result.is_failure() is True
+        assert verification_result.error_type == ERROR_INVALID_TOKEN
 
         response = client.post(
             "/verify/confirm",

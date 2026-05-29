@@ -65,7 +65,10 @@ def validate_web(settings: Settings) -> ValidationResult:
         error="Static URL path must not be empty.",
     )
 
-    route_sets = (build_public_route_set(), build_identity_route_set())
+    route_sets = (
+        build_public_route_set(),
+        build_identity_route_set(settings.identity_options),
+    )
     renderer = TemplateRenderer(settings.template_root)
 
     for route_set in route_sets:

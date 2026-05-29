@@ -36,6 +36,9 @@
   </form>
   <p class="muted-copy">
     <a href="{{ request.url_for('identity:password-reset') }}">Reset password</a>
+    {% if public_signup_enabled is defined and public_signup_enabled %}
+    &middot; <a href="{{ request.url_for('identity:signup') }}">Create account</a>
+    {% endif %}
   </p>
 </section>
 {% endblock %}
