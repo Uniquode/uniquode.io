@@ -245,4 +245,4 @@ The system SHALL NOT require an internal OAuth2 authorisation provider to suppor
 
 #### Scenario: OAuth2 provider is a separate boundary
 - **WHEN** internal OAuth2 provider work begins
-- **THEN** it is implemented through the separate `auth-provider` boundary rather than as part of baseline local-user authentication
+- **THEN** it is implemented through the separate `auth_provider` boundary rather than as part of baseline local-user authentication

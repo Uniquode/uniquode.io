@@ -33,9 +33,10 @@ and concrete deployment configuration without becoming a dependency of the
 - Capture TOTP, WebAuthn/passkey, recovery-code, OAuth-account-linking, and
   MFA challenge concepts as `auth_ext` responsibilities, staged behind
   baseline local authentication.
-- Define `auth-provider` as a future internal Authlib integration boundary for
-  OAuth2 authorisation-server work, independent of `uniquode` and separable
-  from baseline identity.
+- Define `auth_provider` as the future internal Authlib integration boundary
+  for OAuth2/OIDC authorisation-server work, independent of `uniquode` and
+  separable from baseline identity. Reserve `fastapi-oauth-provider` as the
+  future distribution name if this boundary is extracted.
 - Add persistent development database behaviour so ordinary local development
   uses a project-root SQLite database while tests can still opt into in-memory
   SQLite.
@@ -58,9 +59,9 @@ and concrete deployment configuration without becoming a dependency of the
   explicit in-memory SQLite test support, and migration/startup conventions for
   local development versus PostgreSQL deployment environments. Linear:
   `UT-178`.
-- `auth-provider`: Future internal OAuth2 provider integration boundary built
-  around Authlib and host-provided subject, client, token, consent, and scope
-  services.
+- `auth-provider`: Future internal OAuth2/OIDC provider integration boundary
+  implemented through the `auth_provider` Python package, built around Authlib
+  and host-provided subject, client, token, consent, and scope services.
 
 ### Modified Capabilities
 

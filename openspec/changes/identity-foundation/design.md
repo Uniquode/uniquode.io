@@ -72,8 +72,10 @@ and policy wiring.
   `auth_ext` options/config objects passed by host applications.
 - Include extension points for advanced authentication: TOTP,
   WebAuthn/passkeys, recovery codes, and MFA challenge state.
-- Define `auth-provider` as a future internal Authlib integration boundary that
-  remains independent of FastAPI Users, `auth_ext`, and `uniquode`.
+- Define `auth_provider` as a future internal Authlib integration boundary that
+  remains independent of FastAPI Users, `auth_ext`, and `uniquode`. Reserve
+  `fastapi-oauth-provider` as the future distribution name if this boundary is
+  later extracted.
 - Keep UI ownership in host applications; `auth_ext` provides flows,
   APIs, routers, and hooks rather than product templates.
 
@@ -297,14 +299,14 @@ authorisation policy, groups, flags, and scope mapping.
 FastAPI Users can help with OAuth client login and authentication backends, but
 it should not be treated as providing the project's full internal OAuth2
 authorisation server. Authlib appears to cover the generic OAuth2/OIDC server
-ground sufficiently that the project should not assume it needs to publish a
-generic OAuth2 provider package. The later project package should therefore be
-named `auth-provider` and treated as an internal integration layer around
-Authlib.
+ground sufficiently that the project should not reimplement protocol machinery.
+The provider boundary should therefore use `auth_provider` as its Python
+package name and treat `fastapi-oauth-provider` only as a future distribution
+name if extraction becomes useful.
 
-`auth-provider` must remain independent of FastAPI Users, `auth_ext`, and
+`auth_provider` must remain independent of FastAPI Users, `auth_ext`, and
 `uniquode`. It should ask the host application for subjects, clients, grants,
-tokens, consent, and scopes through explicit interfaces.
+tokens, consent, scopes, and signing keys through explicit interfaces.
 
 ## Risks / Trade-offs
 

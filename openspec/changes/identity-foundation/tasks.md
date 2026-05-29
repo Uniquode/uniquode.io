@@ -66,3 +66,20 @@
 - [x] 4.10 Run `uv run ruff format --check`, `uv run ruff check`,
   `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
   `uv run openspec validate identity-foundation --strict`.
+
+## 5. `auth-provider` Sub-Spec (`UT-208`)
+
+- [x] 5.1 Align the `auth-provider` sub-spec name, design, and related identity
+  wording with ADR 0007 terminology: `auth_provider` for the Python package
+  boundary and `fastapi-oauth-provider` for the future distribution name.
+- [x] 5.2 Add the first contract-only `auth_provider` package surface for
+  host-owned provider options, subject/client/grant/token/consent/scope/signing
+  key contracts, token lifetime options, and refresh-token storage policy.
+- [x] 5.3 Keep runtime OAuth2/OIDC endpoint implementation deferred: do not add
+  Authlib, token issuance, introspection, revocation, discovery, JWKS, consent,
+  or grant endpoints in this slice.
+- [x] 5.4 Add focused tests for provider option validation, refresh-token
+  policy, host-neutral contract values, and the package import boundary.
+- [x] 5.5 Run `uv run ruff format --check`, `uv run ruff check`,
+  `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
+  `uv run openspec validate identity-foundation --strict`.

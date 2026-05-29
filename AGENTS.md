@@ -26,12 +26,13 @@ When linking a Linear issue in a pull request description, the Linear issue
 reference must use only the bare markdown link format, for example
 `[UT-123](https://linear.app/...)`. Do not prefix the Linear issue link with
 `Closes`, `Fixes`, `Relates to`, or similar linking phrases unless the user
-explicitly requests that wording.
+explicitly requests that wording. When using the repository PR template, place
+the bare Linear issue link under `Optional Notes`, not in `Overview`.
 
 Treat GitHub metadata as the automation trigger and Linear issue links as visible resources:
 
 - Create or push branches with the Linear key in the branch name.
-- Create PRs with the Linear key in the title and the bare markdown Linear issue link in the body.
+- Create PRs with the Linear key in the title and the bare markdown Linear issue link in the `Optional Notes` section of the body.
 - Prefer Linear's native GitHub integration attachments for pull requests and branches.
 - If the native integration does not attach a pull request or branch and a manual resource is still needed, add it through the Linear MCP issue update `links` field, e.g. `_save_issue(id="UT-123", links=[{"title": "GitHub PR #123", "url": "https://github.com/ORG/REPO/pull/123"}])`.
 - Do not add GitHub pull requests or branches as Linear comments.
