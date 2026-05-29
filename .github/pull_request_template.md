@@ -1,32 +1,22 @@
 ## Overview
 
-<!-- A concise description of what this PR does and why. Link to any relevant design docs, tickets, or discussions. -->
+<!-- Include the Linear issue as a bare markdown link, without Closes/Fixes/Relates wording. -->
+<!-- Example: [UT-123](https://linear.app/uniquode/issue/UT-123/example) -->
 
-## Type of Change
-
-<!-- Check all that apply -->
-
-- [ ] 🐛 Bug fix (non-breaking change that fixes an issue)
-- [ ] ✨ New feature (non-breaking change that adds functionality)
-- [ ] 💥 Breaking change (fix or feature that causes existing functionality to change)
-- [ ] 🔧 Refactor (no functional change, code quality improvement)
-- [ ] 📝 Documentation update
-- [ ] 🧪 Tests only
-- [ ] 🔒 Security fix
-- [ ] ⚙️ CI/CD / build / dependency update
+<!-- Concise description of what this PR does and why. -->
 
 ## Changes
 
-<!-- Bullet-point summary of what changed and where. Be specific enough that a reviewer knows where to focus but don't bog down on unnecessary details. -->
+<!-- Bullet-point summary of what changed and where. -->
 
 -
 -
 -
 
-## Notes for Reviewers
+## Impact
 
-<!-- Anything specific you want reviewers to focus on, known trade-offs, or follow-up work tracked elsewhere. -->
+<!-- User-facing, operational, migration, security, dependency, or compatibility impact. State "None" if there is no notable impact. -->
 
-<!-- Pick whichever is relevant -->
-Closes #<!-- issue number as link -->
-Relates to <!-- issue number as link -->
+## Optional Notes
+
+<!-- Reviewer focus, known trade-offs, follow-up work, or validation commands. Remove this section if not needed. -->

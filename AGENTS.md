@@ -20,15 +20,20 @@ Use `.agents/steering/` on demand; start with `.agents/steering/README.md` when 
 
 Use Linear issue keys in branch names and pull request titles so Linear's GitHub integration can associate work automatically.
 Prefer branch names like `feature/UT-123-short-description` and PR titles prefixed with `UT-123`.
-Pull request descriptions must link Linear issues with only the bare markdown link, for example `[UT-123](https://linear.app/...)`.
-Do not use `Closes`, `Fixes`, `Relates to`, or similar linking phrases unless the user explicitly requests them.
+Pull request descriptions should follow the repository PR template structure:
+`Overview`, `Changes`, `Impact`, and `Optional Notes`.
+When linking a Linear issue in a pull request description, the Linear issue
+reference must use only the bare markdown link format, for example
+`[UT-123](https://linear.app/...)`. Do not prefix the Linear issue link with
+`Closes`, `Fixes`, `Relates to`, or similar linking phrases unless the user
+explicitly requests that wording.
 
 Treat GitHub metadata as the automation trigger and Linear issue links as visible resources:
 
 - Create or push branches with the Linear key in the branch name.
 - Create PRs with the Linear key in the title and the bare markdown Linear issue link in the body.
-- After PR creation, add the GitHub PR URL to the Linear issue through the Linear MCP issue update `links` field, e.g. `_save_issue(id="UT-123", links=[{"title": "GitHub PR #123", "url": "https://github.com/ORG/REPO/pull/123"}])`.
-- If adding a branch resource manually, also use `_save_issue(..., links=[{"title": "GitHub branch feature/UT-123-short-description", "url": "https://github.com/ORG/REPO/tree/feature/UT-123-short-description"}])`.
+- Prefer Linear's native GitHub integration attachments for pull requests and branches.
+- If the native integration does not attach a pull request or branch and a manual resource is still needed, add it through the Linear MCP issue update `links` field, e.g. `_save_issue(id="UT-123", links=[{"title": "GitHub PR #123", "url": "https://github.com/ORG/REPO/pull/123"}])`.
 - Do not add GitHub pull requests or branches as Linear comments.
 - Do not rely on manually added Linear resource links to trigger Linear status automation.
 
