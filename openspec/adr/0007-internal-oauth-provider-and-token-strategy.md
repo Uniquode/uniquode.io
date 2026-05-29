@@ -11,10 +11,10 @@ integrations. This capability is separate from browser-session authentication,
 advanced authentication factors, and OAuth client login through external
 providers.
 
-ADR 0005 separates the future internal provider behind an `auth-provider`
-boundary. ADR 0006 establishes that groups, flags, scopes, and route/API policy
-belong to the authorisation model, while the provider consumes that policy
-through explicit interfaces.
+ADR 0005 separates the future internal provider behind an internal OAuth
+provider boundary. ADR 0006 establishes that groups, flags, scopes, and
+route/API policy belong to the authorisation model, while the provider consumes
+that policy through explicit interfaces.
 
 The provider must be reusable and FastAPI-oriented, but it must not depend on
 `uniquode`, FastAPI Users, or the `auth_ext` advanced-authentication package.
@@ -22,6 +22,7 @@ The provider must be reusable and FastAPI-oriented, but it must not depend on
 ## Decision
 
 Use `auth_provider` as the Python import package for the internal provider
+boundary. Use this name consistently when referring to the code and module
 boundary.
 
 If prepared for publication, use `fastapi-oauth-provider` as the distribution
@@ -59,8 +60,15 @@ Serve discovery and JWKS over HTTPS. Ordinary public TLS, such as Let's Encrypt,
 is sufficient for transport trust. JWKs do not need CA or notary signatures.
 
 Use short-lived JWT access tokens and opaque server-stored refresh tokens by
-default. Refresh tokens should be high-entropy random values stored hashed
-server-side, revocable, and rotated on use.
+default. Refresh tokens should be high-entropy random values. Store only a
+server-side verifier, such as a keyed hash of the token value, rather than the
+plaintext token. Plaintext refresh tokens must not be recoverable from the
+database.
+
+Treat refresh tokens as single-use within a token family. A successful refresh
+invalidates the presented token and issues a successor. Reuse of an invalidated
+refresh token should be treated as a compromise signal and should revoke or
+quarantine the token family so callers cannot continue rotating stolen tokens.
 
 ## Consequences
 
