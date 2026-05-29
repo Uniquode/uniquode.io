@@ -1,3 +1,5 @@
+from typing import get_type_hints
+
 import pytest
 
 from auth_provider import (
@@ -11,6 +13,7 @@ from auth_provider import (
     ProviderConfigurationError,
     ProviderSubject,
     RefreshTokenStoragePolicy,
+    RefreshTokenStore,
 )
 
 
@@ -73,9 +76,19 @@ def test_auth_provider_options_normalise_mount_path(
     assert options.mount_path == expected
 
 
-@pytest.mark.parametrize("mount_path", ["", " ", "///"])
-def test_auth_provider_rejects_unsafe_mount_paths(mount_path: str) -> None:
-    with pytest.raises(ProviderConfigurationError):
+@pytest.mark.parametrize(
+    ("mount_path", "message"),
+    [
+        ("", "mount_path must not be blank"),
+        (" ", "mount_path must not be blank"),
+        ("///", "must not contain only slashes"),
+    ],
+)
+def test_auth_provider_rejects_unsafe_mount_paths(
+    mount_path: str,
+    message: str,
+) -> None:
+    with pytest.raises(ProviderConfigurationError, match=message):
         OAuthProviderOptions(mount_path=mount_path)
 
 
@@ -168,3 +181,9 @@ def test_auth_provider_contract_values_are_frozen() -> None:
 
     with pytest.raises(_frozen_instance_error()):
         _assign_attribute(client, "id", "other-client")
+
+
+def test_refresh_token_consume_contract_signals_state_transition() -> None:
+    hints = get_type_hints(RefreshTokenStore.mark_refresh_token_consumed)
+
+    assert hints["return"] is bool

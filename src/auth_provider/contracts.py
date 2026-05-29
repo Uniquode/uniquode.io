@@ -105,14 +105,16 @@ class RefreshTokenStore(Protocol):
     """Opaque refresh-token persistence contract.
 
     Implementations must treat refresh-token consumption as a single-writer
-    state transition. `mark_refresh_token_consumed` must atomically mark the
-    presented token consumed and store its successor in the same transaction or
-    equivalent compare-and-swap operation. It must not create a second
-    successor when the token is already consumed or revoked.
+    state transition. `mark_refresh_token_consumed` must return `True` only
+    when it atomically marks the presented token consumed and stores its
+    successor in the same transaction or equivalent compare-and-swap operation.
+    It must return `False` and must not create a second successor when the
+    token is already consumed or revoked.
 
     Reuse detection is intentionally not idempotent: if an already consumed or
-    revoked token is presented, callers should treat that as compromise and use
-    `revoke_token_family` or an equivalent quarantine action before returning.
+    revoked token is presented, callers should treat a `False` consume result as
+    compromise and use `revoke_token_family` or an equivalent quarantine action
+    before returning.
 
     Client-wide logout is modelled by revoking all live refresh-token families
     for the subject/client pair. This does not directly delete already issued
@@ -132,7 +134,7 @@ class RefreshTokenStore(Protocol):
         self,
         token_id: str,
         successor: RefreshTokenRecord,
-    ) -> None: ...
+    ) -> bool: ...
 
     async def revoke_token_family(self, family_id: str) -> None: ...
 

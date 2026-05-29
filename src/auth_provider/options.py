@@ -81,7 +81,8 @@ def _normalise_mount_path(value: str) -> str:
     path = _normalise_required(value, "mount_path")
     if path != "/" and not path.strip("/"):
         raise ProviderConfigurationError(
-            "OAuth provider mount_path '/' must be configured explicitly."
+            "OAuth provider mount_path must not contain only slashes; "
+            "use '/' explicitly to mount at the application root."
         )
 
     if not path.startswith("/"):
