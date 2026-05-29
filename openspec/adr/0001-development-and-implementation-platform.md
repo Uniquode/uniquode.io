@@ -51,6 +51,15 @@ Use SQLite for local development and lightweight tests where behavior remains po
 
 Use SQLAlchemy 2 async as the application ORM and database access layer. Use Alembic for schema migrations.
 
+Reserve `models` modules for SQLAlchemy ORM model packages. Non-ORM concepts
+should use names such as `schemas`, `contracts`, `options`, or `services`.
+
+Each enabled SQLAlchemy model package should expose package-level `metadata` for
+Alembic. The host application owns the deterministic configured list of enabled
+model packages and passes their metadata to Alembic. Reusable or optional
+packages expose migration metadata candidates; the host owns the migration tree
+and revision graph.
+
 Application code must not couple route handlers directly to database clients. Persistence access should sit behind application services or repository-style modules where that keeps domain behavior and database mechanics separate.
 
 The persistence layer must remain async-first:
@@ -92,6 +101,11 @@ SQLAlchemy async keeps the application aligned with the async-first platform dec
 
 Alembic gives the project a widely used migration path that fits SQLAlchemy and avoids maintaining custom migration conventions for identity-critical tables.
 
+Explicit model-package registration keeps migration metadata discovery
+deterministic without filesystem scanning or surprise imports. It also lets the
+application run with optional packages disabled while still giving those
+packages a clear way to publish SQLAlchemy metadata when enabled.
+
 Moving from Tortoise to SQLAlchemy avoids maintaining an unsupported FastAPI Users adapter while keeping the relational database posture. The trade-off is a more explicit ORM and migration model than Tortoise, with slightly more boilerplate and a larger API surface to learn.
 
 Choosing SQL now does not prevent later use of NoSQL for a specific capability, but that should be an explicit design decision rather than a generic portability goal.
@@ -110,3 +124,6 @@ Choosing SQL now does not prevent later use of NoSQL for a specific capability, 
 ## Revision Notes
 
 - 2026-05-24: Updated persistence decision from Tortoise ORM to SQLAlchemy 2 async with Alembic after identity-foundation planning selected FastAPI Users for baseline local identity lifecycle work.
+- 2026-05-29: Added the convention that `models` modules are reserved for
+  SQLAlchemy ORM model packages and that enabled packages expose Alembic
+  `metadata` through deterministic host-owned registration.

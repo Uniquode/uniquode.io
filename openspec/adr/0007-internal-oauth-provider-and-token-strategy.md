@@ -42,6 +42,12 @@ Do not hard-code issuer, audience, mount path, token lifetimes, supported
 grants, client data, consent policy, or scope meanings in the provider package.
 Those values are supplied through options and host/provider interfaces.
 
+If `auth_provider` later owns SQLAlchemy persistence, its ORM models should live
+in an `auth_provider.models` package that follows the platform `models`
+convention: `models` is reserved for SQLAlchemy ORM models, and the package
+exports Alembic-ready `metadata` for host applications that explicitly enable
+the provider datastore.
+
 Use Authlib for OAuth2/OIDC protocol machinery when runtime provider
 implementation begins. Do not add Authlib before provider code directly uses it.
 
@@ -92,6 +98,10 @@ immediate revocation, reuse detection, token-family rotation, and user/client
 state checks. They also keep signing-key rotation tied to short-lived JWT
 lifetimes rather than long refresh-token lifetimes.
 
+Provider-owned persistence can remain optional and reusable by exposing ORM
+metadata as a candidate package while leaving the host application in control of
+whether that metadata participates in its Alembic migration tree.
+
 Signing-key rotation is an operational process. The provider should sign new
 JWTs with one active key while continuing to publish old public keys in JWKS
 until all JWTs signed by them have expired, plus clock-skew, JWKS cache, and
@@ -118,3 +128,8 @@ operational safety margins.
 - Add Authlib when runtime OAuth2/OIDC endpoint implementation begins.
 - Define key generation, storage, rotation, JWKS publication, and emergency key
   revocation operator workflows.
+
+## Revision Notes
+
+- 2026-05-29: Clarified that future `auth_provider.models` follows the shared
+  SQLAlchemy model-package and Alembic metadata export convention.

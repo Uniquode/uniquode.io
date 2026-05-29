@@ -83,3 +83,19 @@
 - [x] 5.5 Run `uv run ruff format --check`, `uv run ruff check`,
   `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
   `uv run openspec validate identity-foundation --strict`.
+
+## 6. `application-infrastructure` Sub-Spec (`UT-209`)
+
+- [x] 6.1 Audit the current SQLAlchemy async, Alembic, validation, dependency,
+  and CSRF infrastructure against the `application-infrastructure` sub-spec.
+- [x] 6.2 Reserve `models` modules for SQLAlchemy ORM models and expose
+  package-level `metadata` objects for migration consumption.
+- [x] 6.3 Replace hard-coded Alembic metadata imports with a deterministic
+  configured list of enabled model packages.
+- [x] 6.4 Keep optional package metadata explicit so `auth_ext` and future
+  `auth_provider` models are included only when their packages are enabled.
+- [x] 6.5 Preserve route-handler decoupling from database clients and keep
+  runtime dependencies requirement-scoped.
+- [x] 6.6 Run `uv run ruff format --check`, `uv run ruff check`,
+  `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
+  `uv run openspec validate identity-foundation --strict`.
