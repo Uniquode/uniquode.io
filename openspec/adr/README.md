@@ -13,6 +13,7 @@ This directory records architecture decisions for the project.
 | [0004](0004-ui-delivery-architecture.md) | UI delivery architecture | Provisional | 2026-05-20 |
 | [0005](0005-identity-and-authentication-architecture.md) | Identity and authentication architecture | Provisional | 2026-05-20 |
 | [0006](0006-authorisation-and-access-control-model.md) | Authorisation and access-control model | Provisional | 2026-05-20 |
+| [0007](0007-internal-oauth-provider-and-token-strategy.md) | Internal OAuth provider and token strategy | Provisional | 2026-05-29 |
 
 ## Status Values
 
