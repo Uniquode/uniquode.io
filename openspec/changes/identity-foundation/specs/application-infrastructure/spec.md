@@ -7,6 +7,18 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 - **WHEN** a developer inspects the project package
 - **THEN** there is a clear package location or documented boundary for SQLAlchemy async models, session configuration, and Alembic migrations
 
+#### Scenario: Models modules contain ORM models
+- **WHEN** a package exposes a `models` module
+- **THEN** that module is reserved for SQLAlchemy ORM models and migration metadata rather than unrelated domain objects, schemas, or service contracts
+
+#### Scenario: Migration metadata is discovered from enabled model packages
+- **WHEN** Alembic migration metadata is built
+- **THEN** the application imports a deterministic configured list of enabled model packages and reads their exported `metadata` objects
+
+#### Scenario: Optional package models are explicit
+- **WHEN** optional packages such as `auth_ext` or future `auth_provider` provide SQLAlchemy models
+- **THEN** their model metadata is included in migrations only when the host application explicitly enables that package's model package
+
 #### Scenario: Routes are not coupled to database clients
 - **WHEN** the route modules are inspected
 - **THEN** route handlers do not directly instantiate or depend on database clients

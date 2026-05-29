@@ -125,10 +125,7 @@ renders the site-specific HTML interface.
 `auth_ext` is currently incubated inside this repository, but its API should be
 shaped as if it may later be extracted as a standalone
 `fastapi-users-auth-ext` distribution. The top-level package API should stay
-focused on host-facing, storage-agnostic concepts. SQLAlchemy is the first
-concrete adapter, not the package's core abstraction, so SQLAlchemy-specific
-models and helpers should remain under the adapter boundary unless current host
-integration has no practical alternative.
+focused on host-facing, storage-agnostic concepts.
 
 Rationale: the identity model is valuable beyond this one site. Keeping
 `auth_ext` host-agnostic prevents the current application from shaping APIs
@@ -157,6 +154,18 @@ retaining PostgreSQL for production and SQLite for local/lightweight tests.
 `auth_ext` must still expose persistence through package-owned contracts and
 adapters rather than depending on `uniquode.persistence`. A SQLAlchemy adapter
 can be shipped by `auth_ext`, while `uniquode` selects and configures it.
+
+Within this project, `models` is reserved for SQLAlchemy ORM model modules.
+Schemas, service contracts, options, and domain helpers should use names such as
+`schemas`, `contracts`, `options`, or `services` rather than sharing the
+`models` namespace. Each enabled model package should expose an exported
+`metadata` object that Alembic can consume. The host application owns the
+deterministic ordered list of enabled model packages, imports their `metadata`
+objects, and owns the final Alembic migration tree and revision graph.
+
+This gives reusable packages such as `auth_ext` and future `auth_provider`
+clear migration candidates without relying on filesystem scans or importing
+disabled optional components.
 
 Alternatives considered:
 

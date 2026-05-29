@@ -16,7 +16,7 @@ from fastapi.testclient import TestClient
 from fastapi_users import FastAPIUsers
 from fastapi_users.authentication import AuthenticationBackend, CookieTransport
 from fastapi_users.exceptions import InvalidPasswordException
-from sqlalchemy import func, select, text
+from sqlalchemy import MetaData, func, select, text
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
@@ -37,6 +37,16 @@ from auth_ext.bootstrap import (
     InitialAdminCredentials,
     bootstrap_initial_admin,
 )
+from auth_ext.models import (
+    AccessToken,
+    Base,
+    InitialAdminBootstrap,
+    OAuthAccount,
+    User,
+)
+from auth_ext.models import (
+    metadata as auth_ext_metadata,
+)
 from auth_ext.options import IdentityOptions
 from auth_ext.schemas import UserCreate
 from auth_ext.sessions import (
@@ -45,13 +55,6 @@ from auth_ext.sessions import (
     create_user_manager,
     require_anonymous_user,
     require_current_user,
-)
-from auth_ext.sqlalchemy.models import (
-    AccessToken,
-    Base,
-    InitialAdminBootstrap,
-    OAuthAccount,
-    User,
 )
 from uniquode.app import create_app
 from uniquode.asgi import app
@@ -78,6 +81,8 @@ from uniquode.environment import (
     ENV_VERIFICATION_SECRET,
     load_environment,
 )
+from uniquode.migration_metadata import ENABLED_MODEL_PACKAGES, load_model_metadata
+from uniquode.models import metadata as uniquode_metadata
 from uniquode.persistence import (
     Database,
     close_database,
@@ -747,6 +752,43 @@ def test_sqlalchemy_metadata_creates_identity_tables() -> None:
         asyncio.run(assert_tables())
     finally:
         asyncio.run(close_database(engine))
+
+
+def test_auth_ext_models_export_migration_metadata() -> None:
+    assert auth_ext_metadata is Base.metadata
+
+
+def test_enabled_model_packages_are_explicit_for_current_application() -> None:
+    assert ENABLED_MODEL_PACKAGES == ("uniquode.models", "auth_ext.models")
+
+
+def test_enabled_model_packages_load_migration_metadata_in_order() -> None:
+    metadata_values = load_model_metadata()
+
+    assert len(metadata_values) == len(ENABLED_MODEL_PACKAGES)
+    assert all(isinstance(value, MetaData) for value in metadata_values)
+    assert metadata_values[0] is uniquode_metadata
+    assert metadata_values[1] is auth_ext_metadata
+
+
+def test_model_metadata_loader_rejects_packages_without_metadata() -> None:
+    with pytest.raises(RuntimeError, match="must expose SQLAlchemy metadata"):
+        load_model_metadata(("dummy_no_metadata",))
+
+
+def test_model_metadata_loader_rejects_non_metadata_attribute() -> None:
+    with pytest.raises(RuntimeError, match="must expose SQLAlchemy metadata"):
+        load_model_metadata(("dummy_invalid_metadata",))
+
+
+def test_model_metadata_loader_reports_missing_configured_package() -> None:
+    with pytest.raises(RuntimeError, match="could not be imported"):
+        load_model_metadata(("missing_model_package",))
+
+
+def test_model_metadata_loader_preserves_nested_import_failures() -> None:
+    with pytest.raises(ModuleNotFoundError, match="missing_dependency"):
+        load_model_metadata(("dummy_missing_dependency",))
 
 
 def test_identity_authentication_backend_uses_http_only_session_cookie() -> None:

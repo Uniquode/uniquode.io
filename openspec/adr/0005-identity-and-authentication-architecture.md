@@ -70,7 +70,13 @@ Plan for TOTP as an additional authentication factor for local accounts.
 
 Introduce `fastapi-users-auth-ext` as a standalone addon boundary for advanced authentication features such as TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows. Its Python import package should be `auth_ext`.
 
-Design `fastapi-users-auth-ext` to depend on FastAPI Users extension points and async storage protocols rather than on `uniquode` application modules, templates, settings, or database models.
+Design `fastapi-users-auth-ext` to depend on FastAPI Users extension points and async storage protocols rather than on `uniquode` application modules, templates, settings, or `uniquode`-owned ORM models.
+
+If `auth_ext` ships SQLAlchemy ORM models, they should live in an
+`auth_ext.models` package that follows the platform `models` convention:
+`models` is reserved for SQLAlchemy ORM models, and the package exposes
+Alembic-ready `metadata` for host applications that explicitly enable those
+models.
 
 Support API access through session-backed requests where appropriate and through API tokens for machine-oriented access.
 
@@ -112,6 +118,10 @@ into a password-only corner.
 
 Keeping advanced authentication in `fastapi-users-auth-ext` creates a reusable boundary and prevents TOTP/WebAuthn challenge flow code from becoming tightly coupled to this application. The trade-off is that the addon must maintain compatibility with FastAPI Users public extension points.
 
+Publishing `auth_ext` ORM metadata through the standard model-package contract
+keeps the addon reusable without giving it ownership of the host application's
+Alembic migration tree or revision graph.
+
 Supporting both OAuth2 client and local OAuth2 authorisation capability creates a broader identity surface area than a simple social-login implementation. That flexibility is intentional, but it should be implemented in staged slices rather than all at once.
 
 Separating `auth-provider` from FastAPI Users and `fastapi-users-auth-ext` keeps delegated authorisation and token issuance distinct from user authentication and MFA. Authlib is expected to provide most OAuth2/OIDC protocol machinery for that later boundary.
@@ -145,3 +155,6 @@ API token support allows machine access without forcing browser-facing workflows
 - 2026-05-28: Reframed browser login as an authentication ceremony that can
   include password, passkey, external-provider, TOTP, and recovery-code steps
   before final session issuance.
+- 2026-05-29: Clarified that `auth_ext` must not depend on `uniquode`-owned ORM
+  models and that any `auth_ext.models` package follows the SQLAlchemy metadata
+  export convention.

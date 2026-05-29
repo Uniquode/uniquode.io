@@ -2,4 +2,6 @@
 
 from uniquode.models.base import Base
 
-__all__ = ["Base"]
+metadata = Base.metadata
+
+__all__ = ["Base", "metadata"]
