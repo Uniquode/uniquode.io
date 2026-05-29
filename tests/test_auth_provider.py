@@ -100,6 +100,12 @@ def test_auth_provider_refresh_token_policy_defaults() -> None:
     assert policy.reuse_action == "revoke-token-family"
 
 
+def test_auth_provider_allows_quarantine_token_family_reuse_action() -> None:
+    policy = RefreshTokenStoragePolicy(reuse_action="quarantine-token-family")
+
+    assert policy.reuse_action == "quarantine-token-family"
+
+
 @pytest.mark.parametrize(
     "kwargs",
     [
