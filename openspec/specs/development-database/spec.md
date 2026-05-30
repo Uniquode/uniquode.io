@@ -33,7 +33,15 @@ The system SHALL provide a clear mechanism for initialising the local SQLite dev
 
 #### Scenario: Local SQLite schema can be initialised
 - **WHEN** the project-root development database file does not yet contain the current schema
-- **THEN** a development setup path or startup policy can apply Alembic migrations to create the required tables
+- **THEN** a development setup command can apply Alembic migrations to create the required tables
+
+#### Scenario: Migration command resolves effective configuration
+- **WHEN** a developer runs the migration command without a database override
+- **THEN** it applies migrations using the same effective database URL resolution as application settings
+
+#### Scenario: Migration command accepts an explicit database override
+- **WHEN** a developer runs the migration command with a database URL override
+- **THEN** that URL is used for the migration command instead of the configured default
 
 #### Scenario: Migration mechanism is explicit
 - **WHEN** migrations are applied automatically or through a command
