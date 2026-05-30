@@ -167,7 +167,7 @@ def validate_persistence(settings: Settings) -> ValidationResult:
         passed=has_alembic_config and has_migrations_root,
         description=(
             "development database initialisation command is available: "
-            "uv run alembic upgrade head"
+            "uv run migrate upgrade"
         ),
         error=(
             "Development database initialisation requires Alembic config and "

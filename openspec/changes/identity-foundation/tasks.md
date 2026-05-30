@@ -23,7 +23,7 @@
 
 - [x] 2.1 Define the baseline local identity sub-spec after `identity-refactor`
   lands.
-- [ ] 2.2 Define the persistent development database sub-spec for `UT-178`
+- [x] 2.2 Define the persistent development database sub-spec for `UT-178`
   separately from the structural refactor.
 - [ ] 2.3 Define advanced authentication sub-specs only after the reusable
   package boundary is stable.
@@ -97,5 +97,25 @@
 - [x] 6.5 Preserve route-handler decoupling from database clients and keep
   runtime dependencies requirement-scoped.
 - [x] 6.6 Run `uv run ruff format --check`, `uv run ruff check`,
+  `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
+  `uv run openspec validate identity-foundation --strict`.
+
+## 7. `development-database` Sub-Spec (`UT-178`)
+
+- [x] 7.1 Confirm ordinary local development defaults to a persistent
+  project-root SQLite database URL rather than in-memory SQLite.
+- [x] 7.2 Preserve explicit in-memory SQLite support for tests and ephemeral
+  runs.
+- [x] 7.3 Keep the project-root SQLite database file excluded from version
+  control.
+- [x] 7.4 Add the `migrate` project command over Alembic for explicit schema
+  initialisation and updates.
+- [x] 7.5 Support `--database-url` migration overrides while keeping settings
+  and envex resolution as the default.
+- [x] 7.6 Prove the migration command can initialise an empty SQLite database
+  with the current schema.
+- [x] 7.7 Keep PostgreSQL database, user, role, and privilege provisioning
+  outside application startup.
+- [x] 7.8 Run `uv run ruff format --check`, `uv run ruff check`,
   `uv run ty check src/`, `gtimeout 30s uv run pytest`, and
   `uv run openspec validate identity-foundation --strict`.

@@ -182,13 +182,13 @@ the project root, such as `sqlite+aiosqlite:///./uniquode.sqlite3`. That file
 must be ignored by Git. In-memory SQLite remains supported through explicit
 configuration for tests and one-off ephemeral runs.
 
-Development SQLite schema creation must go through Alembic migration wiring or
-a clearly named development setup path that applies migrations automatically or
-on demand. The application must not silently create PostgreSQL databases, roles,
-or privileges in staging or production. For PostgreSQL environments, the
-database and user/role setup are expected to be provisioned before application
-startup; the application only connects, and application operators apply
-migrations.
+Development SQLite schema creation must go through the project `migrate`
+command, which uses Alembic underneath and resolves the same effective database
+configuration as the application. The application must not silently create
+PostgreSQL databases, roles, or privileges in staging or production. For
+PostgreSQL environments, the database and user/role setup are expected to be
+provisioned before application startup; the application only connects, and
+application operators apply migrations.
 
 ### Keep Host UI Separate From Identity Package
 
@@ -362,8 +362,8 @@ tokens, consent, scopes, and signing keys through explicit interfaces.
 4. Change the default development database URL to a project-root SQLite file,
    keep in-memory SQLite as an explicit test configuration, and ensure the file
    is ignored by Git.
-5. Add development migration initialisation or a clear setup path for applying
-   Alembic migrations to the local SQLite database.
+5. Add a project `migrate` command for applying Alembic migrations to the local
+   SQLite database and explicitly overridden database URLs.
 6. Document PostgreSQL deployment expectations: database/user/privileges exist
    before app startup and migrations are operator-controlled.
 7. Add FastAPI Users integration in `auth_ext`: local user model,

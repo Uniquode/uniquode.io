@@ -12,8 +12,11 @@ The default development database is the project-root SQLite file
 Initialise or update the local schema with:
 
 ```sh
-uv run alembic upgrade head
+uv run migrate upgrade
 ```
+
+Use direct Alembic commands only when you need Alembic-specific flags that the
+project migration command does not expose.
 
 Use explicit in-memory SQLite only for tests or deliberately ephemeral runs:
 

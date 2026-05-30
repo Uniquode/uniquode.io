@@ -24,6 +24,7 @@ from starlette.staticfiles import StaticFiles
 import auth_ext.sessions as identity_users
 import uniquode.asgi as asgi_module
 import uniquode.environment as environment_module
+import uniquode.migrate as migrate_module
 import uniquode.runserver as runserver_module
 from auth_ext import (
     ERROR_ALREADY_EXISTS,
@@ -119,6 +120,10 @@ CSRF_INPUT_PATTERN = re.compile(
 )
 
 
+def sqlite_file_url(path: Path) -> str:
+    return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
+
+
 def test_asgi_app_imports() -> None:
     assert isinstance(app, FastAPI)
 
@@ -170,6 +175,214 @@ def test_runserver_project_script_is_defined() -> None:
 
     assert data["project"]["scripts"]["runserver"] == "uniquode.runserver:main"
     assert data["project"]["scripts"]["validate"] == "uniquode.validate:main"
+    assert data["project"]["scripts"]["migrate"] == "uniquode.migrate:main"
+
+
+def test_migrate_upgrade_uses_settings_database_url(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, str, str]] = []
+
+    def record_upgrade(config, revision: str) -> None:
+        calls.append(
+            (
+                "upgrade",
+                revision,
+                config.get_main_option("sqlalchemy.url"),
+            )
+        )
+
+    monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+
+    exit_code = migrate_module.main(["upgrade"])
+
+    assert exit_code == 0
+    assert calls == [
+        (
+            "upgrade",
+            "head",
+            sqlite_file_url(tmp_path / "uniquode.sqlite3"),
+        )
+    ]
+
+
+def test_migrate_database_url_override_takes_precedence(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def record_current(config) -> None:
+        calls.append(("current", config.get_main_option("sqlalchemy.url")))
+
+    monkeypatch.setattr(migrate_module.command, "current", record_current)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+
+    exit_code = migrate_module.main(
+        [
+            "--database-url",
+            "sqlite+aiosqlite:///override.sqlite3",
+            "current",
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls == [
+        (
+            "current",
+            sqlite_file_url(tmp_path / "override.sqlite3"),
+        )
+    ]
+
+
+def test_migrate_alembic_config_accepts_percent_encoded_database_url() -> None:
+    database_url = (
+        "postgresql+asyncpg://db.example.test/uniquode?application_name=app%40local"
+    )
+
+    config = migrate_module.build_alembic_config(Settings(database_url=database_url))
+
+    assert config.get_main_option("sqlalchemy.url") == database_url
+
+
+def test_migrate_database_url_override_preempts_blank_environment_value(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def record_current(config) -> None:
+        calls.append(("current", config.get_main_option("sqlalchemy.url")))
+
+    monkeypatch.setattr(migrate_module.command, "current", record_current)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+    monkeypatch.setenv(ENV_DATABASE_URL, "")
+
+    exit_code = migrate_module.main(
+        [
+            "--database-url",
+            "sqlite+aiosqlite:///scratch.sqlite3",
+            "current",
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls == [
+        (
+            "current",
+            sqlite_file_url(tmp_path / "scratch.sqlite3"),
+        )
+    ]
+
+
+def test_migrate_database_url_override_can_follow_subcommand(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    calls: list[tuple[str, str | None]] = []
+
+    def record_upgrade(config, revision: str) -> None:
+        calls.append((revision, config.get_main_option("sqlalchemy.url")))
+
+    monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+
+    exit_code = migrate_module.main(
+        [
+            "upgrade",
+            "--database-url",
+            "sqlite+aiosqlite:///subcommand.sqlite3",
+        ]
+    )
+
+    assert exit_code == 0
+    assert calls == [
+        (
+            "head",
+            sqlite_file_url(tmp_path / "subcommand.sqlite3"),
+        )
+    ]
+
+
+def test_migrate_rejects_blank_database_url_override(capsys) -> None:
+    exit_code = migrate_module.main(["--database-url", "", "current"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert "DATABASE_URL must not be blank" in captured.err
+
+
+@pytest.mark.parametrize(
+    ("argv", "command_name", "revision"),
+    [
+        (["downgrade", "base"], "downgrade", "base"),
+        (["history"], "history", None),
+    ],
+)
+def test_migrate_dispatches_supported_commands(
+    tmp_path,
+    monkeypatch,
+    argv: list[str],
+    command_name: str,
+    revision: str | None,
+) -> None:
+    calls: list[tuple[str, str | None, str | None]] = []
+
+    def record_command(config, revision_arg: str | None = None) -> None:
+        calls.append(
+            (
+                command_name,
+                revision_arg,
+                config.get_main_option("sqlalchemy.url"),
+            )
+        )
+
+    monkeypatch.setattr(migrate_module.command, command_name, record_command)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+
+    exit_code = migrate_module.main(argv)
+
+    assert exit_code == 0
+    assert calls == [
+        (
+            command_name,
+            revision,
+            sqlite_file_url(tmp_path / "uniquode.sqlite3"),
+        )
+    ]
+
+
+def test_migrate_upgrade_initialises_empty_sqlite_database(tmp_path) -> None:
+    database_path = tmp_path / "dev.sqlite3"
+    database_url = f"sqlite+aiosqlite:///{database_path.as_posix()}"
+
+    exit_code = migrate_module.main(["--database-url", database_url, "upgrade"])
+
+    assert exit_code == 0
+    assert database_path.is_file()
+
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+
+    async def assert_tables() -> None:
+        async with engine.begin() as connection:
+            table_names = await connection.run_sync(
+                lambda sync_connection: sqlalchemy_inspect(
+                    sync_connection
+                ).get_table_names()
+            )
+
+        assert "alembic_version" in table_names
+        assert "identity_user" in table_names
+        assert "identity_access_token" in table_names
+        assert "identity_oauth_account" in table_names
+
+    try:
+        asyncio.run(assert_tables())
+    finally:
+        asyncio.run(close_database(engine))
 
 
 def test_runserver_parser_uses_defaults() -> None:
@@ -771,13 +984,23 @@ def test_enabled_model_packages_load_migration_metadata_in_order() -> None:
     assert metadata_values[1] is auth_ext_metadata
 
 
+def test_model_metadata_loader_with_no_packages_returns_empty_tuple() -> None:
+    assert load_model_metadata(()) == ()
+
+
 def test_model_metadata_loader_rejects_packages_without_metadata() -> None:
-    with pytest.raises(RuntimeError, match="must expose SQLAlchemy metadata"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"dummy_no_metadata.*Module origin:.*Available attributes:",
+    ):
         load_model_metadata(("dummy_no_metadata",))
 
 
 def test_model_metadata_loader_rejects_non_metadata_attribute() -> None:
-    with pytest.raises(RuntimeError, match="must expose SQLAlchemy metadata"):
+    with pytest.raises(
+        RuntimeError,
+        match=r"dummy_invalid_metadata.*Module origin:.*Available attributes:",
+    ):
         load_model_metadata(("dummy_invalid_metadata",))
 
 
