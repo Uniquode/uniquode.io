@@ -237,6 +237,16 @@ def test_migrate_database_url_override_takes_precedence(
     ]
 
 
+def test_migrate_alembic_config_accepts_percent_encoded_database_url() -> None:
+    database_url = (
+        "postgresql+asyncpg://db.example.test/uniquode?application_name=app%40local"
+    )
+
+    config = migrate_module.build_alembic_config(Settings(database_url=database_url))
+
+    assert config.get_main_option("sqlalchemy.url") == database_url
+
+
 def test_migrate_database_url_override_preempts_blank_environment_value(
     tmp_path,
     monkeypatch,

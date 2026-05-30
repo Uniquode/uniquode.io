@@ -95,8 +95,14 @@ def main(argv: Sequence[str] | None = None) -> int:
 def build_alembic_config(settings: Settings) -> Config:
     config = Config(str(settings.alembic_config))
     config.set_main_option("script_location", settings.migrations_root.as_posix())
-    config.set_main_option("sqlalchemy.url", settings.database_url)
+    config.set_main_option(
+        "sqlalchemy.url", _alembic_config_value(settings.database_url)
+    )
     return config
+
+
+def _alembic_config_value(value: str) -> str:
+    return value.replace("%", "%%")
 
 
 def _build_settings(database_url: str | None) -> Settings:
