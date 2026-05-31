@@ -80,6 +80,19 @@ def sqlite_file_url(path: Path) -> str:
     return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
 
 
+def write_auth_toml(
+    tmp_path: Path,
+    *auth_lines: str,
+    database_url: str = "sqlite+aiosqlite:///auth.sqlite3",
+) -> Path:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(["[auth]", f'database_url = "{database_url}"', *auth_lines]),
+        encoding="utf-8",
+    )
+    return config_path
+
+
 def initialise_identity_database(database_url: str) -> None:
     settings = Settings(database_url=database_url)
     engine = create_database_engine(settings)
@@ -199,17 +212,7 @@ def test_usermgr_loads_auth_toml_configuration(
     database_path = tmp_path / "auth.sqlite3"
     database_url = sqlite_file_url(database_path)
     initialise_identity_database(database_url)
-    config_path = tmp_path / "auth.toml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[auth]",
-                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
-                "session_cookie_secure = false",
-            ]
-        ),
-        encoding="utf-8",
-    )
+    config_path = write_auth_toml(tmp_path, "session_cookie_secure = false")
     monkeypatch.delenv("AUTH_CONFIG", raising=False)
     monkeypatch.delenv("AUTH_DATABASE_URL", raising=False)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
@@ -232,124 +235,58 @@ def test_usermgr_loads_auth_toml_configuration(
     assert user.email == "configured@example.com"
 
 
-def test_auth_toml_uses_config_database_url_when_env_override_is_blank(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "auth.toml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[auth]",
-                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
-            ]
+@pytest.mark.parametrize(
+    ("environ_template", "expected_url"),
+    [
+        pytest.param(
+            {"AUTH_DATABASE_URL": "   "},
+            "config",
+            id="blank-auth-env-falls-back-to-config",
         ),
-        encoding="utf-8",
-    )
+        pytest.param(
+            {"DATABASE_URL": "database_env"},
+            "database_env",
+            id="database-env-used-when-auth-env-unset",
+        ),
+        pytest.param(
+            {"AUTH_DATABASE_URL": "   ", "DATABASE_URL": "database_env"},
+            "database_env",
+            id="blank-auth-env-falls-through-to-database-env",
+        ),
+        pytest.param(
+            {"AUTH_DATABASE_URL": "auth_env", "DATABASE_URL": "database_env"},
+            "auth_env",
+            id="auth-env-wins-over-database-env",
+        ),
+        pytest.param(
+            {"DATABASE_URL": "   "},
+            "config",
+            id="blank-database-env-falls-back-to-config",
+        ),
+    ],
+)
+def test_auth_toml_database_url_precedence(
+    tmp_path: Path,
+    environ_template: dict[str, str],
+    expected_url: str,
+) -> None:
+    config_path = write_auth_toml(tmp_path)
+    urls = {
+        "auth_env": sqlite_file_url(tmp_path / "auth-env.sqlite3"),
+        "config": sqlite_file_url(tmp_path / "auth.sqlite3"),
+        "database_env": sqlite_file_url(tmp_path / "database-env.sqlite3"),
+    }
+    environ = {
+        key: urls[value] if value in urls else value
+        for key, value in environ_template.items()
+    }
 
     settings = load_auth_settings(
         config_path=config_path,
-        environ={"AUTH_DATABASE_URL": "   "},
+        environ=environ,
     )
 
-    assert settings.database_url == sqlite_file_url(tmp_path / "auth.sqlite3")
-
-
-def test_auth_toml_uses_database_url_when_auth_database_url_is_unset(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "auth.toml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[auth]",
-                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
-            ]
-        ),
-        encoding="utf-8",
-    )
-    fallback_database_url = sqlite_file_url(tmp_path / "fallback.sqlite3")
-
-    settings = load_auth_settings(
-        config_path=config_path,
-        environ={"DATABASE_URL": fallback_database_url},
-    )
-
-    assert settings.database_url == fallback_database_url
-
-
-def test_auth_toml_uses_database_url_when_auth_database_url_is_blank(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "auth.toml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[auth]",
-                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
-            ]
-        ),
-        encoding="utf-8",
-    )
-    fallback_database_url = sqlite_file_url(tmp_path / "fallback.sqlite3")
-
-    settings = load_auth_settings(
-        config_path=config_path,
-        environ={
-            "AUTH_DATABASE_URL": "   ",
-            "DATABASE_URL": fallback_database_url,
-        },
-    )
-
-    assert settings.database_url == fallback_database_url
-
-
-def test_auth_toml_prefers_auth_database_url_over_database_url(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "auth.toml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[auth]",
-                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
-            ]
-        ),
-        encoding="utf-8",
-    )
-    auth_database_url = sqlite_file_url(tmp_path / "auth-env.sqlite3")
-    fallback_database_url = sqlite_file_url(tmp_path / "database-env.sqlite3")
-
-    settings = load_auth_settings(
-        config_path=config_path,
-        environ={
-            "AUTH_DATABASE_URL": auth_database_url,
-            "DATABASE_URL": fallback_database_url,
-        },
-    )
-
-    assert settings.database_url == auth_database_url
-
-
-def test_auth_toml_ignores_blank_database_url_when_config_is_present(
-    tmp_path: Path,
-) -> None:
-    config_path = tmp_path / "auth.toml"
-    config_path.write_text(
-        "\n".join(
-            [
-                "[auth]",
-                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
-            ]
-        ),
-        encoding="utf-8",
-    )
-
-    settings = load_auth_settings(
-        config_path=config_path,
-        environ={"DATABASE_URL": "   "},
-    )
-
-    assert settings.database_url == sqlite_file_url(tmp_path / "auth.sqlite3")
+    assert settings.database_url == urls[expected_url]
 
 
 def test_auth_toml_rejects_unknown_auth_options(tmp_path: Path) -> None:
