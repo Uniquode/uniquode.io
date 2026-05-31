@@ -862,6 +862,71 @@ def test_usermgr_create_user_with_metadata_from_stdin_password(
     assert user.expires_at == 4102444800.0
 
 
+def test_usermgr_create_rejects_invalid_timezone_without_creating_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "invalid-create-timezone.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+
+    exit_code = usermgr.main(
+        [
+            "create",
+            "invalid-timezone@example.com",
+            "--password",
+            "-",
+            "--timezone",
+            "Not/AZone",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Preferred timezone is invalid." in capsys.readouterr().err
+    assert identity_users_from_database(database_url) == []
+
+
+def test_usermgr_update_rejects_invalid_timezone_without_updating_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "invalid-update-timezone.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert (
+        usermgr.main(
+            [
+                "create",
+                "invalid-update-timezone@example.com",
+                "--password",
+                "-",
+                "--timezone",
+                "UTC",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    exit_code = usermgr.main(
+        [
+            "update",
+            "invalid-update-timezone@example.com",
+            "--timezone",
+            "Not/AZone",
+        ]
+    )
+
+    assert exit_code == 1
+    assert "Preferred timezone is invalid." in capsys.readouterr().err
+    [user] = identity_users_from_database(database_url)
+    assert user.preferred_timezone == "UTC"
+
+
 def test_usermgr_password_from_stdin_trims_crlf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

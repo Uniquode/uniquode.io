@@ -1422,6 +1422,14 @@ def identity_user_hashed_password(web_app: FastAPI, *, email: str) -> str:
     return asyncio.run(load_hashed_password())
 
 
+def identity_access_token_values(web_app: FastAPI) -> list[str]:
+    async def load_tokens() -> list[str]:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            return list(await session.scalars(select(AccessToken.token)))
+
+    return asyncio.run(load_tokens())
+
+
 def csrf_token_from(response) -> str:
     match = CSRF_INPUT_PATTERN.search(response.text)
     assert match is not None
@@ -2197,6 +2205,44 @@ def test_existing_session_cookie_rejects_deactivated_user() -> None:
 
         assert current_user.status_code == 200
         assert current_user.json() == {"authenticated": False}
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_existing_session_cookie_rejects_and_revokes_expired_user() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+        session_token = login_response.cookies["uniquode_session"]
+        assert identity_access_token_values(web_app) == [session_token]
+
+        update_identity_user(web_app, email="person@example.com", expires_at=1.0)
+
+        current_user = client.get("/api/identity/current-user")
+
+        assert current_user.status_code == 200
+        assert current_user.json() == {"authenticated": False}
+        assert identity_access_token_values(web_app) == []
     finally:
         asyncio.run(close_database(web_app.state.database))
 
