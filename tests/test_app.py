@@ -1411,6 +1411,17 @@ def update_identity_user(
     asyncio.run(update_user())
 
 
+def identity_user_hashed_password(web_app: FastAPI, *, email: str) -> str:
+    async def load_hashed_password() -> str:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            return user.hashed_password
+
+    return asyncio.run(load_hashed_password())
+
+
 def csrf_token_from(response) -> str:
     match = CSRF_INPUT_PATTERN.search(response.text)
     assert match is not None
@@ -2470,6 +2481,10 @@ def test_password_reset_confirm_rejects_user_expired_after_token_issue() -> None
         assert response.status_code == 200
         assert delivery.reset_tokens
 
+        original_hashed_password = identity_user_hashed_password(
+            web_app,
+            email="person@example.com",
+        )
         update_identity_user(web_app, email="person@example.com", expires_at=1.0)
 
         confirm_response = client.post(
@@ -2485,6 +2500,54 @@ def test_password_reset_confirm_rejects_user_expired_after_token_issue() -> None
 
         assert confirm_response.status_code == 400
         assert "The reset token is invalid or expired." in confirm_response.text
+        assert (
+            identity_user_hashed_password(web_app, email="person@example.com")
+            == original_hashed_password
+        )
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_password_reset_confirm_rejects_user_inactive_after_token_issue() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset",
+            data=csrf_data(reset_page, {"email": "person@example.com"}),
+        )
+        assert response.status_code == 200
+        assert delivery.reset_tokens
+
+        original_hashed_password = identity_user_hashed_password(
+            web_app,
+            email="person@example.com",
+        )
+        update_identity_user(web_app, email="person@example.com", is_active=False)
+
+        confirm_response = client.post(
+            "/password/reset/confirm",
+            data=csrf_data(
+                response,
+                {
+                    "token": delivery.reset_tokens[0][1],
+                    "password": "new correct horse",
+                },
+            ),
+        )
+
+        assert confirm_response.status_code == 400
+        assert "The reset token is invalid or expired." in confirm_response.text
+        assert (
+            identity_user_hashed_password(web_app, email="person@example.com")
+            == original_hashed_password
+        )
     finally:
         asyncio.run(close_database(web_app.state.database))
 
