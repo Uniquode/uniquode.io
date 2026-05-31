@@ -1606,6 +1606,16 @@ def test_auth_database_url_rejects_sqlite_authority_form(tmp_path: Path) -> None
         resolve_database_url("sqlite+aiosqlite://host/auth.db", tmp_path)
 
 
+def test_auth_database_url_rejects_blank_url(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="blank"):
+        resolve_database_url("", tmp_path)
+
+
+def test_auth_database_url_rejects_unsupported_scheme(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="unsupported scheme"):
+        resolve_database_url("mysql+aiomysql://localhost/auth", tmp_path)
+
+
 def test_usermgr_human_output_formats_only_known_timestamp_fields() -> None:
     assert (
         usermgr._format_human_value("created_at", 4102444800.0)

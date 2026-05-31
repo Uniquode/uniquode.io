@@ -1731,6 +1731,112 @@ def test_public_signup_preserves_public_password_policy_error_type(
         asyncio.run(close_database(web_app.state.database))
 
 
+def test_public_signup_maps_unknown_password_policy_error_to_invalid_password() -> None:
+    class UnknownPasswordPolicy:
+        def strength(
+            self,
+            password: str,
+            user: object | None = None,
+        ) -> PasswordStrength:
+            del password, user
+            return PasswordStrength(score=0.0, label="weak")
+
+        def validate(
+            self,
+            password: str,
+            user: object | None = None,
+        ) -> Result[str]:
+            del password, user
+            return Result.failure("custom_password_denied")
+
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+                password_policy=UnknownPasswordPolicy(),
+            ),
+        )
+    )
+
+    async def assert_password_policy_result() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.create_local_user_from_signup(
+            request,
+            email="signup@example.com",
+            password="correct horse",
+        )
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INVALID_PASSWORD
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+
+    try:
+        asyncio.run(assert_password_policy_result())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_public_signup_validates_password_policy_once() -> None:
+    class CountingPasswordPolicy:
+        calls = 0
+
+        def strength(
+            self,
+            password: str,
+            user: object | None = None,
+        ) -> PasswordStrength:
+            del password, user
+            return PasswordStrength(score=1.0, label="strong")
+
+        def validate(
+            self,
+            password: str,
+            user: object | None = None,
+        ) -> Result[str]:
+            del password, user
+            self.calls += 1
+            return Result.ok()
+
+    policy = CountingPasswordPolicy()
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+                password_policy=policy,
+            ),
+        )
+    )
+
+    async def assert_single_validation() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.create_local_user_from_signup(
+            request,
+            email="signup@example.com",
+            password="correct horse",
+        )
+
+        assert result.is_ok() is True
+        assert policy.calls == 1
+
+    try:
+        asyncio.run(assert_single_validation())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 def test_public_signup_rejects_malformed_email_before_user_creation() -> None:
     web_app = create_app(
         Settings(
