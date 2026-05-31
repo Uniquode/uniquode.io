@@ -25,12 +25,12 @@
   lands.
 - [x] 2.2 Define the persistent development database sub-spec for `UT-178`
   separately from the structural refactor.
-- [ ] 2.3 Define advanced authentication sub-specs only after the reusable
+- [x] 2.3 Define advanced authentication sub-specs only after the reusable
   package boundary is stable.
 
 ## 3. Future Follow-Up Changes
 
-- [ ] 3.1 Create a future OpenSpec change for template-engine/module override
+- [x] 3.1 Create a future OpenSpec change for template-engine/module override
   support so independent modules such as `auth_ext` can provide base templates
   while applications can override them without moving template ownership into
   this slice.
