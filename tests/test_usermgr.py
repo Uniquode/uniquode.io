@@ -1,0 +1,1608 @@
+import argparse
+import asyncio
+import csv
+import io
+import json
+import sys
+import tomllib
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from pathlib import Path
+from time import time
+from types import SimpleNamespace
+
+import pytest
+from fastapi import Request
+from sqlalchemy import inspect as sqlalchemy_inspect
+from sqlalchemy import select
+
+import auth_ext.management as identity_management
+import auth_ext.sessions as identity_sessions
+import auth_ext.usermgr as usermgr
+import uniquode.migrate as migrate_module
+from auth_ext import ERROR_INACTIVE_USER
+from auth_ext.configuration import ConfigurationError
+from auth_ext.database import parse_sqlite_database_url, resolve_database_url
+from auth_ext.manager import create_user_manager
+from auth_ext.models import Base, User
+from auth_ext.options import IdentityOptions
+from auth_ext.persistence import create_database_strategy
+from auth_ext.schemas import UserCreate
+from auth_ext.settings import load_auth_settings
+from uniquode.app import create_app
+from uniquode.persistence import (
+    close_database,
+    create_database_engine,
+    create_session_factory,
+    session_scope,
+)
+from uniquode.settings import SQLITE_MEMORY_DATABASE_URL, Settings
+
+
+@dataclass(slots=True)
+class CaptureDelivery:
+    verification_tokens: list[tuple[str, str]]
+
+    async def send_verification_token(
+        self,
+        user: User,
+        token: str,
+        request: Request | None = None,
+    ) -> None:
+        self.verification_tokens.append((user.email, token))
+
+
+@dataclass(slots=True)
+class TimestampVisibleVerificationDelivery:
+    session_factory: object
+    verification_tokens: list[tuple[str, str]]
+    visible_timestamp: float | None = None
+
+    async def send_verification_token(
+        self,
+        user: User,
+        token: str,
+        request: Request | None = None,
+    ) -> None:
+        async with session_scope(self.session_factory) as session:  # type: ignore[arg-type]
+            refreshed_user = (
+                await session.execute(select(User).where(User.email == user.email))
+            ).scalar_one()
+            self.visible_timestamp = refreshed_user.email_verification_sent_at
+
+        self.verification_tokens.append((user.email, token))
+
+
+def sqlite_file_url(path: Path) -> str:
+    return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
+
+
+def initialise_identity_database(database_url: str) -> None:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+
+    async def initialise() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+    try:
+        asyncio.run(initialise())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def identity_users_from_database(database_url: str) -> list[User]:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_users() -> list[User]:
+        async with session_scope(session_factory) as session:
+            return list((await session.execute(select(User))).scalars().all())
+
+    try:
+        return asyncio.run(load_users())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def access_tokens_from_database(database_url: str) -> list[str]:
+    from auth_ext.models import AccessToken
+
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_tokens() -> list[str]:
+        async with session_scope(session_factory) as session:
+            return [
+                token.token
+                for token in (await session.execute(select(AccessToken)))
+                .scalars()
+                .all()
+            ]
+
+    try:
+        return asyncio.run(load_tokens())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def create_session_token_for_user(database_url: str, email: str) -> str:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def create_token() -> str:
+        async with session_scope(session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            strategy = create_database_strategy(session, settings.identity_options)
+            return await strategy.write_token(user)
+
+    try:
+        return asyncio.run(create_token())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def update_user_fields(database_url: str, email: str, **values: object) -> None:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def update_user() -> None:
+        async with session_scope(session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            for field_name, value in values.items():
+                setattr(user, field_name, value)
+            await session.commit()
+
+    try:
+        asyncio.run(update_user())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_usermgr_project_script_is_defined() -> None:
+    data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert data["project"]["scripts"]["usermgr"] == "auth_ext.usermgr:main"
+
+
+def test_usermgr_create_positional_is_email() -> None:
+    args = usermgr.build_parser().parse_args(["create", "person@example.com"])
+
+    assert args.email == "person@example.com"
+    assert not hasattr(args, "target")
+
+
+def test_dateparser_runtime_dependency_is_defined() -> None:
+    data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
+
+    assert any(
+        dependency.startswith("dateparser")
+        for dependency in data["project"]["dependencies"]
+    )
+
+
+def test_usermgr_loads_auth_toml_configuration(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_path = tmp_path / "auth.sqlite3"
+    database_url = sqlite_file_url(database_path)
+    initialise_identity_database(database_url)
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+                "session_cookie_secure = false",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.delenv("AUTH_CONFIG", raising=False)
+    monkeypatch.delenv("AUTH_DATABASE_URL", raising=False)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+
+    assert (
+        usermgr.main(
+            [
+                "--config",
+                str(config_path),
+                "create",
+                "configured@example.com",
+                "--password",
+                "-",
+            ]
+        )
+        == 0
+    )
+
+    [user] = identity_users_from_database(database_url)
+    assert user.email == "configured@example.com"
+
+
+def test_auth_toml_rejects_unknown_auth_options(tmp_path: Path) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+                "session_lifetme_seconds = 3600",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="session_lifetme_seconds"):
+        load_auth_settings(config_path=config_path, environ={})
+
+
+def test_auth_toml_configures_default_password_policy(tmp_path: Path) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+                "",
+                "[auth.password.policy]",
+                "minimum_length = 8",
+                "minimum_strength = 0.25",
+                "minimum_character_categories = 1",
+                'common_fragments = ["example"]',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_auth_settings(config_path=config_path, environ={})
+
+    policy = settings.identity_options.resolved_password_policy()
+    assert policy.minimum_length == 8
+    assert policy.minimum_score == 0.25
+    assert policy.minimum_character_categories == 1
+    assert policy.common_fragments == ("example",)
+
+
+def test_auth_toml_rejects_unknown_password_policy_options(tmp_path: Path) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+                "",
+                "[auth.password.policy]",
+                "minimum_strenth = 0.25",
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="minimum_strenth"):
+        load_auth_settings(config_path=config_path, environ={})
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["create", "update", "delete", "deactivate", "list", "password"],
+)
+def test_usermgr_parser_dispatches_supported_commands(command: str) -> None:
+    argv = [command]
+    if command != "list":
+        argv.append("person@example.com")
+
+    args = usermgr.build_parser().parse_args(argv)
+
+    assert args.command == command
+
+
+def test_usermgr_rejects_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        usermgr.build_parser().parse_args(["unknown"])
+
+    assert exc_info.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_usermgr_parser_rejects_plain_command_line_password(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        usermgr.build_parser().parse_args(
+            ["create", "person@example.com", "--password", "secret"]
+        )
+
+    assert exc_info.value.code == 2
+    assert "invalid choice" in capsys.readouterr().err
+
+
+def test_usermgr_parser_rejects_conflicting_expiry_update_options(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    with pytest.raises(SystemExit) as exc_info:
+        usermgr.build_parser().parse_args(
+            [
+                "update",
+                "person@example.com",
+                "--expires-at",
+                "4102444800",
+                "--no-expires-at",
+            ]
+        )
+
+    assert exc_info.value.code == 2
+    assert "not allowed with argument" in capsys.readouterr().err
+
+
+def test_usermgr_parser_accepts_flexible_expiry_timestamp_values() -> None:
+    args = usermgr.build_parser().parse_args(
+        ["create", "person@example.com", "--expires-at", "2100-01-01T00:00:00Z"]
+    )
+
+    assert args.expires_at == 4102444800.0
+
+
+def test_usermgr_help_documents_numeric_timestamp_precedence() -> None:
+    help_text = usermgr.build_parser().format_help()
+
+    assert "numeric input as Unix seconds before date parsing" in help_text
+
+
+def test_user_model_exposes_management_metadata_columns() -> None:
+    user_columns = set(User.__table__.columns.keys())
+    user_indexes = {index.name for index in User.__table__.indexes}
+
+    assert {
+        "is_admin",
+        "created_at",
+        "modified_at",
+        "last_login_at",
+        "expires_at",
+        "email_verification_sent_at",
+        "display_name",
+        "preferred_name",
+        "preferred_timezone",
+    }.issubset(user_columns)
+    assert {
+        "ix_identity_user_is_active_expires_at",
+        "ix_identity_user_last_login_at",
+        "ix_identity_user_created_at",
+        "ix_identity_user_modified_at",
+        "ix_identity_user_is_admin",
+        "ix_identity_user_is_superuser",
+    }.issubset(user_indexes)
+
+
+def test_user_model_updates_modified_at_on_orm_update() -> None:
+    assert User.__table__.c.modified_at.onupdate is not None
+
+
+def test_user_management_metadata_defaults() -> None:
+    settings = Settings(database_url=SQLITE_MEMORY_DATABASE_URL)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_defaults() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            manager = create_user_manager(session, settings.identity_options)
+            await manager.create(
+                UserCreate(email="metadata@example.com", password="correct horse"),
+                safe=True,
+            )
+
+        async with session_scope(session_factory) as session:
+            user = (
+                await session.execute(
+                    select(User).where(User.email == "metadata@example.com")
+                )
+            ).scalar_one()
+
+            assert user.is_admin is False
+            assert isinstance(user.created_at, float)
+            assert isinstance(user.modified_at, float)
+            assert user.created_at > 0
+            assert user.modified_at >= user.created_at
+            assert user.last_login_at is None
+            assert user.expires_at is None
+            assert user.email_verification_sent_at is None
+            assert user.display_name is None
+            assert user.preferred_name is None
+            assert user.preferred_timezone is None
+
+    try:
+        asyncio.run(assert_defaults())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def test_migrate_upgrade_creates_user_management_metadata_columns(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{(tmp_path / 'metadata.sqlite3').as_posix()}"
+
+    exit_code = migrate_module.main(["--database-url", database_url, "upgrade"])
+
+    assert exit_code == 0
+
+    from sqlalchemy import create_engine
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'metadata.sqlite3'}")
+    try:
+        inspector = sqlalchemy_inspect(engine)
+        columns = {column["name"] for column in inspector.get_columns("identity_user")}
+
+        assert {
+            "is_admin",
+            "created_at",
+            "modified_at",
+            "last_login_at",
+            "expires_at",
+            "email_verification_sent_at",
+            "display_name",
+            "preferred_name",
+            "preferred_timezone",
+        }.issubset(columns)
+        indexes = {index["name"] for index in inspector.get_indexes("identity_user")}
+        assert {
+            "ix_identity_user_is_active_expires_at",
+            "ix_identity_user_last_login_at",
+            "ix_identity_user_created_at",
+            "ix_identity_user_modified_at",
+            "ix_identity_user_is_admin",
+            "ix_identity_user_is_superuser",
+        }.issubset(indexes)
+    finally:
+        engine.dispose()
+
+
+def test_authentication_finalisation_updates_last_login_timestamp() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_last_login_update() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session,
+                web_app.state.settings.identity_options,
+            )
+            user = await manager.create(
+                UserCreate(email="login-time@example.com", password="correct horse"),
+                safe=True,
+            )
+            assert user.last_login_at is None
+
+        result = await identity_sessions.complete_authentication_ceremony(
+            Request({"type": "http", "app": web_app}),
+            user,
+        )
+
+        assert result.is_ok() is True
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            refreshed_user = await session.get(User, user.id)
+            assert refreshed_user is not None
+            assert isinstance(refreshed_user.last_login_at, float)
+            assert refreshed_user.last_login_at > 0
+
+    try:
+        asyncio.run(assert_last_login_update())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_expired_user_is_rejected_during_authentication_finalisation() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_expired_user_rejected() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session,
+                web_app.state.settings.identity_options,
+            )
+            user = await manager.create(
+                UserCreate(email="expired-login@example.com", password="correct horse"),
+                safe=True,
+            )
+            user.expires_at = time() - 60
+            await session.commit()
+
+        result = await identity_sessions.complete_authentication_ceremony(
+            Request({"type": "http", "app": web_app}),
+            user,
+        )
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INACTIVE_USER
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            refreshed_user = await session.get(User, user.id)
+            assert refreshed_user is not None
+            assert refreshed_user.last_login_at is None
+
+    try:
+        asyncio.run(assert_expired_user_rejected())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_inactive_user_is_rejected_during_authentication_finalisation() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_secure=False),
+        )
+    )
+
+    async def assert_inactive_user_rejected() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session,
+                web_app.state.settings.identity_options,
+            )
+            user = await manager.create(
+                UserCreate(
+                    email="inactive-login@example.com",
+                    password="correct horse",
+                ),
+                safe=True,
+            )
+            user.is_active = False
+            await session.commit()
+
+        result = await identity_sessions.complete_authentication_ceremony(
+            Request({"type": "http", "app": web_app}),
+            user,
+        )
+
+        assert result.is_failure() is True
+        assert result.error_type == ERROR_INACTIVE_USER
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            refreshed_user = await session.get(User, user.id)
+            assert refreshed_user is not None
+            assert refreshed_user.last_login_at is None
+
+    try:
+        asyncio.run(assert_inactive_user_rejected())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_is_user_effectively_active_uses_exclusive_expiry_boundary() -> None:
+    now = 200.0
+    user = User(email="boundary@example.com", hashed_password="hash")
+    user.is_active = True
+
+    user.expires_at = now
+    assert identity_management.is_user_effectively_active(user, now=now) is False
+
+    user.expires_at = now + 0.001
+    assert identity_management.is_user_effectively_active(user, now=now) is True
+
+
+def test_request_verification_records_email_verification_sent_timestamp() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    web_app.state.identity_delivery = CaptureDelivery(verification_tokens=[])
+
+    async def seed_user() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session,
+                web_app.state.settings.identity_options,
+            )
+            await manager.create(
+                UserCreate(email="verify-time@example.com", password="correct horse"),
+                safe=True,
+            )
+
+    async def assert_verification_timestamp() -> None:
+        await identity_sessions.request_verification(
+            Request({"type": "http", "app": web_app}),
+            "verify-time@example.com",
+        )
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            user = (
+                await session.execute(
+                    select(User).where(User.email == "verify-time@example.com")
+                )
+            ).scalar_one()
+            assert isinstance(user.email_verification_sent_at, float)
+            assert user.email_verification_sent_at > 0
+
+    try:
+        asyncio.run(seed_user())
+        asyncio.run(assert_verification_timestamp())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_request_verification_commits_timestamp_before_delivery() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = TimestampVisibleVerificationDelivery(
+        session_factory=web_app.state.database.session_factory,
+        verification_tokens=[],
+    )
+    web_app.state.identity_delivery = delivery
+
+    async def seed_user() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session,
+                web_app.state.settings.identity_options,
+            )
+            await manager.create(
+                UserCreate(email="verify-atomic@example.com", password="correct horse"),
+                safe=True,
+            )
+
+    async def assert_timestamp_visible_to_delivery() -> None:
+        await identity_sessions.request_verification(
+            Request({"type": "http", "app": web_app}),
+            "verify-atomic@example.com",
+        )
+
+        assert len(delivery.verification_tokens) == 1
+        assert delivery.verification_tokens[0][0] == "verify-atomic@example.com"
+        assert isinstance(delivery.visible_timestamp, float)
+        assert delivery.visible_timestamp > 0
+
+    try:
+        asyncio.run(seed_user())
+        asyncio.run(assert_timestamp_visible_to_delivery())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_request_verification_ignores_missing_users_without_modifying_rows() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    web_app.state.identity_delivery = CaptureDelivery(verification_tokens=[])
+
+    async def assert_missing_user_is_ignored() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        await identity_sessions.request_verification(
+            Request({"type": "http", "app": web_app}),
+            "missing@example.com",
+        )
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+            assert web_app.state.identity_delivery.verification_tokens == []
+
+    try:
+        asyncio.run(assert_missing_user_is_ignored())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+@pytest.mark.parametrize(
+    ("field_name", "field_value"),
+    [
+        ("is_active", False),
+        ("expires_at", time() - 60),
+    ],
+)
+def test_request_verification_does_not_overwrite_ineligible_user_timestamp(
+    field_name: str,
+    field_value: object,
+) -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    web_app.state.identity_delivery = CaptureDelivery(verification_tokens=[])
+
+    async def assert_ineligible_user_timestamp_is_preserved() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session,
+                web_app.state.settings.identity_options,
+            )
+            user = await manager.create(
+                UserCreate(
+                    email=f"{field_name.replace('_', '-')}@example.com",
+                    password="correct horse",
+                ),
+                safe=True,
+            )
+            setattr(user, field_name, field_value)
+            user.email_verification_sent_at = 123.0
+            await session.commit()
+            email = user.email
+
+        await identity_sessions.request_verification(
+            Request({"type": "http", "app": web_app}),
+            email,
+        )
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            refreshed_user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            assert refreshed_user.email_verification_sent_at == 123.0
+            assert web_app.state.identity_delivery.verification_tokens == []
+
+    try:
+        asyncio.run(assert_ineligible_user_timestamp_is_preserved())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_usermgr_create_user_with_metadata_from_stdin_password(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "users.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+
+    exit_code = usermgr.main(
+        [
+            "create",
+            "operator@example.com",
+            "--password",
+            "-",
+            "--admin",
+            "--superuser",
+            "--unverified",
+            "--display-name",
+            "Operator Example",
+            "--preferred-name",
+            "Operator",
+            "--timezone",
+            "Australia/Melbourne",
+            "--expires-at",
+            "4102444800",
+        ]
+    )
+
+    assert exit_code == 0
+
+    [user] = identity_users_from_database(database_url)
+    assert user.email == "operator@example.com"
+    assert user.hashed_password != "correct horse"
+    assert user.is_admin is True
+    assert user.is_superuser is True
+    assert user.is_verified is False
+    assert user.display_name == "Operator Example"
+    assert user.preferred_name == "Operator"
+    assert user.preferred_timezone == "Australia/Melbourne"
+    assert user.expires_at == 4102444800.0
+
+
+def test_usermgr_password_from_stdin_trims_crlf(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\r\n"))
+
+    assert usermgr._read_password("-") == "correct horse"
+
+
+def test_usermgr_password_from_stdin_rejects_extra_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\nextra\n"))
+
+    with pytest.raises(ConfigurationError, match="exactly one line"):
+        usermgr._read_password("-")
+
+
+def test_usermgr_password_from_stdin_preserves_whitespace_and_strips_newline(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO("  spacey  \n"))
+
+    assert usermgr._read_password("-") == "  spacey  "
+
+
+def test_usermgr_password_from_stdin_rejects_empty_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(sys, "stdin", io.StringIO(""))
+
+    with pytest.raises(ConfigurationError, match="No password received"):
+        usermgr._read_password("-")
+
+
+def test_usermgr_password_from_stdin_rejects_tty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stdin = io.StringIO("correct horse\n")
+    stdin.isatty = lambda: True  # type: ignore[method-assign]
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    with pytest.raises(ConfigurationError, match="interactive stdin"):
+        usermgr._read_password("-")
+
+
+def test_usermgr_read_password_rejects_invalid_source() -> None:
+    with pytest.raises(ConfigurationError, match="Unsupported password source"):
+        usermgr._read_password("invalid")
+
+
+def test_usermgr_create_rejects_duplicate_email(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "duplicate.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "duplicate@example.com", "--password", "-"]) == 0
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    exit_code = usermgr.main(["create", "duplicate@example.com", "--password", "-"])
+
+    assert exit_code == 1
+    assert "already exists" in capsys.readouterr().err
+    assert len(identity_users_from_database(database_url)) == 1
+
+
+def test_usermgr_list_json_omits_null_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "list-json.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert (
+        usermgr.main(
+            [
+                "create",
+                "listed@example.com",
+                "--password",
+                "-",
+                "--display-name",
+                "Listed User",
+            ]
+        )
+        == 0
+    )
+    capsys.readouterr()
+
+    exit_code = usermgr.main(["list", "--json"])
+
+    assert exit_code == 0
+    [record] = json.loads(capsys.readouterr().out)
+    assert record["email"] == "listed@example.com"
+    assert record["display_name"] == "Listed User"
+    assert "preferred_name" not in record
+    assert "preferred_timezone" not in record
+    assert "hashed_password" not in record
+
+
+def test_usermgr_update_resolves_id_and_updates_user_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "update.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "update@example.com", "--password", "-"]) == 0
+    [created_user] = identity_users_from_database(database_url)
+
+    exit_code = usermgr.main(
+        [
+            "update",
+            str(created_user.id),
+            "--admin",
+            "--superuser",
+            "--no-verify",
+            "--display-name",
+            "Updated User",
+            "--preferred-name",
+            "Updated",
+            "--timezone",
+            "UTC",
+            "--expires-at",
+            "4102444800",
+        ]
+    )
+
+    assert exit_code == 0
+    [user] = identity_users_from_database(database_url)
+    assert user.is_admin is True
+    assert user.is_superuser is True
+    assert user.is_verified is False
+    assert user.display_name == "Updated User"
+    assert user.preferred_name == "Updated"
+    assert user.preferred_timezone == "UTC"
+    assert user.expires_at == 4102444800.0
+
+
+def test_usermgr_update_no_expires_at_without_existing_expiry_is_noop(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "no-expiry-noop.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "no-expiry@example.com", "--password", "-"]) == 0
+    [created_user] = identity_users_from_database(database_url)
+    capsys.readouterr()
+
+    exit_code = usermgr.main(["update", "no-expiry@example.com", "--no-expires-at"])
+
+    assert exit_code == 1
+    assert "No user changes" in capsys.readouterr().err
+    [user] = identity_users_from_database(database_url)
+    assert user.expires_at is None
+    assert user.modified_at == created_user.modified_at
+
+
+def test_usermgr_update_can_clear_optional_string_fields(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "clear-optional-fields.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "clear@example.com", "--password", "-"]) == 0
+    assert (
+        usermgr.main(
+            [
+                "update",
+                "clear@example.com",
+                "--display-name",
+                "Clear Example",
+                "--preferred-name",
+                "Clear",
+                "--timezone",
+                "UTC",
+            ]
+        )
+        == 0
+    )
+
+    exit_code = usermgr.main(
+        [
+            "update",
+            "clear@example.com",
+            "--no-display-name",
+            "--no-preferred-name",
+            "--no-timezone",
+        ]
+    )
+
+    assert exit_code == 0
+    [user] = identity_users_from_database(database_url)
+    assert user.display_name is None
+    assert user.preferred_name is None
+    assert user.preferred_timezone is None
+
+
+@pytest.mark.parametrize(
+    ("target", "expected_message"),
+    [
+        ("not-a-user-id", "valid user ID"),
+        ("not-an-email@", "email address is invalid"),
+    ],
+)
+def test_usermgr_update_reports_malformed_targets(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+    target: str,
+    expected_message: str,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "malformed-target.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    exit_code = usermgr.main(["update", target, "--admin"])
+
+    assert exit_code == 1
+    assert expected_message in capsys.readouterr().err
+
+
+def test_usermgr_update_rejects_final_superuser_demotion(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "final-superuser.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert (
+        usermgr.main(["create", "root@example.com", "--password", "-", "--superuser"])
+        == 0
+    )
+
+    exit_code = usermgr.main(["update", "root@example.com", "--no-superuser"])
+
+    assert exit_code == 1
+    assert "final superuser" in capsys.readouterr().err
+    [user] = identity_users_from_database(database_url)
+    assert user.is_superuser is True
+
+
+def test_usermgr_delete_and_deactivate_protect_superusers(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "protect-superuser.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert (
+        usermgr.main(
+            ["create", "protected@example.com", "--password", "-", "--superuser"]
+        )
+        == 0
+    )
+
+    assert usermgr.main(["delete", "protected@example.com", "--force"]) == 1
+    assert usermgr.main(["deactivate", "protected@example.com", "--force"]) == 1
+
+    captured = capsys.readouterr()
+    assert "superuser" in captured.err
+    [user] = identity_users_from_database(database_url)
+    assert user.is_active is True
+
+
+def test_usermgr_delete_protects_non_final_superuser(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "protect-non-final-superuser.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    for email in ("first-root@example.com", "second-root@example.com"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        assert usermgr.main(["create", email, "--password", "-", "--superuser"]) == 0
+
+    exit_code = usermgr.main(["delete", "first-root@example.com", "--force"])
+
+    assert exit_code == 1
+    assert "cannot be deleted" in capsys.readouterr().err
+    assert {user.email for user in identity_users_from_database(database_url)} == {
+        "first-root@example.com",
+        "second-root@example.com",
+    }
+
+
+def test_usermgr_delete_and_deactivate_normal_users_with_force(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "delete-deactivate.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "delete@example.com", "--password", "-"]) == 0
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "deactivate@example.com", "--password", "-"]) == 0
+    delete_token = create_session_token_for_user(database_url, "delete@example.com")
+    deactivate_token = create_session_token_for_user(
+        database_url,
+        "deactivate@example.com",
+    )
+    assert set(access_tokens_from_database(database_url)) == {
+        delete_token,
+        deactivate_token,
+    }
+
+    assert usermgr.main(["delete", "delete@example.com", "--force"]) == 0
+    assert access_tokens_from_database(database_url) == [deactivate_token]
+
+    assert usermgr.main(["deactivate", "deactivate@example.com", "--force"]) == 0
+
+    [remaining_user] = identity_users_from_database(database_url)
+    assert remaining_user.email == "deactivate@example.com"
+    assert remaining_user.is_active is False
+    assert access_tokens_from_database(database_url) == []
+
+
+def test_usermgr_deactivate_only_revokes_target_user_sessions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "deactivate-target-sessions.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    for email in ("alice@example.com", "bob@example.com"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        assert usermgr.main(["create", email, "--password", "-"]) == 0
+
+    alice_token = create_session_token_for_user(database_url, "alice@example.com")
+    bob_token = create_session_token_for_user(database_url, "bob@example.com")
+    assert set(access_tokens_from_database(database_url)) == {alice_token, bob_token}
+
+    assert usermgr.main(["deactivate", "alice@example.com", "--force"]) == 0
+
+    assert access_tokens_from_database(database_url) == [bob_token]
+
+
+def test_usermgr_delete_confirmation_identifies_resolved_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "delete-confirm.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "confirm@example.com", "--password", "-"]) == 0
+    [user] = identity_users_from_database(database_url)
+    monkeypatch.setattr("builtins.input", lambda prompt: print(prompt) or "no")
+    capsys.readouterr()
+
+    exit_code = usermgr.main(["delete", str(user.id)])
+
+    assert exit_code == 1
+    assert "confirm@example.com" in capsys.readouterr().out
+    assert len(identity_users_from_database(database_url)) == 1
+
+
+def test_usermgr_password_revokes_sessions_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "password-revoke.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "password@example.com", "--password", "-"]) == 0
+    token = create_session_token_for_user(database_url, "password@example.com")
+    assert access_tokens_from_database(database_url) == [token]
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("new correct horse\n"))
+    exit_code = usermgr.main(["password", "password@example.com", "--password", "-"])
+
+    assert exit_code == 0
+    assert access_tokens_from_database(database_url) == []
+
+
+def test_usermgr_update_password_revokes_sessions_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "update-password-revoke.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert (
+        usermgr.main(["create", "update-password@example.com", "--password", "-"]) == 0
+    )
+    token = create_session_token_for_user(database_url, "update-password@example.com")
+    assert access_tokens_from_database(database_url) == [token]
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("new correct horse\n"))
+    exit_code = usermgr.main(
+        ["update", "update-password@example.com", "--password", "-"]
+    )
+
+    assert exit_code == 0
+    assert access_tokens_from_database(database_url) == []
+
+
+def test_usermgr_password_can_preserve_sessions(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "password-preserve.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "preserve@example.com", "--password", "-"]) == 0
+    token = create_session_token_for_user(database_url, "preserve@example.com")
+
+    monkeypatch.setattr(sys, "stdin", io.StringIO("new correct horse\n"))
+    exit_code = usermgr.main(
+        ["password", "preserve@example.com", "--password", "-", "--no-revoke"]
+    )
+
+    assert exit_code == 0
+    assert access_tokens_from_database(database_url) == [token]
+
+
+def test_usermgr_interactive_password_mismatch_fails(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "password-mismatch.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    passwords = iter(["first password", "second password"])
+    monkeypatch.setattr(usermgr.getpass, "getpass", lambda prompt: next(passwords))
+
+    exit_code = usermgr.main(["create", "mismatch@example.com"])
+
+    assert exit_code == 1
+    assert "Password confirmation does not match" in capsys.readouterr().err
+    assert identity_users_from_database(database_url) == []
+
+
+def test_usermgr_list_filters_by_email_domain_flags_and_effective_activity(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "list-filters.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    for email in ("alpha@example.com", "beta@example.org", "gamma@example.com"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        assert usermgr.main(["create", email, "--password", "-"]) == 0
+    assert usermgr.main(["update", "alpha@example.com", "--admin"]) == 0
+    assert usermgr.main(["deactivate", "beta@example.org", "--force"]) == 0
+    update_user_fields(database_url, "gamma@example.com", expires_at=time() - 60)
+    capsys.readouterr()
+
+    assert usermgr.main(["list", "--json", "--domain", "example.com", "--admin"]) == 0
+    [admin_record] = json.loads(capsys.readouterr().out)
+    assert admin_record["email"] == "alpha@example.com"
+
+    assert usermgr.main(["list", "--json", "--inactive"]) == 0
+    inactive_emails = {
+        record["email"] for record in json.loads(capsys.readouterr().out)
+    }
+    assert inactive_emails == {"beta@example.org", "gamma@example.com"}
+
+
+def test_usermgr_list_uses_shared_effective_active_timestamp(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "list-now.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
+    update_user_fields(database_url, "boundary@example.com", expires_at=200.0)
+    capsys.readouterr()
+
+    clock_values = iter([100.0, 300.0])
+    monkeypatch.setattr(
+        "auth_ext.management.current_timestamp",
+        lambda: next(clock_values),
+    )
+
+    assert usermgr.main(["list", "--json", "--active"]) == 0
+
+    [record] = json.loads(capsys.readouterr().out)
+    assert record["email"] == "boundary@example.com"
+    assert record["effective_active"] is True
+
+
+def test_usermgr_active_filter_uses_exclusive_expiry_boundary(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "active-expiry-boundary.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
+    update_user_fields(database_url, "boundary@example.com", expires_at=200.0)
+    monkeypatch.setattr("auth_ext.management.current_timestamp", lambda: 200.0)
+    capsys.readouterr()
+
+    assert usermgr.main(["list", "--json"]) == 0
+    [boundary_record] = json.loads(capsys.readouterr().out)
+    assert boundary_record["email"] == "boundary@example.com"
+    assert boundary_record["effective_active"] is False
+
+    assert usermgr.main(["list", "--json", "--active"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+
+    assert usermgr.main(["list", "--json", "--inactive"]) == 0
+    [record] = json.loads(capsys.readouterr().out)
+    assert record["email"] == "boundary@example.com"
+    assert record["effective_active"] is False
+
+
+def test_usermgr_list_timestamp_filters_and_ordering(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "list-timestamps.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    for email in ("first@z.example", "second@y.example", "third@y.example"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        assert usermgr.main(["create", email, "--password", "-"]) == 0
+
+    update_user_fields(
+        database_url,
+        "first@z.example",
+        created_at=100.0,
+        modified_at=150.0,
+        last_login_at=200.0,
+    )
+    update_user_fields(
+        database_url,
+        "second@y.example",
+        created_at=300.0,
+        modified_at=350.0,
+        last_login_at=400.0,
+    )
+    update_user_fields(
+        database_url,
+        "third@y.example",
+        created_at=500.0,
+        modified_at=550.0,
+        last_login_at=600.0,
+    )
+    capsys.readouterr()
+
+    assert (
+        usermgr.main(
+            ["list", "--json", "--since-created-at", "250", "--order", "email-domain"]
+        )
+        == 0
+    )
+    records = json.loads(capsys.readouterr().out)
+    assert [record["email"] for record in records] == [
+        "second@y.example",
+        "third@y.example",
+    ]
+
+    assert usermgr.main(["list", "--json", "-l", "450"]) == 0
+    records = json.loads(capsys.readouterr().out)
+    assert {record["email"] for record in records} == {
+        "first@z.example",
+        "second@y.example",
+    }
+
+
+def test_usermgr_last_login_order_keeps_nulls_last(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "last-login-order.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    for email in ("never@example.com", "recent@example.com"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        assert usermgr.main(["create", email, "--password", "-"]) == 0
+
+    update_user_fields(database_url, "recent@example.com", last_login_at=100.0)
+    capsys.readouterr()
+
+    assert usermgr.main(["list", "--json", "--order", "last-login-at"]) == 0
+
+    records = json.loads(capsys.readouterr().out)
+    assert [record["email"] for record in records] == [
+        "recent@example.com",
+        "never@example.com",
+    ]
+
+
+def test_usermgr_list_filters_by_login_presence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "login-presence.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    for email in ("never@example.com", "recent@example.com"):
+        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        assert usermgr.main(["create", email, "--password", "-"]) == 0
+
+    update_user_fields(database_url, "recent@example.com", last_login_at=100.0)
+    capsys.readouterr()
+
+    assert usermgr.main(["list", "--json", "--never-logged-in"]) == 0
+    [never_record] = json.loads(capsys.readouterr().out)
+    assert never_record["email"] == "never@example.com"
+
+    assert usermgr.main(["list", "--json", "--logged-in"]) == 0
+    [logged_in_record] = json.loads(capsys.readouterr().out)
+    assert logged_in_record["email"] == "recent@example.com"
+
+
+def test_usermgr_timestamp_parser_handles_numeric_iso_and_natural_values() -> None:
+    assert usermgr.parse_timestamp_filter("4102444800") == 4102444800.0
+    assert usermgr.parse_timestamp_filter("20250101") == 20250101.0
+    assert usermgr.parse_timestamp_filter("2100-01-01T00:00:00Z") == 4102444800.0
+    assert isinstance(usermgr.parse_timestamp_filter("1 June 2030"), float)
+
+
+def test_usermgr_timestamp_parser_rejects_invalid_values() -> None:
+    with pytest.raises(argparse.ArgumentTypeError, match="Invalid timestamp value"):
+        usermgr.parse_timestamp_filter("not-a-date")
+
+
+def test_usermgr_timestamp_parser_uses_day_month_year_order(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(usermgr, "_local_timezone_name", lambda: "UTC")
+
+    assert (
+        usermgr.parse_timestamp_filter("01/02/2030")
+        == datetime(
+            2030,
+            2,
+            1,
+            tzinfo=UTC,
+        ).timestamp()
+    )
+
+
+@pytest.mark.parametrize(
+    ("tzinfo", "expected"),
+    [
+        (SimpleNamespace(key="Australia/Melbourne"), "Australia/Melbourne"),
+        (SimpleNamespace(zone="Europe/London"), "Europe/London"),
+        (SimpleNamespace(tzname=lambda _: "CET"), "UTC"),
+        (SimpleNamespace(key="", zone="", tzname=lambda _: ""), "UTC"),
+        (None, "UTC"),
+    ],
+)
+def test_usermgr_timezone_name_uses_available_tzinfo_name(
+    tzinfo: object,
+    expected: str,
+) -> None:
+    assert usermgr._timezone_name_from_tzinfo(tzinfo) == expected
+
+
+def test_auth_database_url_parser_handles_relative_and_absolute_sqlite_paths(
+    tmp_path: Path,
+) -> None:
+    relative_url = parse_sqlite_database_url("sqlite+aiosqlite:///relative.db")
+    absolute_url = parse_sqlite_database_url("sqlite+aiosqlite:////tmp/auth.db")
+
+    assert relative_url is not None
+    assert relative_url.path == Path("relative.db")
+    assert absolute_url is not None
+    assert absolute_url.path == Path("/tmp/auth.db")
+    assert (
+        resolve_database_url("sqlite+aiosqlite:///relative.db", tmp_path)
+        == f"sqlite+aiosqlite:///{(tmp_path / 'relative.db').resolve().as_posix()}"
+    )
+    assert (
+        resolve_database_url("sqlite+aiosqlite:////tmp/auth.db", tmp_path)
+        == f"sqlite+aiosqlite:///{Path('/tmp/auth.db').resolve().as_posix()}"
+    )
+
+
+def test_auth_database_url_rejects_sqlite_authority_form(tmp_path: Path) -> None:
+    with pytest.raises(ConfigurationError, match="authority forms"):
+        resolve_database_url("sqlite+aiosqlite://host/auth.db", tmp_path)
+
+
+def test_usermgr_human_output_formats_only_known_timestamp_fields() -> None:
+    assert (
+        usermgr._format_human_value("created_at", 4102444800.0)
+        == "2100-01-01T00:00:00+00:00"
+    )
+    assert (
+        usermgr._format_human_value("created_at", 4102444800)
+        == "2100-01-01T00:00:00+00:00"
+    )
+    assert usermgr._format_human_value("quota", 1.5) == 1.5
+
+
+def test_usermgr_timestamp_fields_are_centralised() -> None:
+    assert usermgr.USER_RECORD_FIELDS is identity_management.USER_RECORD_FIELDS
+    assert usermgr.USER_TIMESTAMP_FIELDS is identity_management.USER_TIMESTAMP_FIELDS
+    assert usermgr.TIMESTAMP_FIELDS == frozenset(usermgr.USER_TIMESTAMP_FIELDS)
+    assert set(usermgr.USER_TIMESTAMP_FIELDS).issubset(usermgr.USER_RECORD_FIELDS)
+
+
+@pytest.mark.parametrize(
+    ("pattern", "expected"),
+    [
+        ("", ""),
+        ("*", "%"),
+        ("foo", "foo"),
+        ("foo*bar", "foo%bar"),
+        (r"\*", "*"),
+        (r"foo\*bar", "foo*bar"),
+        ("%", r"\%"),
+        ("_", r"\_"),
+        (r"\%", r"\%"),
+        (r"\_", r"\_"),
+        (r"foo\bar", r"foo\\bar"),
+        (r"foo\\*bar", r"foo\\%bar"),
+        ("foo\\", r"foo\\"),
+        (r"foo\*", "foo*"),
+        (r"foo\%", r"foo\%"),
+        (r"foo\\*", r"foo\\%"),
+        (r"foo\\", r"foo\\"),
+        (r"foo\_", r"foo\_"),
+    ],
+)
+def test_usermgr_sql_wildcard_pattern_examples(
+    pattern: str,
+    expected: str,
+) -> None:
+    assert identity_management._sql_wildcard_pattern(pattern) == expected
+
+
+def test_usermgr_human_output_handles_missing_record_fields(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    usermgr._print_user_records(
+        [{"email": "partial@example.com", "id": "user-1"}],
+        json_output=False,
+        csv_output=False,
+    )
+
+    assert capsys.readouterr().out == (
+        "partial@example.com id=user-1 admin=False "
+        "superuser=False active=False verified=False\n"
+    )
+
+
+def test_usermgr_csv_output_uses_iso_timestamp_strings(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "list-csv.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    assert usermgr.main(["create", "csv@example.com", "--password", "-"]) == 0
+    update_user_fields(database_url, "csv@example.com", created_at=4102444800.0)
+    capsys.readouterr()
+
+    assert usermgr.main(["list", "--csv"]) == 0
+
+    [record] = csv.DictReader(io.StringIO(capsys.readouterr().out)).__iter__()
+    assert record["email"] == "csv@example.com"
+    assert record["created_at"] == "2100-01-01T00:00:00+00:00"
+
+
+def test_usermgr_csv_fieldnames_are_stable() -> None:
+    assert usermgr._csv_fieldnames() == list(usermgr.USER_RECORD_FIELDS)

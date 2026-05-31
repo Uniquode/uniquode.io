@@ -10,18 +10,30 @@ Linear: `UT-179`.
 
 ## What Changes
 
-- Add a project CLI script named `usermgr` for administrative local-user
-  management.
-- Support creating local users, including an explicit administrative-user
-  option.
+- Add a reusable `auth_ext`-owned CLI script named `usermgr` for administrative
+  local-user management.
+- Support creating local users, including explicit admin and superuser options.
 - Support deleting users through a deliberate, safe command path.
+- Support deactivating users without deleting their account row.
+- Support updating user attributes such as verification status, admin status,
+  superuser status, password, full name, and preferred timezone.
 - Support listing users with useful filters and ordering, including
-  administrative users, email or partial email, creation date, and last-login
+  admins, superusers, email or partial email, creation date, and last-login
   date when that field is available.
-- Support interactive password change with confirmation.
-- Decide and implement the initial execution model for the CLI:
-  application-local service/FastAPI Users access first, with an API-backed mode
-  deferred until API tokens/scopes exist.
+- Support interactive password entry with confirmation, plus explicit stdin
+  password input for operator automation.
+- Add an injectable `auth_ext` password policy boundary that provides strength
+  feedback and Result-based validation for local-user password writes.
+- Add operational user metadata needed by the CLI: created, modified, last-login,
+  expiry, email-verification-sent, display-name, preferred-name, and
+  preferred-timezone fields.
+- Support readable default output plus JSON and CSV output for scripted use.
+- Use `dateparser` for flexible timestamp filter input, with numeric Unix
+  timestamps handled directly before parser fallback.
+- Decide and implement the initial execution model for the CLI: direct
+  auth-package service/FastAPI Users access using generic `[auth]`
+  configuration from `auth.toml`, with an API-backed mode deferred until API
+  tokens/scopes exist.
 - Keep browser/admin UI design out of scope for this change.
 
 ## Capabilities
@@ -29,8 +41,8 @@ Linear: `UT-179`.
 ### New Capabilities
 
 - `user-management-cli`: The `usermgr` operational CLI, including user create,
-  delete, list, password-change, filtering, ordering, confirmation, and
-  operator-safety behaviours.
+  update, delete, deactivate, list, password-change, filtering, ordering,
+  confirmation, output-format, and operator-safety behaviours.
 
 ### Modified Capabilities
 
@@ -39,9 +51,13 @@ Linear: `UT-179`.
 ## Impact
 
 - `pyproject.toml` project scripts will add `usermgr`.
-- New CLI module(s) will be added under the application identity boundary.
+- `pyproject.toml` runtime dependencies will add `dateparser` for flexible CLI
+  timestamp parsing.
+- New CLI module(s) will be added under the reusable `auth_ext` identity
+  boundary.
 - The CLI will depend on the SQLAlchemy async/FastAPI Users identity services
   established by `identity-foundation`.
-- Tests will cover command parsing, user creation, admin creation, deletion,
-  listing/filtering, password changes, and safety prompts.
+- Tests will cover command parsing, user creation, admin/superuser creation,
+  updates, deletion, deactivation, listing/filtering, output formats, password
+  changes, session revocation, and safety prompts.
 - No public browser UI is added by this change.

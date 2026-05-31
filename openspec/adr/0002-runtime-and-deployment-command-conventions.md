@@ -6,7 +6,7 @@ Status: Accepted
 
 ## Context
 
-ADR 0001 selected FastAPI/Starlette, async-first ASGI, Python 3.14, and `uv` as the project manager and tool runner. The initial application now exposes a stable ASGI import path at `uniquode.asgi:app`.
+ADR 0001 selected FastAPI/Starlette, async-first ASGI, Python 3.13+, and `uv` as the project manager and tool runner. The initial application now exposes a stable ASGI import path at `uniquode.asgi:app`.
 
 The project needs a repeatable way to run the application locally and a clear convention for deployment handoff. The command surface should keep using `uv run` so project-installed packages, `$PATH`, and `$VIRTUAL_ENV` are resolved by `uv`.
 

@@ -333,7 +333,7 @@ def _set_env_int(
     if env.is_set(env_name):
         _reject_blank_env_value(env, env_name)
         try:
-            values[setting_name] = cast(int, env.int(env_name))
+            values[setting_name] = env.int(env_name)
         except ValueError as exc:
             raise ConfigurationError(f"{env_name} must be an integer value.") from exc
 

@@ -33,6 +33,10 @@ from auth_ext import (
     ERROR_INVALID_EMAIL,
     ERROR_INVALID_PASSWORD,
     ERROR_INVALID_TOKEN,
+    ERROR_PASSWORD_TOO_SHORT,
+    ERROR_PASSWORD_TOO_WEAK,
+    PasswordStrength,
+    Result,
 )
 from auth_ext.bootstrap import (
     InitialAdminCredentials,
@@ -653,6 +657,9 @@ def test_settings_include_identity_options() -> None:
     assert options.session_cookie_name == "uniquode_session"
     assert options.session_cookie_secure is True
     assert options.session_lifetime_seconds == 2_592_000
+    assert options.password_minimum_length == 12
+    assert options.password_minimum_strength == 0.45
+    assert options.password_minimum_character_categories == 2
     assert options.token_secrets_configured is False
     assert options.integration_enabled("oauth-account-linking") is False
     assert options.integration_enabled("advanced-authentication") is False
@@ -704,6 +711,26 @@ def test_identity_options_reject_invalid_session_lifetime() -> None:
         match="Session lifetime must be a positive number of seconds",
     ):
         IdentityOptions(session_lifetime_seconds=0)
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "message"),
+    [
+        ({"password_minimum_length": 0}, "Password minimum length"),
+        ({"password_minimum_strength": -0.1}, "Password minimum strength"),
+        ({"password_minimum_strength": 1.1}, "Password minimum strength"),
+        (
+            {"password_minimum_character_categories": 0},
+            "Password minimum character categories",
+        ),
+    ],
+)
+def test_identity_options_reject_invalid_password_policy_settings(
+    kwargs: dict[str, object],
+    message: str,
+) -> None:
+    with pytest.raises(ConfigurationError, match=message):
+        IdentityOptions(**kwargs)
 
 
 def test_identity_options_reject_blank_token_secrets() -> None:
@@ -1125,6 +1152,62 @@ def test_user_manager_rejects_blank_passwords() -> None:
         asyncio.run(close_database(engine))
 
 
+def test_user_manager_uses_configured_password_policy() -> None:
+    class RejectingPasswordPolicy:
+        def strength(
+            self,
+            password: str,
+            user: object | None = None,
+        ) -> PasswordStrength:
+            del password, user
+            return PasswordStrength(
+                score=0.0,
+                label="weak",
+                feedback=("Rejected by custom policy.",),
+            )
+
+        def validate(
+            self,
+            password: str,
+            user: object | None = None,
+        ) -> Result[str]:
+            del password, user
+            return Result.failure(
+                ERROR_PASSWORD_TOO_WEAK,
+                "Rejected by custom policy.",
+            )
+
+    settings = Settings(
+        database_url=SQLITE_MEMORY_DATABASE_URL,
+        identity_options=IdentityOptions(password_policy=RejectingPasswordPolicy()),
+    )
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def assert_policy_enforcement() -> None:
+        async with engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(session_factory) as session:
+            manager = create_user_manager(session, settings.identity_options)
+            with pytest.raises(InvalidPasswordException) as exc_info:
+                await manager.create(
+                    UserCreate(email="rejected-password@example.com", password="valid"),
+                    safe=True,
+                )
+
+            assert exc_info.value.reason == (
+                "Password does not meet the strength requirement."
+            )
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+
+    try:
+        asyncio.run(assert_policy_enforcement())
+    finally:
+        asyncio.run(close_database(engine))
+
+
 def test_authentication_ceremony_finalisation_creates_active_user_session() -> None:
     web_app = create_app(
         Settings(
@@ -1284,6 +1367,7 @@ def seed_identity_user(
     password: str = "correct horse",
     is_active: bool = True,
     is_verified: bool = False,
+    expires_at: float | None = None,
 ) -> None:
     async def seed_user() -> None:
         async with web_app.state.database.engine.begin() as connection:
@@ -1293,7 +1377,7 @@ def seed_identity_user(
             manager = create_user_manager(
                 session, web_app.state.settings.identity_options
             )
-            await manager.create(
+            user = await manager.create(
                 UserCreate(
                     email=email,
                     password=password,
@@ -1302,8 +1386,29 @@ def seed_identity_user(
                 ),
                 safe=False,
             )
+            if expires_at is not None:
+                user.expires_at = expires_at
+                await session.commit()
 
     asyncio.run(seed_user())
+
+
+def update_identity_user(
+    web_app: FastAPI,
+    *,
+    email: str,
+    **values: object,
+) -> None:
+    async def update_user() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            for field_name, field_value in values.items():
+                setattr(user, field_name, field_value)
+            await session.commit()
+
+    asyncio.run(update_user())
 
 
 def csrf_token_from(response) -> str:
@@ -1577,6 +1682,51 @@ def test_public_signup_rejects_blank_password_before_user_creation() -> None:
 
     try:
         asyncio.run(assert_blank_password_result())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+@pytest.mark.parametrize(
+    ("password", "error_type"),
+    [
+        ("short 1", ERROR_PASSWORD_TOO_SHORT),
+        ("abcdefghijkl", ERROR_PASSWORD_TOO_WEAK),
+    ],
+)
+def test_public_signup_preserves_public_password_policy_error_type(
+    password: str,
+    error_type: str,
+) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(
+                account_creation_policy="public-signup",
+                session_cookie_secure=False,
+            ),
+        )
+    )
+
+    async def assert_password_policy_result() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        request = Request({"type": "http", "app": web_app})
+        result = await identity_users.create_local_user_from_signup(
+            request,
+            email="signup@example.com",
+            password=password,
+        )
+
+        assert result.is_failure() is True
+        assert result.error_type == error_type
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            users = (await session.execute(select(User))).scalars().all()
+            assert users == []
+
+    try:
+        asyncio.run(assert_password_policy_result())
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -2171,6 +2321,64 @@ def test_password_reset_request_ignores_inactive_user() -> None:
         assert response.status_code == 200
         assert "If the account exists, a reset link has been queued." in response.text
         assert delivery.reset_tokens == []
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_password_reset_request_ignores_expired_user() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app, expires_at=1.0)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset",
+            data=csrf_data(reset_page, {"email": "person@example.com"}),
+        )
+
+        assert response.status_code == 200
+        assert "If the account exists, a reset link has been queued." in response.text
+        assert delivery.reset_tokens == []
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_password_reset_confirm_rejects_user_expired_after_token_issue() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        reset_page = client.get("/password/reset")
+
+        response = client.post(
+            "/password/reset",
+            data=csrf_data(reset_page, {"email": "person@example.com"}),
+        )
+        assert response.status_code == 200
+        assert delivery.reset_tokens
+
+        update_identity_user(web_app, email="person@example.com", expires_at=1.0)
+
+        confirm_response = client.post(
+            "/password/reset/confirm",
+            data=csrf_data(
+                response,
+                {
+                    "token": delivery.reset_tokens[0][1],
+                    "password": "new correct horse",
+                },
+            ),
+        )
+
+        assert confirm_response.status_code == 400
+        assert "The reset token is invalid or expired." in confirm_response.text
     finally:
         asyncio.run(close_database(web_app.state.database))
 
