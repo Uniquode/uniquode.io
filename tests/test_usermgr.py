@@ -229,6 +229,28 @@ def test_usermgr_loads_auth_toml_configuration(
     assert user.email == "configured@example.com"
 
 
+def test_auth_toml_uses_config_database_url_when_env_override_is_blank(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_auth_settings(
+        config_path=config_path,
+        environ={"AUTH_DATABASE_URL": "   "},
+    )
+
+    assert settings.database_url == sqlite_file_url(tmp_path / "auth.sqlite3")
+
+
 def test_auth_toml_rejects_unknown_auth_options(tmp_path: Path) -> None:
     config_path = tmp_path / "auth.toml"
     config_path.write_text(
@@ -271,6 +293,35 @@ def test_auth_toml_configures_default_password_policy(tmp_path: Path) -> None:
     assert policy.minimum_score == 0.25
     assert policy.minimum_character_categories == 1
     assert policy.common_fragments == ("example",)
+
+
+@pytest.mark.parametrize(
+    "common_fragments_config",
+    [
+        "common_fragments = 123",
+        'common_fragments = ["example", 123]',
+    ],
+)
+def test_auth_toml_rejects_invalid_password_common_fragments(
+    tmp_path: Path,
+    common_fragments_config: str,
+) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+                "",
+                "[auth.password.policy]",
+                common_fragments_config,
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigurationError, match="common fragments"):
+        load_auth_settings(config_path=config_path, environ={})
 
 
 def test_auth_toml_rejects_unknown_password_policy_options(tmp_path: Path) -> None:
@@ -1424,6 +1475,41 @@ def test_usermgr_last_login_order_keeps_nulls_last(
         "recent@example.com",
         "never@example.com",
     ]
+
+
+def test_usermgr_email_domain_order_rejects_unsupported_dialect(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "email-domain-unsupported.sqlite3")
+    initialise_identity_database(database_url)
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+    monkeypatch.setattr(
+        identity_management,
+        "EMAIL_DOMAIN_ORDER_DIALECTS",
+        frozenset(),
+    )
+
+    async def assert_unsupported_order() -> None:
+        async with session_scope(session_factory) as session:
+            result = await identity_management.list_local_users_for_management(
+                session,
+                order="email-domain",
+            )
+
+        assert result.is_failure() is True
+        assert result.error_type == identity_management.ERROR_UNSUPPORTED_ORDER
+        assert result.message
+        message = result.message.lower()
+        assert "email-domain" in message
+        assert "sqlite" in message
+
+    try:
+        asyncio.run(assert_unsupported_order())
+    finally:
+        asyncio.run(close_database(engine))
 
 
 def test_usermgr_list_filters_by_login_presence(
