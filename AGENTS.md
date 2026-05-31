@@ -8,6 +8,12 @@ Prefer small, requirement-driven changes. Do not add runtime dependencies or fra
 
 Use UK/AU spelling at all times, including documentation, comments, function names, class names, and variable names.
 
+User/account operational timestamps in this application are Unix timestamp
+floats by explicit requirement. Do not propose replacing them with
+`DateTime`, integer timestamps, or database-native timestamp columns in code
+review or implementation unless the user explicitly opens a new architecture
+change for that decision.
+
 Never use `--no-gpg-sign` or `--no-verify` with Git commands.
 
 If `.guide.yaml` exists, treat it as current local project state.

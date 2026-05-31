@@ -4,11 +4,11 @@
 TBD - created by archiving change init-project. Update Purpose after archive.
 ## Requirements
 ### Requirement: Project metadata and toolchain
-The system SHALL define Python project metadata in `pyproject.toml` for a Python 3.14 application managed by `uv` and built with `uv_build`.
+The system SHALL define Python project metadata in `pyproject.toml` for a Python 3.13+ application managed by `uv` and built with `uv_build`.
 
 #### Scenario: Project metadata exists
 - **WHEN** a developer inspects the project root
-- **THEN** `pyproject.toml` defines the project name, Python 3.14 requirement, `uv_build` build backend, runtime dependencies, and development dependency groups
+- **THEN** `pyproject.toml` defines the project name, Python 3.13+ requirement, `uv_build` build backend, runtime dependencies, and development dependency groups
 
 #### Scenario: Project is initialized through uv
 - **WHEN** the initialization implementation creates `pyproject.toml`

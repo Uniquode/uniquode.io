@@ -20,7 +20,7 @@ The original platform baseline selected Tortoise ORM as a simple async ORM. Duri
 
 Use FastAPI as the primary application framework, with Starlette as the underlying ASGI toolkit where lower-level primitives are useful.
 
-Use Python 3.14 as the implementation runtime.
+Support Python 3.13 and newer as the implementation runtime.
 
 This is an **async-first Python project**. Async-first is a governing design constraint, not just a framework preference:
 
@@ -89,7 +89,7 @@ Async-first design keeps I/O behavior explicit and prevents accidental event-loo
 
 Server-rendered Jinja2 keeps the initial front-end simple and avoids committing to a separate JavaScript application before the product needs one.
 
-Using Python 3.14 with `uv`, `uv_build`, Ruff, and `ty` keeps project management, builds, formatting, linting, editor feedback, and type checking aligned around a small Python-native toolchain. Running project tools through `uv run` keeps command behavior tied to project metadata and the managed environment.
+Using Python 3.13+ with `uv`, `uv_build`, Ruff, and `ty` keeps project management, builds, formatting, linting, editor feedback, and type checking aligned around a small Python-native toolchain while avoiding unnecessary lock-in to Python 3.14-only syntax. Running project tools through `uv run` keeps command behaviour tied to project metadata and the managed environment.
 
 Relational storage keeps the initial persistence model predictable and fits common web application requirements around relationships, constraints, transactions, and reporting.
 
@@ -127,3 +127,6 @@ Choosing SQL now does not prevent later use of NoSQL for a specific capability, 
 - 2026-05-29: Added the convention that `models` modules are reserved for
   SQLAlchemy ORM model packages and that enabled packages expose Alembic
   `metadata` through deterministic host-owned registration.
+- 2026-05-30: Lowered the supported Python floor to 3.13 and configured Ruff
+  to target Python 3.13 syntax so reusable packages avoid accidental Python
+  3.14-only constructs.

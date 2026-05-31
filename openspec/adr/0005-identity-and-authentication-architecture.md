@@ -70,7 +70,26 @@ Plan for TOTP as an additional authentication factor for local accounts.
 
 Introduce `fastapi-users-auth-ext` as a standalone addon boundary for advanced authentication features such as TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows. Its Python import package should be `auth_ext`.
 
-Design `fastapi-users-auth-ext` to depend on FastAPI Users extension points and async storage protocols rather than on `uniquode` application modules, templates, settings, or `uniquode`-owned ORM models.
+Design `fastapi-users-auth-ext` to depend on FastAPI Users extension points and
+async storage protocols rather than on `uniquode` application modules,
+templates, settings, or `uniquode`-owned ORM models.
+
+Treat the concrete local identity account model as part of the `auth_ext`
+boundary. Because identity is the package's primary concern, `auth_ext` may add
+or change reusable identity-account fields such as administration flags,
+profile/display metadata, lifecycle timestamps, expiry state, and credential or
+session-supporting relationships. Host applications such as `uniquode` consume
+that model, pass options and integration hooks into it, and own presentation,
+policy configuration, and application-specific authorisation built on top of
+the identity data.
+
+Treat local identity administration tooling as part of the `auth_ext` boundary
+when it operates on the reusable `auth_ext` identity model. Package-owned tools
+such as `usermgr` must use generic auth configuration, for example `auth.toml`
+with `[auth]` sections, rather than importing host application settings or
+depending on a host project root. A host application may share the same auth
+configuration source, but it should not have to wrap or own the package CLI for
+the CLI to be publishable with `fastapi-users-auth-ext`.
 
 If `auth_ext` ships SQLAlchemy ORM models, they should live in an
 `auth_ext.models` package that follows the platform `models` convention:
@@ -122,6 +141,19 @@ Publishing `auth_ext` ORM metadata through the standard model-package contract
 keeps the addon reusable without giving it ownership of the host application's
 Alembic migration tree or revision graph.
 
+Allowing `auth_ext` to own and evolve the reusable local user model keeps
+identity semantics out of the host application and makes the package viable as a
+standalone FastAPI Users extension. The trade-off is that applications using
+`auth_ext` accept its concrete identity schema as part of the package contract,
+including migrations for fields that are common to identity administration but
+not necessarily unique to one host.
+
+Owning local identity administration tooling in `auth_ext` keeps operational
+management aligned with the package schema and makes the CLI publishable with
+the package. The trade-off is that `auth_ext` must provide generic
+configuration and database-session bootstrapping for its tools rather than
+relying on host-specific settings modules.
+
 Supporting both OAuth2 client and local OAuth2 authorisation capability creates a broader identity surface area than a simple social-login implementation. That flexibility is intentional, but it should be implemented in staged slices rather than all at once.
 
 Separating `auth-provider` from FastAPI Users and `fastapi-users-auth-ext` keeps delegated authorisation and token issuance distinct from user authentication and MFA. Authlib is expected to provide most OAuth2/OIDC protocol machinery for that later boundary.
@@ -158,3 +190,11 @@ API token support allows machine access without forcing browser-facing workflows
 - 2026-05-29: Clarified that `auth_ext` must not depend on `uniquode`-owned ORM
   models and that any `auth_ext.models` package follows the SQLAlchemy metadata
   export convention.
+- 2026-05-30: Clarified that the concrete reusable local identity account model
+  belongs to `auth_ext`, so `auth_ext` may add or change identity-account fields
+  while host applications consume the model and own presentation/policy
+  integration.
+- 2026-05-30: Clarified that local identity administration tools such as
+  `usermgr` also belong to `auth_ext` when they operate on the reusable
+  identity model, and should use generic `[auth]` configuration rather than
+  host-specific settings.
