@@ -38,6 +38,9 @@ from uniquode.persistence import (
 )
 from uniquode.settings import SQLITE_MEMORY_DATABASE_URL, Settings
 
+STRONG_TEST_PASSWORD = "Correct horse 42!"
+UPDATED_STRONG_TEST_PASSWORD = "New correct horse 42!"
+
 
 @dataclass(slots=True)
 class CaptureDelivery:
@@ -209,7 +212,7 @@ def test_usermgr_loads_auth_toml_configuration(
     )
     monkeypatch.delenv("AUTH_CONFIG", raising=False)
     monkeypatch.delenv("AUTH_DATABASE_URL", raising=False)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
     assert (
         usermgr.main(
@@ -246,6 +249,104 @@ def test_auth_toml_uses_config_database_url_when_env_override_is_blank(
     settings = load_auth_settings(
         config_path=config_path,
         environ={"AUTH_DATABASE_URL": "   "},
+    )
+
+    assert settings.database_url == sqlite_file_url(tmp_path / "auth.sqlite3")
+
+
+def test_auth_toml_uses_database_url_when_auth_database_url_is_unset(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    fallback_database_url = sqlite_file_url(tmp_path / "fallback.sqlite3")
+
+    settings = load_auth_settings(
+        config_path=config_path,
+        environ={"DATABASE_URL": fallback_database_url},
+    )
+
+    assert settings.database_url == fallback_database_url
+
+
+def test_auth_toml_uses_database_url_when_auth_database_url_is_blank(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    fallback_database_url = sqlite_file_url(tmp_path / "fallback.sqlite3")
+
+    settings = load_auth_settings(
+        config_path=config_path,
+        environ={
+            "AUTH_DATABASE_URL": "   ",
+            "DATABASE_URL": fallback_database_url,
+        },
+    )
+
+    assert settings.database_url == fallback_database_url
+
+
+def test_auth_toml_prefers_auth_database_url_over_database_url(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+    auth_database_url = sqlite_file_url(tmp_path / "auth-env.sqlite3")
+    fallback_database_url = sqlite_file_url(tmp_path / "database-env.sqlite3")
+
+    settings = load_auth_settings(
+        config_path=config_path,
+        environ={
+            "AUTH_DATABASE_URL": auth_database_url,
+            "DATABASE_URL": fallback_database_url,
+        },
+    )
+
+    assert settings.database_url == auth_database_url
+
+
+def test_auth_toml_ignores_blank_database_url_when_config_is_present(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "auth.toml"
+    config_path.write_text(
+        "\n".join(
+            [
+                "[auth]",
+                'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+    settings = load_auth_settings(
+        config_path=config_path,
+        environ={"DATABASE_URL": "   "},
     )
 
     assert settings.database_url == sqlite_file_url(tmp_path / "auth.sqlite3")
@@ -450,7 +551,10 @@ def test_user_management_metadata_defaults() -> None:
         async with session_scope(session_factory) as session:
             manager = create_user_manager(session, settings.identity_options)
             await manager.create(
-                UserCreate(email="metadata@example.com", password="correct horse"),
+                UserCreate(
+                    email="metadata@example.com",
+                    password=STRONG_TEST_PASSWORD,
+                ),
                 safe=True,
             )
 
@@ -537,7 +641,10 @@ def test_authentication_finalisation_updates_last_login_timestamp() -> None:
                 web_app.state.settings.identity_options,
             )
             user = await manager.create(
-                UserCreate(email="login-time@example.com", password="correct horse"),
+                UserCreate(
+                    email="login-time@example.com",
+                    password=STRONG_TEST_PASSWORD,
+                ),
                 safe=True,
             )
             assert user.last_login_at is None
@@ -579,7 +686,10 @@ def test_expired_user_is_rejected_during_authentication_finalisation() -> None:
                 web_app.state.settings.identity_options,
             )
             user = await manager.create(
-                UserCreate(email="expired-login@example.com", password="correct horse"),
+                UserCreate(
+                    email="expired-login@example.com",
+                    password=STRONG_TEST_PASSWORD,
+                ),
                 safe=True,
             )
             user.expires_at = time() - 60
@@ -624,7 +734,7 @@ def test_inactive_user_is_rejected_during_authentication_finalisation() -> None:
             user = await manager.create(
                 UserCreate(
                     email="inactive-login@example.com",
-                    password="correct horse",
+                    password=STRONG_TEST_PASSWORD,
                 ),
                 safe=True,
             )
@@ -676,7 +786,10 @@ def test_request_verification_records_email_verification_sent_timestamp() -> Non
                 web_app.state.settings.identity_options,
             )
             await manager.create(
-                UserCreate(email="verify-time@example.com", password="correct horse"),
+                UserCreate(
+                    email="verify-time@example.com",
+                    password=STRONG_TEST_PASSWORD,
+                ),
                 safe=True,
             )
 
@@ -720,7 +833,10 @@ def test_request_verification_commits_timestamp_before_delivery() -> None:
                 web_app.state.settings.identity_options,
             )
             await manager.create(
-                UserCreate(email="verify-atomic@example.com", password="correct horse"),
+                UserCreate(
+                    email="verify-atomic@example.com",
+                    password=STRONG_TEST_PASSWORD,
+                ),
                 safe=True,
             )
 
@@ -792,7 +908,7 @@ def test_request_verification_does_not_overwrite_ineligible_user_timestamp(
             user = await manager.create(
                 UserCreate(
                     email=f"{field_name.replace('_', '-')}@example.com",
-                    password="correct horse",
+                    password=STRONG_TEST_PASSWORD,
                 ),
                 safe=True,
             )
@@ -826,7 +942,7 @@ def test_usermgr_create_user_with_metadata_from_stdin_password(
     database_url = sqlite_file_url(tmp_path / "users.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
     exit_code = usermgr.main(
         [
@@ -852,7 +968,7 @@ def test_usermgr_create_user_with_metadata_from_stdin_password(
 
     [user] = identity_users_from_database(database_url)
     assert user.email == "operator@example.com"
-    assert user.hashed_password != "correct horse"
+    assert user.hashed_password != STRONG_TEST_PASSWORD
     assert user.is_admin is True
     assert user.is_superuser is True
     assert user.is_verified is False
@@ -870,7 +986,7 @@ def test_usermgr_create_rejects_invalid_timezone_without_creating_user(
     database_url = sqlite_file_url(tmp_path / "invalid-create-timezone.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
     exit_code = usermgr.main(
         [
@@ -896,7 +1012,7 @@ def test_usermgr_update_rejects_invalid_timezone_without_updating_user(
     database_url = sqlite_file_url(tmp_path / "invalid-update-timezone.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
         usermgr.main(
             [
@@ -986,10 +1102,10 @@ def test_usermgr_create_rejects_duplicate_email(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "duplicate@example.com", "--password", "-"]) == 0
 
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     exit_code = usermgr.main(["create", "duplicate@example.com", "--password", "-"])
 
     assert exit_code == 1
@@ -1005,7 +1121,7 @@ def test_usermgr_list_json_omits_null_fields(
     database_url = sqlite_file_url(tmp_path / "list-json.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
         usermgr.main(
             [
@@ -1039,7 +1155,7 @@ def test_usermgr_update_resolves_id_and_updates_user_fields(
     database_url = sqlite_file_url(tmp_path / "update.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "update@example.com", "--password", "-"]) == 0
     [created_user] = identity_users_from_database(database_url)
 
@@ -1080,7 +1196,7 @@ def test_usermgr_update_no_expires_at_without_existing_expiry_is_noop(
     database_url = sqlite_file_url(tmp_path / "no-expiry-noop.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "no-expiry@example.com", "--password", "-"]) == 0
     [created_user] = identity_users_from_database(database_url)
     capsys.readouterr()
@@ -1101,7 +1217,7 @@ def test_usermgr_update_can_clear_optional_string_fields(
     database_url = sqlite_file_url(tmp_path / "clear-optional-fields.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "clear@example.com", "--password", "-"]) == 0
     assert (
         usermgr.main(
@@ -1168,7 +1284,7 @@ def test_usermgr_update_rejects_final_superuser_demotion(
     database_url = sqlite_file_url(tmp_path / "final-superuser.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
         usermgr.main(["create", "root@example.com", "--password", "-", "--superuser"])
         == 0
@@ -1190,7 +1306,7 @@ def test_usermgr_delete_and_deactivate_protect_superusers(
     database_url = sqlite_file_url(tmp_path / "protect-superuser.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
         usermgr.main(
             ["create", "protected@example.com", "--password", "-", "--superuser"]
@@ -1216,7 +1332,7 @@ def test_usermgr_delete_protects_non_final_superuser(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("first-root@example.com", "second-root@example.com"):
-        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
         assert usermgr.main(["create", email, "--password", "-", "--superuser"]) == 0
 
     exit_code = usermgr.main(["delete", "first-root@example.com", "--force"])
@@ -1236,9 +1352,9 @@ def test_usermgr_delete_and_deactivate_normal_users_with_force(
     database_url = sqlite_file_url(tmp_path / "delete-deactivate.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "delete@example.com", "--password", "-"]) == 0
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "deactivate@example.com", "--password", "-"]) == 0
     delete_token = create_session_token_for_user(database_url, "delete@example.com")
     deactivate_token = create_session_token_for_user(
@@ -1269,7 +1385,7 @@ def test_usermgr_deactivate_only_revokes_target_user_sessions(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("alice@example.com", "bob@example.com"):
-        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
         assert usermgr.main(["create", email, "--password", "-"]) == 0
 
     alice_token = create_session_token_for_user(database_url, "alice@example.com")
@@ -1289,7 +1405,7 @@ def test_usermgr_delete_confirmation_identifies_resolved_user(
     database_url = sqlite_file_url(tmp_path / "delete-confirm.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "confirm@example.com", "--password", "-"]) == 0
     [user] = identity_users_from_database(database_url)
     monkeypatch.setattr("builtins.input", lambda prompt: print(prompt) or "no")
@@ -1309,12 +1425,12 @@ def test_usermgr_password_revokes_sessions_by_default(
     database_url = sqlite_file_url(tmp_path / "password-revoke.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "password@example.com", "--password", "-"]) == 0
     token = create_session_token_for_user(database_url, "password@example.com")
     assert access_tokens_from_database(database_url) == [token]
 
-    monkeypatch.setattr(sys, "stdin", io.StringIO("new correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{UPDATED_STRONG_TEST_PASSWORD}\n"))
     exit_code = usermgr.main(["password", "password@example.com", "--password", "-"])
 
     assert exit_code == 0
@@ -1328,14 +1444,14 @@ def test_usermgr_update_password_revokes_sessions_by_default(
     database_url = sqlite_file_url(tmp_path / "update-password-revoke.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
         usermgr.main(["create", "update-password@example.com", "--password", "-"]) == 0
     )
     token = create_session_token_for_user(database_url, "update-password@example.com")
     assert access_tokens_from_database(database_url) == [token]
 
-    monkeypatch.setattr(sys, "stdin", io.StringIO("new correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{UPDATED_STRONG_TEST_PASSWORD}\n"))
     exit_code = usermgr.main(
         ["update", "update-password@example.com", "--password", "-"]
     )
@@ -1351,11 +1467,11 @@ def test_usermgr_password_can_preserve_sessions(
     database_url = sqlite_file_url(tmp_path / "password-preserve.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "preserve@example.com", "--password", "-"]) == 0
     token = create_session_token_for_user(database_url, "preserve@example.com")
 
-    monkeypatch.setattr(sys, "stdin", io.StringIO("new correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{UPDATED_STRONG_TEST_PASSWORD}\n"))
     exit_code = usermgr.main(
         ["password", "preserve@example.com", "--password", "-", "--no-revoke"]
     )
@@ -1391,7 +1507,7 @@ def test_usermgr_list_filters_by_email_domain_flags_and_effective_activity(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("alpha@example.com", "beta@example.org", "gamma@example.com"):
-        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
         assert usermgr.main(["create", email, "--password", "-"]) == 0
     assert usermgr.main(["update", "alpha@example.com", "--admin"]) == 0
     assert usermgr.main(["deactivate", "beta@example.org", "--force"]) == 0
@@ -1417,7 +1533,7 @@ def test_usermgr_list_uses_shared_effective_active_timestamp(
     database_url = sqlite_file_url(tmp_path / "list-now.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
     update_user_fields(database_url, "boundary@example.com", expires_at=200.0)
     capsys.readouterr()
@@ -1443,7 +1559,7 @@ def test_usermgr_active_filter_uses_exclusive_expiry_boundary(
     database_url = sqlite_file_url(tmp_path / "active-expiry-boundary.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
     update_user_fields(database_url, "boundary@example.com", expires_at=200.0)
     monkeypatch.setattr("auth_ext.management.current_timestamp", lambda: 200.0)
@@ -1472,7 +1588,7 @@ def test_usermgr_list_timestamp_filters_and_ordering(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("first@z.example", "second@y.example", "third@y.example"):
-        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
         assert usermgr.main(["create", email, "--password", "-"]) == 0
 
     update_user_fields(
@@ -1527,7 +1643,7 @@ def test_usermgr_last_login_order_keeps_nulls_last(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("never@example.com", "recent@example.com"):
-        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
         assert usermgr.main(["create", email, "--password", "-"]) == 0
 
     update_user_fields(database_url, "recent@example.com", last_login_at=100.0)
@@ -1586,7 +1702,7 @@ def test_usermgr_list_filters_by_login_presence(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("never@example.com", "recent@example.com"):
-        monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+        monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
         assert usermgr.main(["create", email, "--password", "-"]) == 0
 
     update_user_fields(database_url, "recent@example.com", last_login_at=100.0)
@@ -1753,7 +1869,7 @@ def test_usermgr_csv_output_uses_iso_timestamp_strings(
     database_url = sqlite_file_url(tmp_path / "list-csv.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\n"))
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert usermgr.main(["create", "csv@example.com", "--password", "-"]) == 0
     update_user_fields(database_url, "csv@example.com", created_at=4102444800.0)
     capsys.readouterr()
