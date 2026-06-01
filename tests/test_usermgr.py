@@ -467,20 +467,37 @@ def test_usermgr_rejects_plain_command_line_password(argv: list[str]) -> None:
     assert "--password" in result.output
 
 
-def test_usermgr_rejects_conflicting_expiry_update_options() -> None:
+@pytest.mark.parametrize("expires_at", ["4102444800", "0"])
+def test_usermgr_rejects_conflicting_expiry_update_options(expires_at: str) -> None:
     result = CliRunner().invoke(
         usermgr.usermgr_command,
         [
             "update",
             "person@example.com",
             "--expires-at",
-            "4102444800",
+            expires_at,
             "--no-expires-at",
         ],
     )
 
     assert result.exit_code == 2
     assert "not allowed with option '--expires-at'" in result.output
+
+
+def test_usermgr_rejects_conflicting_display_name_update_with_empty_value() -> None:
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        [
+            "update",
+            "person@example.com",
+            "--display-name",
+            "",
+            "--no-display-name",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "not allowed with option '--display-name'" in result.output
 
 
 def test_usermgr_accepts_flexible_expiry_timestamp_values() -> None:
