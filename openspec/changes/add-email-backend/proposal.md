@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-211](https://linear.app/uniquode/issue/UT-211/add-email-backend)
+
 Identity flows currently create verification and password-reset tokens through
 application-owned delivery hooks, but the application has no concrete email
 backend or operator configuration for sending those messages. This change adds

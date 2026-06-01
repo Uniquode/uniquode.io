@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-173](https://linear.app/uniquode/issue/UT-173/federation-and-advanced-authentication)
+
 The identity foundation now has stable local users, browser sessions, reusable
 `auth_ext` ownership, and an authentication ceremony boundary. The next step is
 to define the concrete extended authentication sub-specs that will turn the

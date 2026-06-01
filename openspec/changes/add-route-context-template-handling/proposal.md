@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-212](https://linear.app/uniquode/issue/UT-212/add-route-context-template-handling)
+
 Reusable modules now need to publish coherent web surfaces without being folded
 into the `uniquode` application package. Identity is the immediate driver:
 `auth_ext` should own its identity routes and default `templates/identity`
