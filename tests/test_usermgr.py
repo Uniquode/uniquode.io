@@ -1,8 +1,9 @@
-import argparse
 import asyncio
 import csv
 import io
 import json
+import logging
+import sqlite3
 import sys
 import tomllib
 from dataclasses import dataclass
@@ -11,10 +12,13 @@ from pathlib import Path
 from time import time
 from types import SimpleNamespace
 
+import click
 import pytest
+from click.testing import CliRunner
 from fastapi import Request
 from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy import select
+from sqlalchemy.exc import SQLAlchemyError
 
 import auth_ext.management as identity_management
 import auth_ext.sessions as identity_sessions
@@ -107,6 +111,22 @@ def initialise_identity_database(database_url: str) -> None:
         asyncio.run(close_database(engine))
 
 
+def initialise_legacy_identity_database(database_path: Path) -> None:
+    with sqlite3.connect(database_path) as connection:
+        connection.execute(
+            """
+            CREATE TABLE identity_user (
+                id CHAR(32) NOT NULL PRIMARY KEY,
+                email VARCHAR(320) NOT NULL,
+                hashed_password VARCHAR(1024) NOT NULL,
+                is_active BOOLEAN NOT NULL,
+                is_superuser BOOLEAN NOT NULL,
+                is_verified BOOLEAN NOT NULL
+            )
+            """
+        )
+
+
 def identity_users_from_database(database_url: str) -> list[User]:
     settings = Settings(database_url=database_url)
     engine = create_database_engine(settings)
@@ -190,10 +210,19 @@ def test_usermgr_project_script_is_defined() -> None:
 
 
 def test_usermgr_create_positional_is_email() -> None:
-    args = usermgr.build_parser().parse_args(["create", "person@example.com"])
+    result = CliRunner().invoke(usermgr.usermgr_command, ["create", "--help"])
 
-    assert args.email == "person@example.com"
-    assert not hasattr(args, "target")
+    assert result.exit_code == 0
+    assert "EMAIL" in result.output
+    assert "TARGET" not in result.output
+
+
+def test_usermgr_update_positional_is_target() -> None:
+    result = CliRunner().invoke(usermgr.usermgr_command, ["update", "--help"])
+
+    assert result.exit_code == 0
+    assert "TARGET" in result.output
+    assert "EMAIL" not in result.output
 
 
 def test_dateparser_runtime_dependency_is_defined() -> None:
@@ -212,7 +241,7 @@ def test_usermgr_loads_auth_toml_configuration(
     database_path = tmp_path / "auth.sqlite3"
     database_url = sqlite_file_url(database_path)
     initialise_identity_database(database_url)
-    config_path = write_auth_toml(tmp_path, "session_cookie_secure = false")
+    config_path = write_auth_toml(tmp_path, 'session_cookie_name = "auth_session"')
     monkeypatch.delenv("AUTH_CONFIG", raising=False)
     monkeypatch.delenv("AUTH_DATABASE_URL", raising=False)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
@@ -313,6 +342,7 @@ def test_auth_toml_configures_default_password_policy(tmp_path: Path) -> None:
             [
                 "[auth]",
                 'database_url = "sqlite+aiosqlite:///auth.sqlite3"',
+                "session_cookie_force_secure = true",
                 "",
                 "[auth.password.policy]",
                 "minimum_length = 8",
@@ -326,6 +356,7 @@ def test_auth_toml_configures_default_password_policy(tmp_path: Path) -> None:
 
     settings = load_auth_settings(config_path=config_path, environ={})
 
+    assert settings.identity_options.session_cookie_force_secure is True
     policy = settings.identity_options.resolved_password_policy()
     assert policy.minimum_length == 8
     assert policy.minimum_score == 0.25
@@ -385,66 +416,95 @@ def test_auth_toml_rejects_unknown_password_policy_options(tmp_path: Path) -> No
     "command",
     ["create", "update", "delete", "deactivate", "list", "password"],
 )
-def test_usermgr_parser_dispatches_supported_commands(command: str) -> None:
-    argv = [command]
-    if command != "list":
-        argv.append("person@example.com")
+def test_usermgr_click_command_tree_exposes_supported_commands(command: str) -> None:
+    result = CliRunner().invoke(usermgr.usermgr_command, [command, "--help"])
 
-    args = usermgr.build_parser().parse_args(argv)
-
-    assert args.command == command
+    assert result.exit_code == 0
+    assert f"Usage: usermgr {command}" in result.output
 
 
-def test_usermgr_rejects_unknown_command(capsys: pytest.CaptureFixture[str]) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        usermgr.build_parser().parse_args(["unknown"])
+def test_usermgr_rejects_unknown_command() -> None:
+    result = CliRunner().invoke(usermgr.usermgr_command, ["unknown"])
 
-    assert exc_info.value.code == 2
-    assert "invalid choice" in capsys.readouterr().err
+    assert result.exit_code == 2
+    assert "No such command 'unknown'" in result.output
 
 
-def test_usermgr_parser_rejects_plain_command_line_password(
+def test_usermgr_main_treats_falsy_click_exception_as_failure(
+    monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        usermgr.build_parser().parse_args(
-            ["create", "person@example.com", "--password", "secret"]
-        )
+    class FalsyExitClickException(click.ClickException):
+        exit_code = 0
 
-    assert exc_info.value.code == 2
-    assert "invalid choice" in capsys.readouterr().err
+    def raise_click_exception(*_args, **_kwargs) -> None:
+        raise FalsyExitClickException("invalid usage")
 
+    monkeypatch.setattr(usermgr.usermgr_command, "main", raise_click_exception)
 
-def test_usermgr_parser_rejects_conflicting_expiry_update_options(
-    capsys: pytest.CaptureFixture[str],
-) -> None:
-    with pytest.raises(SystemExit) as exc_info:
-        usermgr.build_parser().parse_args(
-            [
-                "update",
-                "person@example.com",
-                "--expires-at",
-                "4102444800",
-                "--no-expires-at",
-            ]
-        )
+    assert usermgr.main([]) == 1
 
-    assert exc_info.value.code == 2
-    assert "not allowed with argument" in capsys.readouterr().err
+    captured = capsys.readouterr()
+    assert "invalid usage" in captured.err
 
 
-def test_usermgr_parser_accepts_flexible_expiry_timestamp_values() -> None:
-    args = usermgr.build_parser().parse_args(
-        ["create", "person@example.com", "--expires-at", "2100-01-01T00:00:00Z"]
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["create", "person@example.com", "--password", "secret"],
+        ["password", "person@example.com", "--password", "secret"],
+        ["update", "person@example.com", "--password", "secret"],
+    ],
+)
+def test_usermgr_rejects_plain_command_line_password(argv: list[str]) -> None:
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        argv,
     )
 
-    assert args.expires_at == 4102444800.0
+    assert result.exit_code == 2
+    assert "must be '-' or omitted" in result.output
+    assert "--password" in result.output
+
+
+def test_usermgr_rejects_conflicting_expiry_update_options() -> None:
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        [
+            "update",
+            "person@example.com",
+            "--expires-at",
+            "4102444800",
+            "--no-expires-at",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "not allowed with option '--expires-at'" in result.output
+
+
+def test_usermgr_accepts_flexible_expiry_timestamp_values() -> None:
+    assert usermgr.parse_timestamp_filter("2100-01-01T00:00:00Z") == 4102444800.0
+    assert usermgr.parse_timestamp_filter("4102444800") == 4102444800.0
+    assert usermgr.parse_timestamp_filter("20250101") == 20250101.0
+
+
+def test_usermgr_timestamp_parse_error_identifies_option() -> None:
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["list", "--since-created-at", "not-a-date"],
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--since-created-at'" in result.output
+    assert "Invalid timestamp value: not-a-date" in result.output
 
 
 def test_usermgr_help_documents_numeric_timestamp_precedence() -> None:
-    help_text = usermgr.build_parser().format_help()
+    result = CliRunner().invoke(usermgr.usermgr_command, ["--help"])
 
-    assert "numeric input as Unix seconds before date parsing" in help_text
+    assert result.exit_code == 0
+    assert "numeric input as Unix seconds before date parsing" in result.output
 
 
 def test_user_model_exposes_management_metadata_columns() -> None:
@@ -560,11 +620,123 @@ def test_migrate_upgrade_creates_user_management_metadata_columns(
         engine.dispose()
 
 
+def test_usermgr_reports_outdated_identity_schema_before_reading_password(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_path = tmp_path / "legacy-identity.sqlite3"
+    initialise_legacy_identity_database(database_path)
+    monkeypatch.setenv("AUTH_DATABASE_URL", sqlite_file_url(database_path))
+    stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    exit_code = usermgr.main(["create", "legacy@example.com", "--password", "-"])
+
+    assert exit_code == 1
+    assert stdin.tell() == 0
+    captured = capsys.readouterr()
+    assert "Auth database schema is not up to date" in captured.err
+    assert "uv run migrate upgrade" in captured.err
+    assert "is_admin" in captured.err
+
+
+def test_usermgr_reports_missing_identity_table_before_reading_password(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_path = tmp_path / "missing-identity.sqlite3"
+    monkeypatch.setenv("AUTH_DATABASE_URL", sqlite_file_url(database_path))
+    stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    exit_code = usermgr.main(["create", "missing@example.com", "--password", "-"])
+
+    assert exit_code == 1
+    assert stdin.tell() == 0
+    captured = capsys.readouterr()
+    assert "Auth database schema is not up to date" in captured.err
+    assert "Missing identity_user table" in captured.err
+    assert "Missing identity_user columns" not in captured.err
+
+
+def test_usermgr_identity_schema_error_uses_qualified_table_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingTableSession:
+        async def run_sync(self, _function):
+            return usermgr.IdentitySchemaStatus(
+                table_name="identity_user",
+                table_exists=False,
+                missing_columns=(),
+            )
+
+    monkeypatch.setattr(User.__table__, "schema", "auth")
+
+    with pytest.raises(ConfigurationError) as exc_info:
+        asyncio.run(usermgr._verify_identity_schema(MissingTableSession()))  # type: ignore[arg-type]
+
+    assert "Missing auth.identity_user table" in str(exc_info.value)
+
+
+def test_usermgr_identity_schema_status_normalises_column_name_case(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeInspector:
+        def has_table(self, table_name: str, *, schema: str | None = None) -> bool:
+            assert table_name == User.__table__.name
+            assert schema == User.__table__.schema
+            return True
+
+        def get_columns(
+            self,
+            table_name: str,
+            *,
+            schema: str | None = None,
+        ) -> list[dict[str, str]]:
+            assert table_name == User.__table__.name
+            assert schema == User.__table__.schema
+            return [
+                {"name": str(column.name).upper()} for column in User.__table__.columns
+            ]
+
+    class FakeSession:
+        def get_bind(self) -> object:
+            return object()
+
+    monkeypatch.setattr(usermgr, "sqlalchemy_inspect", lambda _bind: FakeInspector())
+
+    status = usermgr._identity_schema_status(FakeSession())  # type: ignore[arg-type]
+
+    assert status.table_exists is True
+    assert status.missing_columns == ()
+
+
+def test_usermgr_reports_schema_inspection_error_without_leaking_context(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    class FailingSession:
+        async def run_sync(self, _function):
+            raise SQLAlchemyError("database is locked")
+
+    with caplog.at_level(logging.DEBUG, logger="auth_ext.usermgr"):
+        with pytest.raises(ConfigurationError) as exc_info:
+            asyncio.run(usermgr._verify_identity_schema(FailingSession()))  # type: ignore[arg-type]
+
+    message = str(exc_info.value)
+    assert "Auth database schema could not be inspected" in message
+    assert "SQLAlchemyError" not in message
+    assert "database is locked" not in message
+    assert "SQLAlchemyError" in caplog.text
+    assert "database is locked" in caplog.text
+
+
 def test_authentication_finalisation_updates_last_login_timestamp() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -609,7 +781,7 @@ def test_expired_user_is_rejected_during_authentication_finalisation() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -655,7 +827,7 @@ def test_inactive_user_is_rejected_during_authentication_finalisation() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -993,7 +1165,7 @@ def test_usermgr_password_from_stdin_rejects_extra_data(
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\nextra\n"))
 
-    with pytest.raises(ConfigurationError, match="exactly one line"):
+    with pytest.raises(usermgr.PasswordSourceError, match="exactly one line"):
         usermgr._read_password("-")
 
 
@@ -1010,7 +1182,7 @@ def test_usermgr_password_from_stdin_rejects_empty_input(
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
 
-    with pytest.raises(ConfigurationError, match="No password received"):
+    with pytest.raises(usermgr.PasswordSourceError, match="No password received"):
         usermgr._read_password("-")
 
 
@@ -1021,12 +1193,14 @@ def test_usermgr_password_from_stdin_rejects_tty(
     stdin.isatty = lambda: True  # type: ignore[method-assign]
     monkeypatch.setattr(sys, "stdin", stdin)
 
-    with pytest.raises(ConfigurationError, match="interactive stdin"):
+    with pytest.raises(usermgr.PasswordSourceError, match="interactive stdin"):
         usermgr._read_password("-")
 
 
 def test_usermgr_read_password_rejects_invalid_source() -> None:
-    with pytest.raises(ConfigurationError, match="Unsupported password source"):
+    with pytest.raises(
+        usermgr.PasswordSourceError, match="Unsupported password source"
+    ):
         usermgr._read_password("invalid")
 
 
@@ -1417,22 +1591,120 @@ def test_usermgr_password_can_preserve_sessions(
     assert access_tokens_from_database(database_url) == [token]
 
 
-def test_usermgr_interactive_password_mismatch_fails(
+def test_usermgr_interactive_password_mismatch_aborts_when_input_ends(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    capsys: pytest.CaptureFixture[str],
 ) -> None:
     database_url = sqlite_file_url(tmp_path / "password-mismatch.sqlite3")
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
-    passwords = iter(["first password", "second password"])
-    monkeypatch.setattr(usermgr.getpass, "getpass", lambda prompt: next(passwords))
 
-    exit_code = usermgr.main(["create", "mismatch@example.com"])
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["create", "mismatch@example.com"],
+        input="first password\nsecond password\n",
+    )
 
-    assert exit_code == 1
-    assert "Password confirmation does not match" in capsys.readouterr().err
+    assert result.exit_code == 1
+    assert result.stdout == ""
+    assert "The two entered values do not match" in result.stderr
+    assert "Aborted" in result.stderr
     assert identity_users_from_database(database_url) == []
+
+
+def test_usermgr_interactive_password_prompt_retries_after_mismatch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "password-retry.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["create", "retry@example.com"],
+        input=(
+            "first password\n"
+            "second password\n"
+            f"{STRONG_TEST_PASSWORD}\n"
+            f"{STRONG_TEST_PASSWORD}\n"
+        ),
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "created user: retry@example.com\n"
+    assert "Password:" in result.stderr
+    assert "The two entered values do not match" in result.stderr
+    [user] = identity_users_from_database(database_url)
+    assert user.email == "retry@example.com"
+
+
+@pytest.mark.parametrize("password_source", ["-", "stdin"])
+def test_usermgr_create_with_stdin_password_does_not_prompt(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    password_source: str,
+) -> None:
+    source_name = "dash" if password_source == "-" else password_source
+    email = f"{source_name}@example.com"
+    database_url = sqlite_file_url(tmp_path / f"stdin-password-{source_name}.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["create", email, "--password", password_source],
+        input=f"{STRONG_TEST_PASSWORD}\n",
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == f"created user: {email}\n"
+    assert "Password:" not in result.stderr
+    [user] = identity_users_from_database(database_url)
+    assert user.email == email
+
+
+def test_usermgr_create_with_empty_stdin_password_reports_password_option(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "stdin-password-empty.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["create", "empty-stdin@example.com", "--password", "-"],
+        input="",
+    )
+
+    assert result.exit_code == 2
+    assert "Invalid value for '--password'" in result.output
+    assert "No password received on stdin." in result.output
+    assert identity_users_from_database(database_url) == []
+
+
+def test_usermgr_password_command_prompts_by_default(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "password-default-prompt.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
+    assert (
+        usermgr.main(["create", "default-prompt@example.com", "--password", "-"]) == 0
+    )
+
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["password", "default-prompt@example.com"],
+        input=f"{UPDATED_STRONG_TEST_PASSWORD}\n{UPDATED_STRONG_TEST_PASSWORD}\n",
+    )
+
+    assert result.exit_code == 0
+    assert result.stdout == "changed password: default-prompt@example.com\n"
+    assert "Password:" in result.stderr
 
 
 def test_usermgr_list_filters_by_email_domain_flags_and_effective_activity(
@@ -1662,7 +1934,7 @@ def test_usermgr_timestamp_parser_handles_numeric_iso_and_natural_values() -> No
 
 
 def test_usermgr_timestamp_parser_rejects_invalid_values() -> None:
-    with pytest.raises(argparse.ArgumentTypeError, match="Invalid timestamp value"):
+    with pytest.raises(ValueError, match="Invalid timestamp value"):
         usermgr.parse_timestamp_filter("not-a-date")
 
 

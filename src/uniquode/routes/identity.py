@@ -153,6 +153,7 @@ class LoginSubmitView(HtmlView):
         response = RedirectResponse(url=return_to, status_code=303)
         set_session_cookie(
             response,
+            request,
             ceremony_result.value,
             _identity_options(request),
         )
@@ -164,7 +165,7 @@ class LogoutSubmitView(HtmlView):
     async def render(self, request: Request, renderer: TemplateRenderer) -> Response:
         await destroy_session_token(request)
         response = RedirectResponse(url="/", status_code=303)
-        clear_session_cookie(response, _identity_options(request))
+        clear_session_cookie(response, request, _identity_options(request))
         return response
 
 

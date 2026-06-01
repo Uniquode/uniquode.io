@@ -8,6 +8,7 @@ import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
+import click
 import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.routing import APIRoute
@@ -60,6 +61,7 @@ from auth_ext.sessions import (
     create_user_manager,
     require_anonymous_user,
     require_current_user,
+    session_cookie_secure_for_request,
 )
 from uniquode.app import create_app
 from uniquode.asgi import app
@@ -78,8 +80,8 @@ from uniquode.environment import (
     ENV_OAUTH_LINKING,
     ENV_RESET_SECRET,
     ENV_SESSION_COOKIE,
+    ENV_SESSION_FORCE_SECURE,
     ENV_SESSION_LIFETIME,
-    ENV_SESSION_SECURE,
     ENV_STATIC_ROOT,
     ENV_STATIC_URL,
     ENV_TEMPLATE_ROOT,
@@ -104,7 +106,6 @@ from uniquode.runserver import (
     DEFAULT_PORT,
     DEFAULT_RELOAD,
     RELOAD_ENV_VAR,
-    build_parser,
     env_requests_reload,
     runtime_project_root,
 )
@@ -180,6 +181,54 @@ def test_runserver_project_script_is_defined() -> None:
     assert data["project"]["scripts"]["runserver"] == "uniquode.runserver:main"
     assert data["project"]["scripts"]["validate"] == "uniquode.validate:main"
     assert data["project"]["scripts"]["migrate"] == "uniquode.migrate:main"
+
+
+@pytest.mark.parametrize(
+    ("entrypoint", "argv", "help_text"),
+    [
+        (runserver_module.main, ["--help"], "Start the local Uvicorn"),
+        (migrate_module.main, ["--help"], "Run application schema migrations"),
+    ],
+)
+def test_click_backed_cli_help_returns_cleanly(
+    capsys,
+    entrypoint,
+    argv: list[str],
+    help_text: str,
+) -> None:
+    result = entrypoint(argv)
+
+    captured = capsys.readouterr()
+    assert result in {None, 0}
+    assert help_text in captured.out
+    assert captured.err == ""
+
+
+@pytest.mark.parametrize(
+    ("command", "entrypoint"),
+    [
+        (runserver_module.runserver_command, runserver_module.main),
+        (migrate_module.migrate_command, migrate_module.main),
+    ],
+)
+def test_click_backed_cli_main_treats_falsy_click_exception_as_failure(
+    monkeypatch,
+    capsys,
+    command,
+    entrypoint,
+) -> None:
+    class FalsyExitClickException(click.ClickException):
+        exit_code = 0
+
+    def raise_click_exception(*_args, **_kwargs) -> None:
+        raise FalsyExitClickException("invalid usage")
+
+    monkeypatch.setattr(command, "main", raise_click_exception)
+
+    assert entrypoint([]) == 1
+
+    captured = capsys.readouterr()
+    assert "invalid usage" in captured.err
 
 
 def test_migrate_upgrade_uses_settings_database_url(
@@ -318,6 +367,51 @@ def test_migrate_rejects_blank_database_url_override(capsys) -> None:
     assert "DATABASE_URL must not be blank" in captured.err
 
 
+def test_migrate_rejects_invalid_root_database_url_context() -> None:
+    ctx = click.Context(
+        migrate_module.migrate_command,
+        obj={"database_url": Path("not-a-string.sqlite3")},
+    )
+
+    with pytest.raises(click.UsageError, match="Invalid root database_url type"):
+        migrate_module._database_url_for_command(ctx, None)
+
+
+def test_migrate_rejects_invalid_context_object_shape() -> None:
+    ctx = click.Context(migrate_module.migrate_command, obj="not-a-dict")
+
+    with pytest.raises(click.UsageError, match="expected a dictionary"):
+        migrate_module._database_url_for_command(ctx, None)
+
+
+@pytest.mark.parametrize(
+    "exception",
+    [
+        migrate_module.AlembicError("bad migration revision"),
+        migrate_module.SQLAlchemyError("database unavailable"),
+    ],
+)
+def test_migrate_reports_operation_errors_cleanly(
+    tmp_path,
+    monkeypatch,
+    capsys,
+    exception: Exception,
+) -> None:
+    def fail_current(_config) -> None:
+        raise exception
+
+    monkeypatch.setattr(migrate_module.command, "current", fail_current)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+
+    exit_code = migrate_module.main(["current"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "migration: failed" in captured.err
+    assert str(exception) in captured.err
+
+
 @pytest.mark.parametrize(
     ("argv", "command_name", "revision"),
     [
@@ -389,12 +483,35 @@ def test_migrate_upgrade_initialises_empty_sqlite_database(tmp_path) -> None:
         asyncio.run(close_database(engine))
 
 
-def test_runserver_parser_uses_defaults() -> None:
-    args = build_parser().parse_args([])
+def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
+    observed: dict[str, object] = {}
 
-    assert args.host == DEFAULT_HOST
-    assert args.port == DEFAULT_PORT
-    assert args.reload is None
+    def fake_load_environment(**kwargs: object) -> dict[str, str]:
+        observed.update(kwargs)
+        return {}
+
+    def fake_run_uvicorn_command(args: list[str]) -> None:
+        observed["uvicorn_args"] = args
+
+    def fail_legacy_uvicorn_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("runserver should delegate to uvicorn's CLI command")
+
+    monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
+    monkeypatch.setattr(
+        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
+    )
+    monkeypatch.setattr(runserver_module.uvicorn, "run", fail_legacy_uvicorn_run)
+
+    runserver_module.main([])
+
+    assert observed["project_root"] == runtime_project_root()
+    assert observed["uvicorn_args"] == [
+        "uniquode.asgi:app",
+        "--host",
+        DEFAULT_HOST,
+        "--port",
+        str(DEFAULT_PORT),
+    ]
     assert RELOAD_ENV_VAR == "APP_RELOAD"
 
 
@@ -410,21 +527,126 @@ def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
         observed.update(kwargs)
         return FakeEnv()
 
-    def fake_uvicorn_run(*_args: object, **kwargs: object) -> None:
-        observed["uvicorn_kwargs"] = kwargs
+    def fake_run_uvicorn_command(args: list[str]) -> None:
+        observed["uvicorn_args"] = args
+
+    def fail_legacy_uvicorn_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("runserver should delegate to uvicorn's CLI command")
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
-    monkeypatch.setattr(runserver_module.uvicorn, "run", fake_uvicorn_run)
+    monkeypatch.setattr(
+        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
+    )
+    monkeypatch.setattr(runserver_module.uvicorn, "run", fail_legacy_uvicorn_run)
 
     runserver_module.main([])
 
     assert observed["project_root"] == runtime_project_root()
     assert observed["reload_env_name"] == ENV_APP_RELOAD
-    assert observed["uvicorn_kwargs"] == {
-        "host": DEFAULT_HOST,
-        "port": DEFAULT_PORT,
-        "reload": DEFAULT_RELOAD,
-    }
+    assert observed["uvicorn_args"] == [
+        "uniquode.asgi:app",
+        "--host",
+        DEFAULT_HOST,
+        "--port",
+        str(DEFAULT_PORT),
+    ]
+    assert DEFAULT_RELOAD is False
+
+
+def test_runserver_forwards_trailing_uvicorn_arguments(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_load_environment(**kwargs: object) -> dict[str, str]:
+        observed.update(kwargs)
+        return {ENV_APP_RELOAD: "on"}
+
+    def fake_run_uvicorn_command(args: list[str]) -> None:
+        observed["uvicorn_args"] = args
+
+    def fail_legacy_uvicorn_run(*_args: object, **_kwargs: object) -> None:
+        raise AssertionError("runserver should delegate to uvicorn's CLI command")
+
+    monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
+    monkeypatch.setattr(
+        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
+    )
+    monkeypatch.setattr(runserver_module.uvicorn, "run", fail_legacy_uvicorn_run)
+
+    runserver_module.main(
+        [
+            "--host",
+            "0.0.0.0",
+            "--port",
+            "9000",
+            "--",
+            "--proxy-headers",
+            "--forwarded-allow-ips",
+            "10.0.0.10",
+        ]
+    )
+
+    assert observed["uvicorn_args"] == [
+        "uniquode.asgi:app",
+        "--host",
+        "0.0.0.0",
+        "--port",
+        "9000",
+        "--reload",
+        "--proxy-headers",
+        "--forwarded-allow-ips",
+        "10.0.0.10",
+    ]
+
+
+def test_runserver_no_reload_overrides_reload_environment(monkeypatch) -> None:
+    observed: dict[str, object] = {}
+
+    def fake_load_environment(**kwargs: object) -> dict[str, str]:
+        observed.update(kwargs)
+        return {ENV_APP_RELOAD: "on"}
+
+    def fake_run_uvicorn_command(args: list[str]) -> None:
+        observed["uvicorn_args"] = args
+
+    monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
+    monkeypatch.setattr(
+        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command
+    )
+
+    runserver_module.main(["--no-reload"])
+
+    assert observed["uvicorn_args"] == [
+        "uniquode.asgi:app",
+        "--host",
+        DEFAULT_HOST,
+        "--port",
+        str(DEFAULT_PORT),
+    ]
+
+
+def test_runserver_rejects_extra_uvicorn_app_target(monkeypatch) -> None:
+    monkeypatch.setattr(runserver_module, "load_environment", lambda **_: {})
+
+    assert runserver_module.main(["--", "other.asgi:app"]) == 2
+    assert runserver_module.main(["--", "--proxy-headers", "other.asgi:app"]) == 2
+
+
+def test_runserver_allows_explicit_default_uvicorn_app_target() -> None:
+    runserver_module._reject_extra_app_target([runserver_module.APP_TARGET])
+
+
+@pytest.mark.parametrize(
+    "option_value",
+    [
+        "/tmp/uvicorn.sock",
+        "/tmp/uvicorn:socket",
+        "127.0.0.1:9000",
+    ],
+)
+def test_runserver_target_detection_does_not_reject_option_values(
+    option_value: str,
+) -> None:
+    runserver_module._reject_extra_app_target([option_value])
 
 
 def test_load_environment_reads_dotenv_without_mutating_process_environment(
@@ -536,6 +758,7 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
             ENV_RESET_SECRET: "reset-secret",
             ENV_VERIFICATION_SECRET: "verification-secret",
             ENV_SESSION_COOKIE: "session-id",
+            ENV_SESSION_FORCE_SECURE: "true",
             ENV_SESSION_LIFETIME: "3600",
             ENV_OAUTH_LINKING: "on",
             ENV_ADVANCED_AUTH: "1",
@@ -551,6 +774,7 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
     assert settings.csrf_token_secret == "csrf-secret"
     assert settings.csrf_cookie_secure is True
     assert settings.identity_options.session_cookie_name == "session-id"
+    assert settings.identity_options.session_cookie_force_secure is True
     assert settings.identity_options.session_lifetime_seconds == 3600
     assert settings.identity_options.reset_password_token_secret == "reset-secret"
     assert settings.identity_options.verification_token_secret == "verification-secret"
@@ -602,7 +826,6 @@ def test_load_settings_resolves_env_paths_from_project_root(tmp_path) -> None:
     ("env_name", "expected_message"),
     [
         (ENV_DATABASE_URL, "DATABASE_URL must not be blank"),
-        (ENV_SESSION_SECURE, "SESSION_SECURE must not be blank"),
         (ENV_SESSION_LIFETIME, "SESSION_LIFETIME must not be blank"),
         (ENV_STATIC_URL, "STATIC_URL must not be blank"),
         (ENV_TEMPLATE_ROOT, "TEMPLATE_ROOT must not be blank"),
@@ -655,7 +878,7 @@ def test_settings_include_identity_options() -> None:
     assert settings.csrf_token_secret_configured is False
     assert options.account_creation_policy == "admin-created"
     assert options.session_cookie_name == "uniquode_session"
-    assert options.session_cookie_secure is True
+    assert options.session_cookie_force_secure is False
     assert options.session_lifetime_seconds == 2_592_000
     assert options.password_minimum_length == 12
     assert options.password_minimum_strength == 0.45
@@ -764,6 +987,7 @@ def test_non_local_settings_require_configured_identity_token_secrets() -> None:
         identity_options=IdentityOptions(
             reset_password_token_secret="production-reset-secret",
             verification_token_secret="production-verification-secret",
+            session_cookie_force_secure=True,
         ),
     )
 
@@ -774,14 +998,14 @@ def test_non_local_settings_require_configured_identity_token_secrets() -> None:
 
 def test_non_local_settings_require_secure_session_cookies() -> None:
     identity_options = IdentityOptions(
-        session_cookie_secure=False,
+        session_cookie_force_secure=False,
         reset_password_token_secret="production-reset-secret",
         verification_token_secret="production-verification-secret",
     )
 
     with pytest.raises(
         ConfigurationError,
-        match="Non-local deployments must use secure session cookies",
+        match="auth.session_cookie_force_secure = true",
     ):
         Settings(
             deployment_environment="production",
@@ -790,39 +1014,111 @@ def test_non_local_settings_require_secure_session_cookies() -> None:
         )
 
 
-def test_local_settings_allow_insecure_session_cookies() -> None:
-    settings = Settings(
-        identity_options=IdentityOptions(session_cookie_secure=False),
+@pytest.mark.parametrize(
+    ("scheme", "expected_secure"),
+    [
+        ("http", False),
+        ("https", True),
+        (None, False),
+        ("ws", False),
+        ("wss", True),
+        ("custom", False),
+    ],
+)
+def test_session_cookie_security_derives_from_request_scheme(
+    scheme: object,
+    expected_secure: bool,
+) -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/account",
+            "scheme": scheme,
+            "headers": [],
+        }
     )
 
-    assert settings.deployment_environment == "local"
-    assert settings.identity_options.session_cookie_secure is False
+    assert session_cookie_secure_for_request(request) is expected_secure
 
 
-def test_load_settings_rejects_insecure_non_local_session_cookie_env(
-    tmp_path,
+def test_session_cookie_security_can_be_forced_for_untrusted_scheme() -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/account",
+            "scheme": "http",
+            "headers": [],
+        }
+    )
+
+    assert session_cookie_secure_for_request(request, force_secure=True) is True
+
+
+def test_session_cookie_security_warns_once_for_forwarded_https_on_http_scheme(
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
 ) -> None:
-    with pytest.raises(
-        ConfigurationError,
-        match="Non-local deployments must use secure session cookies",
-    ):
-        load_settings(
-            environ={
-                ENV_APP_ENV: "production",
-                ENV_CSRF_SECRET: "production-csrf-secret",
-                ENV_RESET_SECRET: "production-reset-secret",
-                ENV_VERIFICATION_SECRET: "production-verification-secret",
-                ENV_SESSION_SECURE: "false",
-            },
-            project_root=tmp_path,
-            read_dotenv=False,
-        )
+    monkeypatch.setattr(identity_users, "_logged_forward_header_misconfig", False)
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/account",
+            "scheme": "http",
+            "headers": [(b"x-forwarded-proto", b"https")],
+        }
+    )
+
+    with caplog.at_level(logging.WARNING, logger="auth_ext.sessions"):
+        assert session_cookie_secure_for_request(request) is False
+        assert session_cookie_secure_for_request(request) is False
+
+    warnings = [
+        record
+        for record in caplog.records
+        if record.levelno == logging.WARNING
+        and "ASGI request scheme is 'http'" in record.message
+    ]
+    assert len(warnings) == 1
+    assert "ASGI request scheme is 'http'" in caplog.text
+    assert "session_cookie_force_secure" in caplog.text
+
+
+@pytest.mark.parametrize(
+    ("forwarded_header", "expected"),
+    [
+        ("for=192.0.2.43;proto=https;by=203.0.113.43", True),
+        ('for=192.0.2.43; proto="https"', True),
+        ("for=192.0.2.43;proto=http, for=198.51.100.17;proto=https", True),
+        ("for=192.0.2.43;host=proto=https.example", False),
+        ("for=192.0.2.43;xproto=https", False),
+        ("for=192.0.2.43;proto=httpsx", False),
+    ],
+)
+def test_session_cookie_security_parses_forwarded_proto_parameter(
+    forwarded_header: str,
+    expected: bool,
+) -> None:
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "path": "/account",
+            "scheme": "http",
+            "headers": [(b"forwarded", forwarded_header.encode())],
+        }
+    )
+
+    assert identity_users._has_secure_forwarded_proto(request) is expected
 
 
 def test_non_local_settings_require_configured_csrf_token_secret() -> None:
     identity_options = IdentityOptions(
         reset_password_token_secret="production-reset-secret",
         verification_token_secret="production-verification-secret",
+        session_cookie_force_secure=True,
     )
 
     with pytest.raises(
@@ -1044,7 +1340,7 @@ def test_model_metadata_loader_preserves_nested_import_failures() -> None:
 def test_identity_authentication_backend_uses_http_only_session_cookie() -> None:
     options = IdentityOptions(
         session_cookie_name="u_test_session",
-        session_cookie_secure=True,
+        session_cookie_force_secure=True,
         session_lifetime_seconds=3600,
     )
 
@@ -1057,6 +1353,13 @@ def test_identity_authentication_backend_uses_http_only_session_cookie() -> None
     assert backend.transport.cookie_max_age == 3600
     assert backend.transport.cookie_secure is True
     assert backend.transport.cookie_httponly is True
+
+
+def test_identity_authentication_backend_allows_http_development_cookie() -> None:
+    backend = create_authentication_backend(IdentityOptions())
+
+    assert isinstance(backend.transport, CookieTransport)
+    assert backend.transport.cookie_secure is False
 
 
 def test_user_manager_creates_and_authenticates_user() -> None:
@@ -1212,7 +1515,7 @@ def test_authentication_ceremony_finalisation_creates_active_user_session() -> N
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -1254,7 +1557,7 @@ def test_authentication_ceremony_finalisation_rejects_inactive_user() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -1296,7 +1599,7 @@ def test_authentication_ceremony_finalisation_reloads_user_state() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -1463,12 +1766,7 @@ def app_request_with_session_cookie(
 
 
 def test_identity_login_logout_and_current_user_routes() -> None:
-    web_app = create_app(
-        Settings(
-            database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
-        )
-    )
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
 
     try:
         seed_identity_user(web_app)
@@ -1496,6 +1794,7 @@ def test_identity_login_logout_and_current_user_routes() -> None:
         assert login_response.headers["location"] == "/account"
         assert login_response.cookies["uniquode_session"]
         assert "HttpOnly" in login_response.headers["set-cookie"]
+        assert "Secure" not in login_response.headers["set-cookie"]
 
         current_user = client.get("/api/identity/current-user")
         assert current_user.status_code == 200
@@ -1524,11 +1823,110 @@ def test_identity_login_logout_and_current_user_routes() -> None:
         asyncio.run(close_database(web_app.state.database))
 
 
+def test_identity_login_uses_secure_cookie_for_https_requests() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(
+            web_app,
+            base_url="https://testserver",
+            follow_redirects=False,
+        )
+
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert "Secure" in login_response.headers["set-cookie"]
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_can_force_secure_cookie_for_http_requests() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(session_cookie_force_secure=True),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert "Secure" in login_response.headers["set-cookie"]
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_logout_clears_secure_cookie_for_https_requests() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(
+            web_app,
+            base_url="https://testserver",
+            follow_redirects=False,
+        )
+
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+        assert "Secure" in login_response.headers["set-cookie"]
+
+        logout_page = client.get("/logout")
+        logout_response = client.post("/logout", data=csrf_data(logout_page))
+
+        assert logout_response.status_code == 303
+        set_cookie = logout_response.headers["set-cookie"]
+        assert "uniquode_session=" in set_cookie
+        assert "Max-Age=0" in set_cookie
+        assert "Secure" in set_cookie
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 def test_public_signup_is_not_exposed_by_default() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -1546,11 +1944,10 @@ def test_public_signup_route_rechecks_policy_when_mounted() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
-    web_app.state.identity_options = IdentityOptions(session_cookie_secure=False)
+    web_app.state.identity_options = IdentityOptions()
 
     try:
         client = TestClient(web_app, follow_redirects=False)
@@ -1578,7 +1975,6 @@ def test_public_signup_enabled_creates_user_without_session() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -1635,7 +2031,6 @@ def test_public_signup_reports_existing_account_to_caller() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -1676,7 +2071,6 @@ def test_public_signup_rejects_blank_password_before_user_creation() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -1721,7 +2115,6 @@ def test_public_signup_preserves_public_password_policy_error_type(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -1773,7 +2166,6 @@ def test_public_signup_maps_unknown_password_policy_error_to_invalid_password() 
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
                 password_policy=UnknownPasswordPolicy(),
             ),
         )
@@ -1830,7 +2222,6 @@ def test_public_signup_validates_password_policy_once() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
                 password_policy=policy,
             ),
         )
@@ -1862,7 +2253,6 @@ def test_public_signup_rejects_malformed_email_before_user_creation() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -1897,7 +2287,6 @@ def test_public_signup_route_returns_form_error_for_malformed_email() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -1933,7 +2322,6 @@ def test_destroy_session_token_removes_expired_stored_token() -> None:
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
-                session_cookie_secure=False,
                 session_lifetime_seconds=1,
             ),
         )
@@ -1986,7 +2374,7 @@ def test_identity_login_requires_csrf_before_session_cookie() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2022,7 +2410,7 @@ def test_identity_login_normalises_unsafe_return_to(return_to: str) -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2058,7 +2446,7 @@ def test_identity_login_rejects_invalid_credentials() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2103,7 +2491,6 @@ def test_identity_login_failure_preserves_public_signup_link() -> None:
             database_url=SQLITE_MEMORY_DATABASE_URL,
             identity_options=IdentityOptions(
                 account_creation_policy="public-signup",
-                session_cookie_secure=False,
             ),
         )
     )
@@ -2136,7 +2523,7 @@ def test_identity_login_rejects_inactive_user() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2168,7 +2555,7 @@ def test_existing_session_cookie_rejects_deactivated_user() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2213,7 +2600,7 @@ def test_existing_session_cookie_rejects_and_revokes_expired_user() -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2251,7 +2638,7 @@ def test_identity_dependency_helpers_handle_required_and_anonymous_users() -> No
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
 
@@ -2306,7 +2693,7 @@ def test_resolve_current_user_caches_result_per_request(monkeypatch) -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            identity_options=IdentityOptions(session_cookie_secure=False),
+            identity_options=IdentityOptions(),
         )
     )
     read_count = 0

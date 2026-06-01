@@ -1,6 +1,8 @@
 [auth]
 database_url = "sqlite+aiosqlite:///uniquode.sqlite3"
-session_cookie_secure = true
+# Local development default only. Non-local deployments must set this to true;
+# do not copy this sample into production as-is.
+session_cookie_force_secure = false
 
 [auth.password.policy]
 minimum_length = 12

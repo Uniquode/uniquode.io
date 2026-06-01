@@ -33,8 +33,8 @@ ENV_MIGRATIONS_ROOT: Final = "MIGRATIONS_ROOT"
 ENV_OAUTH_LINKING: Final = "OAUTH_LINKING"
 ENV_RESET_SECRET: Final = "RESET_SECRET"
 ENV_SESSION_COOKIE: Final = "SESSION_COOKIE"
+ENV_SESSION_FORCE_SECURE: Final = "SESSION_FORCE_SECURE"
 ENV_SESSION_LIFETIME: Final = "SESSION_LIFETIME"
-ENV_SESSION_SECURE: Final = "SESSION_SECURE"
 ENV_STATIC_ROOT: Final = "STATIC_ROOT"
 ENV_STATIC_URL: Final = "STATIC_URL"
 ENV_TEMPLATE_ROOT: Final = "TEMPLATE_ROOT"
@@ -58,8 +58,8 @@ IDENTITY_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
     EnvironmentSetting(ENV_OAUTH_LINKING, "oauth_account_linking_enabled", "bool"),
     EnvironmentSetting(ENV_RESET_SECRET, "reset_password_token_secret"),
     EnvironmentSetting(ENV_SESSION_COOKIE, "session_cookie_name"),
+    EnvironmentSetting(ENV_SESSION_FORCE_SECURE, "session_cookie_force_secure", "bool"),
     EnvironmentSetting(ENV_SESSION_LIFETIME, "session_lifetime_seconds", "int"),
-    EnvironmentSetting(ENV_SESSION_SECURE, "session_cookie_secure", "bool"),
     EnvironmentSetting(ENV_VERIFICATION_SECRET, "verification_token_secret"),
 )
 SUPPORTED_SETTINGS_ENV_VARS: Final = tuple(

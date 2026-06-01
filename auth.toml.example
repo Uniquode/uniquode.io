@@ -1,6 +1,8 @@
 [auth]
 database_url = "sqlite+aiosqlite:///uniquode.sqlite3"
-session_cookie_secure = false
+# Local default. Non-local deployments should force secure cookies.
+# Prefer trusted proxy-header normalisation for TLS termination as well.
+session_cookie_force_secure = false
 
 [auth.password.policy]
 minimum_length = 12
