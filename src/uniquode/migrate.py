@@ -1,95 +1,147 @@
 from __future__ import annotations
 
-import argparse
 import os
 import sys
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
+from typing import Any
 
+import click
 from alembic import command
 from alembic.config import Config
+from alembic.util.exc import CommandError as AlembicError
+from sqlalchemy.exc import SQLAlchemyError
 
 from uniquode.configuration import ConfigurationError
 from uniquode.environment import ENV_DATABASE_URL
 from uniquode.runserver import runtime_project_root
 from uniquode.settings import Settings, load_settings
 
-
-def build_parser() -> argparse.ArgumentParser:
-    database_url_parent = argparse.ArgumentParser(add_help=False)
-    _add_database_url_argument(database_url_parent, default=argparse.SUPPRESS)
-
-    parser = argparse.ArgumentParser(
-        prog="migrate",
-        description="Run application schema migrations through Alembic.",
-    )
-    _add_database_url_argument(parser)
-    subparsers = parser.add_subparsers(dest="command", required=True)
-
-    upgrade = subparsers.add_parser(
-        "upgrade",
-        help="Upgrade schema revisions.",
-        parents=[database_url_parent],
-    )
-    upgrade.add_argument("revision", nargs="?", default="head")
-
-    downgrade = subparsers.add_parser(
-        "downgrade",
-        help="Downgrade schema revisions.",
-        parents=[database_url_parent],
-    )
-    downgrade.add_argument("revision")
-
-    subparsers.add_parser(
-        "current",
-        help="Show the current database revision.",
-        parents=[database_url_parent],
-    )
-    subparsers.add_parser(
-        "history",
-        help="Show migration history.",
-        parents=[database_url_parent],
-    )
-    return parser
+DATABASE_URL_HELP = (
+    "Override the configured SQLAlchemy async database URL for this migration command."
+)
 
 
-def _add_database_url_argument(
-    parser: argparse.ArgumentParser,
-    *,
-    default: str | None = None,
-) -> None:
-    parser.add_argument(
-        "--database-url",
-        default=default,
-        help=(
-            "Override the configured SQLAlchemy async database URL for this "
-            "migration command."
-        ),
+def _database_url_option[F: Callable[..., Any]](function: F) -> F:
+    """Add the optional ``database_url: str | None`` Click option."""
+
+    return click.option("--database-url", help=DATABASE_URL_HELP)(function)
+
+
+@click.group(
+    name="migrate",
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help="Run application schema migrations through Alembic.",
+)
+@_database_url_option
+@click.pass_context
+def migrate_command(ctx: click.Context, database_url: str | None) -> None:
+    ctx.ensure_object(dict)
+    ctx.obj["database_url"] = database_url
+
+
+@migrate_command.command("upgrade", help="Upgrade schema revisions.")
+@_database_url_option
+@click.argument("revision", default="head", required=False)
+@click.pass_context
+def upgrade_command(ctx: click.Context, revision: str, database_url: str | None) -> int:
+    return _run_migration(
+        _database_url_for_command(ctx, database_url),
+        lambda config: command.upgrade(config, revision),
     )
 
 
-def main(argv: Sequence[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+@migrate_command.command("downgrade", help="Downgrade schema revisions.")
+@_database_url_option
+@click.argument("revision")
+@click.pass_context
+def downgrade_command(
+    ctx: click.Context, revision: str, database_url: str | None
+) -> int:
+    return _run_migration(
+        _database_url_for_command(ctx, database_url),
+        lambda config: command.downgrade(config, revision),
+    )
+
+
+@migrate_command.command("current", help="Show the current database revision.")
+@_database_url_option
+@click.pass_context
+def current_command(ctx: click.Context, database_url: str | None) -> int:
+    return _run_migration(
+        _database_url_for_command(ctx, database_url),
+        command.current,
+    )
+
+
+@migrate_command.command("history", help="Show migration history.")
+@_database_url_option
+@click.pass_context
+def history_command(ctx: click.Context, database_url: str | None) -> int:
+    return _run_migration(
+        _database_url_for_command(ctx, database_url),
+        command.history,
+    )
+
+
+def _database_url_for_command(
+    ctx: click.Context, command_database_url: str | None
+) -> str | None:
+    if command_database_url is not None:
+        return command_database_url
+
+    if ctx.obj is None:
+        return None
+
+    if not isinstance(ctx.obj, dict):
+        raise click.UsageError(
+            "Invalid Click context object for migrate; expected a dictionary."
+        )
+
+    root_database_url = ctx.obj.get("database_url")
+    if root_database_url is None:
+        return None
+    if not isinstance(root_database_url, str):
+        raise click.UsageError(
+            "Invalid root database_url type "
+            f"{type(root_database_url)!r}; expected a string."
+        )
+    return root_database_url
+
+
+def _run_migration(
+    database_url: str | None,
+    operation: Callable[[Config], None],
+) -> int:
     try:
-        settings = _build_settings(args.database_url)
+        settings = _build_settings(database_url)
     except ConfigurationError as exc:
         print("configuration: failed", file=sys.stderr)
         print(f"- {exc}", file=sys.stderr)
         return 1
 
     config = build_alembic_config(settings)
-    match args.command:
-        case "upgrade":
-            command.upgrade(config, args.revision)
-        case "downgrade":
-            command.downgrade(config, args.revision)
-        case "current":
-            command.current(config)
-        case "history":
-            command.history(config)
-        case _:  # pragma: no cover - argparse restricts choices
-            raise RuntimeError(f"Unsupported migration command: {args.command}")
-
+    try:
+        operation(config)
+    except (AlembicError, SQLAlchemyError) as exc:
+        print("migration: failed", file=sys.stderr)
+        print(f"- {exc}", file=sys.stderr)
+        return 1
     return 0
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        result = migrate_command.main(
+            args=None if argv is None else list(argv),
+            prog_name="migrate",
+            standalone_mode=False,
+        )
+    except click.exceptions.Exit as exc:
+        return int(exc.exit_code or 0)
+    except click.ClickException as exc:
+        exc.show()
+        return int(exc.exit_code or 1)
+    return int(result or 0)
 
 
 def build_alembic_config(settings: Settings) -> Config:

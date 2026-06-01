@@ -186,10 +186,11 @@ class Settings:
 
         if (
             deployment_environment != "local"
-            and not identity_options.session_cookie_secure
+            and not identity_options.session_cookie_force_secure
         ):
             raise ConfigurationError(
-                "Non-local deployments must use secure session cookies."
+                "Non-local deployments must force secure session cookies; set "
+                "SESSION_FORCE_SECURE=true or auth.session_cookie_force_secure = true."
             )
 
     @staticmethod

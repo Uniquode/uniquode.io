@@ -1,7 +1,10 @@
-import argparse
 import sys
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import TextIO
+
+import click
 
 from uniquode.configuration import ConfigurationError
 from uniquode.settings import Settings, load_settings
@@ -19,113 +22,77 @@ from uniquode.validation.web import _contains_post_form
 VALIDATION_TARGETS = validation_target_names()
 
 __all__ = (
+    "UnknownValidationTargetError",
     "VALIDATION_TARGETS",
     "_contains_post_form",
-    "build_parser",
     "main",
     "redact_secret_value",
+    "validate_command",
     "validate_environment",
     "validate_persistence",
     "validate_web",
 )
 
 
-def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(
-        prog="validate",
-        description=(
-            "Run project validation checks. Examples: validate, "
-            "validate --verbose web persistence."
-        ),
-    )
-    parser.add_argument(
-        "targets",
-        nargs="*",
-        help="Validation targets to run. Defaults to all registered targets.",
-    )
-    parser.add_argument(
-        "-v",
-        "--verbose",
-        action="store_true",
-        help="Show the concrete validation checks performed for each target.",
-    )
-    parser.add_argument(
-        "--template-root",
-        type=Path,
-        help="Override the configured template root for web validation.",
-    )
-    parser.add_argument(
-        "--static-root",
-        type=Path,
-        help="Override the configured static root for web validation.",
-    )
-    parser.add_argument(
-        "--static-url-path",
-        help="Override the configured static URL prefix for web validation.",
-    )
-    parser.add_argument(
-        "--database-url",
-        help=(
-            "Override the configured SQLAlchemy async database URL. Verbose "
-            "output redacts embedded credentials."
-        ),
-    )
-    parser.add_argument(
-        "--migrations-root",
-        type=Path,
-        help="Override the configured Alembic migrations root.",
-    )
-    parser.add_argument(
-        "--alembic-config",
-        type=Path,
-        help="Override the configured Alembic config file.",
-    )
-    return parser
+class UnknownValidationTargetError(ValueError):
+    """Raised when validation is requested for unknown target names."""
 
 
-def _resolve_targets(targets: list[str]) -> tuple[str, ...]:
+@dataclass(frozen=True, slots=True)
+class ValidationOverrides:
+    database_url: str | None = None
+    template_root: Path | None = None
+    static_root: Path | None = None
+    migrations_root: Path | None = None
+    alembic_config: Path | None = None
+    static_url_path: str | None = None
+
+
+def _resolve_targets(targets: Sequence[str]) -> tuple[str, ...]:
     if not targets:
         return VALIDATION_TARGETS
 
     invalid_targets = sorted(set(targets) - set(VALIDATION_TARGETS))
     if invalid_targets:
         invalid = ", ".join(invalid_targets)
-        raise SystemExit(f"Unknown validation target(s): {invalid}")
+        raise UnknownValidationTargetError(f"Unknown validation target(s): {invalid}")
 
     return tuple(dict.fromkeys(targets))
 
 
-def _build_settings(args: argparse.Namespace) -> Settings:
+def _build_settings(overrides: ValidationOverrides) -> Settings:
     defaults = load_settings()
     return Settings(
         app_name=defaults.app_name,
         deployment_environment=defaults.deployment_environment,
         database_url=(
-            args.database_url
-            if args.database_url is not None
+            overrides.database_url
+            if overrides.database_url is not None
             else defaults.database_url
         ),
         template_root=(
-            args.template_root
-            if args.template_root is not None
+            overrides.template_root
+            if overrides.template_root is not None
             else defaults.template_root
         ),
         static_root=(
-            args.static_root if args.static_root is not None else defaults.static_root
+            overrides.static_root
+            if overrides.static_root is not None
+            else defaults.static_root
         ),
         migrations_root=(
-            args.migrations_root
-            if args.migrations_root is not None
+            overrides.migrations_root
+            if overrides.migrations_root is not None
             else defaults.migrations_root
         ),
         alembic_config=(
-            args.alembic_config
-            if args.alembic_config is not None
+            overrides.alembic_config
+            if overrides.alembic_config is not None
             else defaults.alembic_config
         ),
         static_url_path=(
-            args.static_url_path
-            if args.static_url_path is not None
+            overrides.static_url_path
+            if overrides.static_url_path is not None
             else defaults.static_url_path
         ),
         csrf_token_secret=defaults.csrf_token_secret,
@@ -134,10 +101,72 @@ def _build_settings(args: argparse.Namespace) -> Settings:
     )
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_parser().parse_args(argv)
+@click.command(
+    name="validate",
+    context_settings={"help_option_names": ["-h", "--help"]},
+    help=(
+        "Run project validation checks. Examples: validate, "
+        "validate --verbose web persistence."
+    ),
+)
+@click.option(
+    "-v",
+    "--verbose",
+    is_flag=True,
+    help="Show the concrete validation checks performed for each target.",
+)
+@click.option(
+    "--template-root",
+    type=click.Path(path_type=Path),
+    help="Override the configured template root for web validation.",
+)
+@click.option(
+    "--static-root",
+    type=click.Path(path_type=Path),
+    help="Override the configured static root for web validation.",
+)
+@click.option(
+    "--static-url-path",
+    help="Override the configured static URL prefix for web validation.",
+)
+@click.option(
+    "--database-url",
+    help=(
+        "Override the configured SQLAlchemy async database URL. Verbose output "
+        "redacts embedded credentials."
+    ),
+)
+@click.option(
+    "--migrations-root",
+    type=click.Path(path_type=Path),
+    help="Override the configured Alembic migrations root.",
+)
+@click.option(
+    "--alembic-config",
+    type=click.Path(path_type=Path),
+    help="Override the configured Alembic config file.",
+)
+@click.argument("targets", nargs=-1)
+def validate_command(
+    targets: tuple[str, ...],
+    verbose: bool,
+    template_root: Path | None,
+    static_root: Path | None,
+    static_url_path: str | None,
+    database_url: str | None,
+    migrations_root: Path | None,
+    alembic_config: Path | None,
+) -> int:
+    overrides = ValidationOverrides(
+        database_url=database_url,
+        template_root=template_root,
+        static_root=static_root,
+        migrations_root=migrations_root,
+        alembic_config=alembic_config,
+        static_url_path=static_url_path,
+    )
     try:
-        settings = _build_settings(args)
+        settings = _build_settings(overrides)
     except ConfigurationError as exc:
         print("configuration: failed", file=sys.stderr)
         print(f"- {exc}", file=sys.stderr)
@@ -145,23 +174,43 @@ def main(argv: list[str] | None = None) -> int:
 
     exit_code = 0
 
-    for target in _resolve_targets(args.targets):
+    try:
+        resolved_targets = _resolve_targets(targets)
+    except UnknownValidationTargetError as exc:
+        raise click.UsageError(str(exc)) from exc
+
+    for target in resolved_targets:
         result = get_validation_target(target)(settings)
 
         if result.is_ok:
             print(f"{result.name}: ok")
-            if args.verbose:
+            if verbose:
                 _print_verbose_checks(result)
             continue
 
         exit_code = 1
         print(f"{result.name}: failed", file=sys.stderr)
-        if args.verbose:
+        if verbose:
             _print_verbose_checks(result, file=sys.stderr)
         for error in result.errors:
             print(f"- {error}", file=sys.stderr)
 
     return exit_code
+
+
+def main(argv: Sequence[str] | None = None) -> int:
+    try:
+        result = validate_command.main(
+            args=None if argv is None else list(argv),
+            prog_name="validate",
+            standalone_mode=False,
+        )
+    except click.exceptions.Exit as exc:
+        return int(exc.exit_code or 0)
+    except click.ClickException as exc:
+        exc.show()
+        return int(exc.exit_code or 1)
+    return int(result or 0)
 
 
 def _print_verbose_checks(

@@ -49,7 +49,6 @@ wrapping the CLI:
 ```toml
 [auth]
 database_url = "sqlite+aiosqlite:///identity.sqlite3"
-session_cookie_secure = false
 ```
 
 Relative SQLite database paths are resolved relative to the `auth.toml` file
