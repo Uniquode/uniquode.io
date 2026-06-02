@@ -29,6 +29,7 @@ from auth_ext.management import (
     ERROR_CYCLIC_GROUP_MEMBERSHIP,
     ERROR_GROUP_HAS_MEMBERSHIPS,
     ERROR_INVALID_GROUP_ID,
+    ERROR_INVALID_USER_ID,
     ERROR_NOT_FOUND,
     ERROR_SCOPE_IN_USE,
     add_child_group_to_group_for_management,
@@ -565,6 +566,53 @@ def test_authorisation_membership_removal_and_candidate_child_groups(
             await close_database(database)
 
     asyncio.run(assert_removal_and_candidates())
+
+
+def test_effective_scopes_invalid_user_target_returns_invalid_user_id(
+    tmp_path: Path,
+) -> None:
+    async def assert_invalid_user_id() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "effective-invalid-user-id.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                result = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="not-a-valid-user-id",
+                )
+
+            assert result.is_failure() is True
+            assert result.error_type == ERROR_INVALID_USER_ID
+            assert (
+                result.message
+                == "User target must be an email address or valid user ID."
+            )
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_invalid_user_id())
+
+
+def test_effective_scopes_missing_user_returns_not_found(tmp_path: Path) -> None:
+    async def assert_missing_user() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "effective-missing-user.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                result = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="missing.user@example.com",
+                )
+
+            assert result.is_failure() is True
+            assert result.error_type == ERROR_NOT_FOUND
+            assert result.message == "No matching user was found."
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_missing_user())
 
 
 def test_effective_scopes_resolve_direct_nested_and_duplicate_group_scopes(
