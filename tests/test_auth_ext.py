@@ -24,7 +24,48 @@ from auth_ext import (
     RouterExtensionPlan,
     complete_challenge,
 )
+from auth_ext.database import close_database, create_database, session_scope
+from auth_ext.management import (
+    ERROR_CYCLIC_GROUP_MEMBERSHIP,
+    ERROR_GROUP_HAS_MEMBERSHIPS,
+    ERROR_INVALID_GROUP_ID,
+    ERROR_INVALID_USER_ID,
+    ERROR_NOT_FOUND,
+    ERROR_SCOPE_IN_USE,
+    add_child_group_to_group_for_management,
+    add_scope_to_group_for_management,
+    add_user_to_group_for_management,
+    create_group_for_management,
+    create_local_user_for_management,
+    create_scope_for_management,
+    delete_group_for_management,
+    delete_scope_for_management,
+    effective_scopes_for_user_for_management,
+    get_group_for_management,
+    list_candidate_child_groups_for_management,
+    list_groups_for_management,
+    list_scopes_for_management,
+    remove_child_group_from_group_for_management,
+    remove_scope_from_group_for_management,
+    remove_user_from_group_for_management,
+    resolve_group_target,
+    update_group_for_management,
+    update_scope_for_management,
+)
 from auth_ext.manager import public_password_failure_message
+from auth_ext.models import Base, GroupGroup, GroupScope, GroupUser
+from auth_ext.models import metadata as auth_ext_metadata
+
+
+def sqlite_file_url(path: Path) -> str:
+    return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
+
+
+async def initialise_auth_database(database_url: str):
+    database = create_database(database_url)
+    async with database.engine.begin() as connection:
+        await connection.run_sync(Base.metadata.create_all)
+    return database
 
 
 class MemoryChallengeStore:
@@ -77,6 +118,650 @@ def test_auth_ext_package_is_independent_from_application_modules() -> None:
                 module == "uniquode" or module.startswith("uniquode.")
                 for module in imported_modules
             )
+
+
+def test_auth_ext_metadata_exposes_authorisation_group_tables() -> None:
+    assert {
+        "identity_group",
+        "identity_scope",
+        "identity_group_scope",
+        "identity_group_user",
+        "identity_group_group",
+    }.issubset(auth_ext_metadata.tables)
+    assert any(
+        constraint.name == "ck_identity_group_group_no_self_membership"
+        for constraint in GroupGroup.__table__.constraints
+    )
+    group_scope_foreign_keys = {
+        str(foreign_key.column): foreign_key.ondelete
+        for column in GroupScope.__table__.columns
+        for foreign_key in column.foreign_keys
+    }
+    group_user_foreign_keys = {
+        str(foreign_key.column): foreign_key.ondelete
+        for column in GroupUser.__table__.columns
+        for foreign_key in column.foreign_keys
+    }
+    group_group_foreign_keys = {
+        str(foreign_key.column): foreign_key.ondelete
+        for column in GroupGroup.__table__.columns
+        for foreign_key in column.foreign_keys
+    }
+    assert group_scope_foreign_keys == {
+        "identity_group.id": "RESTRICT",
+        "identity_scope.scope": "RESTRICT",
+    }
+    assert group_user_foreign_keys == {
+        "identity_group.id": "RESTRICT",
+        "identity_user.id": "CASCADE",
+    }
+    assert group_group_foreign_keys == {"identity_group.id": "RESTRICT"}
+
+
+def test_authorisation_scope_management_lifecycle(tmp_path: Path) -> None:
+    async def assert_scope_lifecycle() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "scope.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                created = await create_scope_for_management(
+                    session,
+                    scope="document:read",
+                    description="Read documents.",
+                )
+                duplicate = await create_scope_for_management(
+                    session,
+                    scope="document:read",
+                    description="Duplicate.",
+                )
+                updated = await update_scope_for_management(
+                    session,
+                    scope="document:read",
+                    description="Read published documents.",
+                )
+                listed = await list_scopes_for_management(session)
+                deleted = await delete_scope_for_management(
+                    session,
+                    scope="document:read",
+                )
+                missing = await update_scope_for_management(
+                    session,
+                    scope="document:read",
+                    description="Missing.",
+                )
+
+            assert created.is_ok() is True
+            assert created.value == {
+                "scope": "document:read",
+                "description": "Read documents.",
+            }
+            assert duplicate.is_failure() is True
+            assert duplicate.error_type == ERROR_ALREADY_EXISTS
+            assert updated.value == {
+                "scope": "document:read",
+                "description": "Read published documents.",
+            }
+            assert listed.value == {
+                "scopes": [
+                    {
+                        "scope": "document:read",
+                        "description": "Read published documents.",
+                    }
+                ]
+            }
+            assert deleted.is_ok() is True
+            assert missing.is_failure() is True
+            assert missing.error_type == ERROR_NOT_FOUND
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_scope_lifecycle())
+
+
+def test_authorisation_scope_delete_rejects_used_scope(tmp_path: Path) -> None:
+    async def assert_used_scope_delete() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "used-scope.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                await create_scope_for_management(session, scope="admin:write")
+                await create_group_for_management(
+                    session,
+                    abbrev="admins",
+                    description="Administrators",
+                )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="admins",
+                    scope="admin:write",
+                )
+
+                deleted = await delete_scope_for_management(
+                    session,
+                    scope="admin:write",
+                )
+                listed = await list_scopes_for_management(session)
+
+            assert deleted.is_failure() is True
+            assert deleted.error_type == ERROR_SCOPE_IN_USE
+            assert listed.value == {
+                "scopes": [{"scope": "admin:write", "description": None}]
+            }
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_used_scope_delete())
+
+
+def test_authorisation_group_management_lifecycle(tmp_path: Path) -> None:
+    async def assert_group_lifecycle() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "group.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                created = await create_group_for_management(
+                    session,
+                    abbrev="ops",
+                    description="Operations team",
+                )
+                duplicate = await create_group_for_management(
+                    session,
+                    abbrev="ops",
+                    description="Duplicate",
+                )
+                resolved_by_abbrev, abbrev_error = await resolve_group_target(
+                    session,
+                    "ops",
+                )
+                resolved_by_id, id_error = await resolve_group_target(
+                    session,
+                    str(created.value["id"]),
+                )
+                updated = await update_group_for_management(
+                    session,
+                    target="ops",
+                    description="Operations and support",
+                )
+                shown = await get_group_for_management(session, target="ops")
+                listed = await list_groups_for_management(session)
+                deleted = await delete_group_for_management(session, target="ops")
+                missing = await get_group_for_management(session, target="ops")
+
+            assert created.is_ok() is True
+            assert created.value["abbrev"] == "ops"
+            assert created.value["description"] == "Operations team"
+            assert duplicate.is_failure() is True
+            assert duplicate.error_type == ERROR_ALREADY_EXISTS
+            assert resolved_by_abbrev is not None
+            assert abbrev_error is None
+            assert resolved_by_id is not None
+            assert id_error is None
+            assert updated.value["abbrev"] == "ops"
+            assert updated.value["description"] == "Operations and support"
+            assert shown.value == updated.value
+            assert listed.value == {"groups": [updated.value]}
+            assert deleted.value == updated.value
+            assert missing.is_failure() is True
+            assert missing.error_type == ERROR_INVALID_GROUP_ID
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_group_lifecycle())
+
+
+def test_authorisation_group_target_distinguishes_invalid_from_missing_uuid(
+    tmp_path: Path,
+) -> None:
+    async def assert_group_target_errors() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "group-target.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                invalid_group, invalid_error = await resolve_group_target(
+                    session,
+                    "not a uuid",
+                )
+                missing_group, missing_error = await resolve_group_target(
+                    session,
+                    "00000000-0000-0000-0000-000000000001",
+                )
+
+            assert invalid_group is None
+            assert invalid_error == ERROR_INVALID_GROUP_ID
+            assert missing_group is None
+            assert missing_error == ERROR_NOT_FOUND
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_group_target_errors())
+
+
+def test_authorisation_group_scope_assignment_rejects_duplicates(
+    tmp_path: Path,
+) -> None:
+    async def assert_group_scope_assignment() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "group-scope.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                await create_scope_for_management(session, scope="admin:read")
+                created_group = await create_group_for_management(
+                    session,
+                    abbrev="admins",
+                    description="Administrators",
+                )
+                assigned = await add_scope_to_group_for_management(
+                    session,
+                    group_target="admins",
+                    scope="admin:read",
+                )
+                duplicate = await add_scope_to_group_for_management(
+                    session,
+                    group_target="admins",
+                    scope="admin:read",
+                )
+                shown = await get_group_for_management(session, target="admins")
+                deleted = await delete_group_for_management(
+                    session,
+                    target=str(created_group.value["id"]),
+                )
+
+            assert assigned.is_ok() is True
+            assert duplicate.is_failure() is True
+            assert duplicate.error_type == ERROR_ALREADY_EXISTS
+            assert shown.value["scopes"] == ["admin:read"]
+            assert deleted.is_ok() is True
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_group_scope_assignment())
+
+
+def test_authorisation_group_user_membership_rejects_duplicates_and_blocks_delete(
+    tmp_path: Path,
+) -> None:
+    async def assert_user_membership() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "group-user.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                await create_group_for_management(
+                    session,
+                    abbrev="staff",
+                    description="Staff",
+                )
+                await create_local_user_for_management(
+                    session,
+                    IdentityOptions(),
+                    email="staff@example.com",
+                    password="Correct horse 42!",
+                )
+                assigned = await add_user_to_group_for_management(
+                    session,
+                    group_target="staff",
+                    user_target="staff@example.com",
+                )
+                duplicate = await add_user_to_group_for_management(
+                    session,
+                    group_target="staff",
+                    user_target="staff@example.com",
+                )
+                delete_result = await delete_group_for_management(
+                    session,
+                    target="staff",
+                )
+                shown = await get_group_for_management(session, target="staff")
+
+            assert assigned.is_ok() is True
+            assert duplicate.is_failure() is True
+            assert duplicate.error_type == ERROR_ALREADY_EXISTS
+            assert delete_result.is_failure() is True
+            assert delete_result.error_type == ERROR_GROUP_HAS_MEMBERSHIPS
+            assert shown.value["users"] == ["staff@example.com"]
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_user_membership())
+
+
+def test_authorisation_nested_group_membership_rejects_duplicates_and_cycles(
+    tmp_path: Path,
+) -> None:
+    async def assert_nested_group_membership() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "group-group.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                for abbrev in ("parent", "child", "grandchild"):
+                    await create_group_for_management(
+                        session,
+                        abbrev=abbrev,
+                        description=f"{abbrev} group",
+                    )
+
+                assigned = await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="parent",
+                    child_target="child",
+                )
+                duplicate = await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="parent",
+                    child_target="child",
+                )
+                self_membership = await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="parent",
+                    child_target="parent",
+                )
+                await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="child",
+                    child_target="grandchild",
+                )
+                cycle = await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="grandchild",
+                    child_target="parent",
+                )
+                delete_result = await delete_group_for_management(
+                    session,
+                    target="parent",
+                )
+                shown = await get_group_for_management(session, target="parent")
+
+            assert assigned.is_ok() is True
+            assert duplicate.is_failure() is True
+            assert duplicate.error_type == ERROR_ALREADY_EXISTS
+            assert self_membership.is_failure() is True
+            assert self_membership.error_type == ERROR_CYCLIC_GROUP_MEMBERSHIP
+            assert cycle.is_failure() is True
+            assert cycle.error_type == ERROR_CYCLIC_GROUP_MEMBERSHIP
+            assert delete_result.is_failure() is True
+            assert delete_result.error_type == ERROR_GROUP_HAS_MEMBERSHIPS
+            assert shown.value["child_groups"] == ["child"]
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_nested_group_membership())
+
+
+def test_authorisation_membership_removal_and_candidate_child_groups(
+    tmp_path: Path,
+) -> None:
+    async def assert_removal_and_candidates() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "group-removal.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                await create_scope_for_management(session, scope="staff:read")
+                await create_local_user_for_management(
+                    session,
+                    IdentityOptions(),
+                    email="member@example.com",
+                    password="Correct horse 42!",
+                )
+                for abbrev in ("staff", "child", "candidate"):
+                    await create_group_for_management(
+                        session,
+                        abbrev=abbrev,
+                        description=f"{abbrev} group",
+                    )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="staff",
+                    scope="staff:read",
+                )
+                await add_user_to_group_for_management(
+                    session,
+                    group_target="staff",
+                    user_target="member@example.com",
+                )
+                await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="staff",
+                    child_target="child",
+                )
+
+                candidates = await list_candidate_child_groups_for_management(
+                    session,
+                    parent_target="staff",
+                )
+                scope_removed = await remove_scope_from_group_for_management(
+                    session,
+                    group_target="staff",
+                    scope="staff:read",
+                )
+                user_removed = await remove_user_from_group_for_management(
+                    session,
+                    group_target="staff",
+                    user_target="member@example.com",
+                )
+                child_removed = await remove_child_group_from_group_for_management(
+                    session,
+                    parent_target="staff",
+                    child_target="child",
+                )
+                deleted = await delete_group_for_management(
+                    session,
+                    target="staff",
+                )
+
+            assert [group["abbrev"] for group in candidates.value["groups"]] == [
+                "candidate"
+            ]
+            assert scope_removed.is_ok() is True
+            assert user_removed.is_ok() is True
+            assert child_removed.is_ok() is True
+            assert deleted.is_ok() is True
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_removal_and_candidates())
+
+
+def test_effective_scopes_invalid_user_target_returns_invalid_user_id(
+    tmp_path: Path,
+) -> None:
+    async def assert_invalid_user_id() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "effective-invalid-user-id.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                result = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="not-a-valid-user-id",
+                )
+
+            assert result.is_failure() is True
+            assert result.error_type == ERROR_INVALID_USER_ID
+            assert (
+                result.message
+                == "User target must be an email address or valid user ID."
+            )
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_invalid_user_id())
+
+
+def test_effective_scopes_missing_user_returns_not_found(tmp_path: Path) -> None:
+    async def assert_missing_user() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "effective-missing-user.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                result = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="missing.user@example.com",
+                )
+
+            assert result.is_failure() is True
+            assert result.error_type == ERROR_NOT_FOUND
+            assert result.message == "No matching user was found."
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_missing_user())
+
+
+def test_effective_scopes_resolve_direct_nested_and_duplicate_group_scopes(
+    tmp_path: Path,
+) -> None:
+    async def assert_effective_scopes() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "effective.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                await create_local_user_for_management(
+                    session,
+                    IdentityOptions(),
+                    email="scope-user@example.com",
+                    password="Correct horse 42!",
+                )
+                no_groups = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="scope-user@example.com",
+                )
+
+                for scope in ("document:read", "document:write"):
+                    await create_scope_for_management(session, scope=scope)
+                for abbrev in ("direct", "nested", "duplicate"):
+                    await create_group_for_management(
+                        session,
+                        abbrev=abbrev,
+                        description=f"{abbrev} group",
+                    )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="direct",
+                    scope="document:read",
+                )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="nested",
+                    scope="document:write",
+                )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="duplicate",
+                    scope="document:read",
+                )
+                await add_user_to_group_for_management(
+                    session,
+                    group_target="direct",
+                    user_target="scope-user@example.com",
+                )
+                await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="direct",
+                    child_target="nested",
+                )
+                await add_child_group_to_group_for_management(
+                    session,
+                    parent_target="nested",
+                    child_target="duplicate",
+                )
+
+                resolved = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="scope-user@example.com",
+                )
+
+            assert no_groups.value["scopes"] == []
+            assert resolved.value["scopes"] == ["document:read", "document:write"]
+            assert resolved.value["groups"] == ["direct", "duplicate", "nested"]
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_effective_scopes())
+
+
+def test_effective_scope_resolution_is_cycle_safe_and_cache_is_invalidated(
+    tmp_path: Path,
+) -> None:
+    async def assert_cycle_safety_and_cache() -> None:
+        database = await initialise_auth_database(
+            sqlite_file_url(tmp_path / "effective-cache.sqlite3")
+        )
+        try:
+            async with session_scope(database.session_factory) as session:
+                await create_local_user_for_management(
+                    session,
+                    IdentityOptions(),
+                    email="cached@example.com",
+                    password="Correct horse 42!",
+                )
+                for scope in ("first:read", "second:read"):
+                    await create_scope_for_management(session, scope=scope)
+                for abbrev in ("first", "second"):
+                    await create_group_for_management(
+                        session,
+                        abbrev=abbrev,
+                        description=f"{abbrev} group",
+                    )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="first",
+                    scope="first:read",
+                )
+                await add_user_to_group_for_management(
+                    session,
+                    group_target="first",
+                    user_target="cached@example.com",
+                )
+                first = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="cached@example.com",
+                )
+                first_group, _ = await resolve_group_target(session, "first")
+                second_group, _ = await resolve_group_target(session, "second")
+                session.add(
+                    GroupGroup(
+                        parent_group_id=first_group.id,
+                        child_group_id=second_group.id,
+                    )
+                )
+                session.add(
+                    GroupGroup(
+                        parent_group_id=second_group.id,
+                        child_group_id=first_group.id,
+                    )
+                )
+                await session.commit()
+                cached = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="cached@example.com",
+                )
+                await add_scope_to_group_for_management(
+                    session,
+                    group_target="second",
+                    scope="second:read",
+                )
+                invalidated = await effective_scopes_for_user_for_management(
+                    session,
+                    user_target="cached@example.com",
+                )
+
+            assert first.value["scopes"] == ["first:read"]
+            assert cached.value["scopes"] == ["first:read"]
+            assert invalidated.value["scopes"] == ["first:read", "second:read"]
+            assert invalidated.value["groups"] == ["first", "second"]
+        finally:
+            await close_database(database)
+
+    asyncio.run(assert_cycle_safety_and_cache())
 
 
 def test_auth_ext_result_carries_success_values_and_failure_reason() -> None:

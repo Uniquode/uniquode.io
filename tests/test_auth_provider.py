@@ -1,3 +1,4 @@
+import asyncio
 from typing import get_type_hints
 
 import pytest
@@ -14,6 +15,7 @@ from auth_provider import (
     ProviderSubject,
     RefreshTokenStoragePolicy,
     RefreshTokenStore,
+    ScopePolicy,
 )
 
 
@@ -193,3 +195,32 @@ def test_refresh_token_consume_contract_signals_state_transition() -> None:
     hints = get_type_hints(RefreshTokenStore.mark_refresh_token_consumed)
 
     assert hints["return"] is bool
+
+
+def test_scope_policy_contract_accepts_group_backed_folded_scopes() -> None:
+    class GroupBackedPolicy:
+        async def allowed_scopes(
+            self,
+            subject: ProviderSubject,
+            client: OAuthClient,
+            requested_scopes: frozenset[str],
+        ) -> frozenset[str]:
+            del subject, client
+            effective_scopes = ["document:read", "document:read", "document:write"]
+            return frozenset(effective_scopes).intersection(requested_scopes)
+
+    policy: ScopePolicy = GroupBackedPolicy()
+
+    allowed_scopes = asyncio.run(
+        policy.allowed_scopes(
+            ProviderSubject(id="user-1"),
+            OAuthClient(
+                id="client-1",
+                redirect_uris=("https://client.example/callback",),
+                allowed_scopes=frozenset({"document:read", "document:write"}),
+            ),
+            frozenset({"document:read", "document:write", "admin:read"}),
+        )
+    )
+
+    assert allowed_scopes == frozenset({"document:read", "document:write"})

@@ -93,6 +93,14 @@ class ConsentStore(Protocol):
 
 
 class ScopePolicy(Protocol):
+    """Host-owned allowed-scope policy for provider decisions.
+
+    Implementations should source local subject scopes from the host identity
+    boundary. For applications using `auth_ext`, that source is the
+    group-backed effective-scope resolver; the provider receives only the
+    folded allowed-scope set and does not own group or flag policy.
+    """
+
     async def allowed_scopes(
         self,
         subject: ProviderSubject,
