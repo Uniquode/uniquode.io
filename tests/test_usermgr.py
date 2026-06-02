@@ -28,7 +28,7 @@ from auth_ext import ERROR_INACTIVE_USER
 from auth_ext.configuration import ConfigurationError
 from auth_ext.database import parse_sqlite_database_url, resolve_database_url
 from auth_ext.manager import create_user_manager
-from auth_ext.models import Base, User
+from auth_ext.models import Base, Group, GroupGroup, GroupScope, GroupUser, Scope, User
 from auth_ext.options import IdentityOptions
 from auth_ext.persistence import create_database_strategy
 from auth_ext.schemas import UserCreate
@@ -160,6 +160,92 @@ def access_tokens_from_database(database_url: str) -> list[str]:
 
     try:
         return asyncio.run(load_tokens())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def scopes_from_database(database_url: str) -> list[Scope]:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_scopes() -> list[Scope]:
+        async with session_scope(session_factory) as session:
+            return list((await session.execute(select(Scope))).scalars().all())
+
+    try:
+        return asyncio.run(load_scopes())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def group_from_database(database_url: str, abbrev: str) -> Group:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_group() -> Group:
+        async with session_scope(session_factory) as session:
+            return (
+                await session.execute(select(Group).where(Group.abbrev == abbrev))
+            ).scalar_one()
+
+    try:
+        return asyncio.run(load_group())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def group_scopes_from_database(database_url: str, abbrev: str) -> list[str]:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_group_scopes() -> list[str]:
+        async with session_scope(session_factory) as session:
+            group = (
+                await session.execute(select(Group).where(Group.abbrev == abbrev))
+            ).scalar_one()
+            return list(
+                (
+                    await session.execute(
+                        select(GroupScope.scope).where(GroupScope.group_id == group.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+    try:
+        return asyncio.run(load_group_scopes())
+    finally:
+        asyncio.run(close_database(engine))
+
+
+def user_group_abbrevs_from_database(database_url: str, email: str) -> list[str]:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_user_groups() -> list[str]:
+        async with session_scope(session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            return sorted(
+                (
+                    await session.execute(
+                        select(Group.abbrev)
+                        .join(GroupUser, GroupUser.group_id == Group.id)
+                        .where(GroupUser.user_id == user.id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+
+    try:
+        return asyncio.run(load_user_groups())
     finally:
         asyncio.run(close_database(engine))
 
@@ -637,6 +723,85 @@ def test_migrate_upgrade_creates_user_management_metadata_columns(
         engine.dispose()
 
 
+def test_migrate_upgrade_creates_authorisation_group_tables(
+    tmp_path: Path,
+) -> None:
+    database_url = f"sqlite+aiosqlite:///{(tmp_path / 'groups.sqlite3').as_posix()}"
+
+    exit_code = migrate_module.main(["--database-url", database_url, "upgrade"])
+
+    assert exit_code == 0
+
+    from sqlalchemy import create_engine
+
+    engine = create_engine(f"sqlite:///{tmp_path / 'groups.sqlite3'}")
+    try:
+        inspector = sqlalchemy_inspect(engine)
+        table_names = set(inspector.get_table_names())
+
+        assert {
+            "identity_group",
+            "identity_scope",
+            "identity_group_scope",
+            "identity_group_user",
+            "identity_group_group",
+        }.issubset(table_names)
+        assert {
+            column["name"] for column in inspector.get_columns("identity_group")
+        } == {
+            "id",
+            "abbrev",
+            "description",
+        }
+        assert {
+            column["name"] for column in inspector.get_columns("identity_scope")
+        } == {
+            "scope",
+            "description",
+        }
+        group_indexes = {
+            index["name"] for index in inspector.get_indexes("identity_group")
+        }
+        assert "ix_identity_group_abbrev" in group_indexes
+        group_group_checks = {
+            check["name"]
+            for check in inspector.get_check_constraints("identity_group_group")
+        }
+        assert "ck_identity_group_group_no_self_membership" in group_group_checks
+        group_scope_foreign_keys = {
+            tuple(foreign_key["constrained_columns"]): foreign_key["options"].get(
+                "ondelete"
+            )
+            for foreign_key in inspector.get_foreign_keys("identity_group_scope")
+        }
+        group_user_foreign_keys = {
+            tuple(foreign_key["constrained_columns"]): foreign_key["options"].get(
+                "ondelete"
+            )
+            for foreign_key in inspector.get_foreign_keys("identity_group_user")
+        }
+        group_group_foreign_keys = {
+            tuple(foreign_key["constrained_columns"]): foreign_key["options"].get(
+                "ondelete"
+            )
+            for foreign_key in inspector.get_foreign_keys("identity_group_group")
+        }
+        assert group_scope_foreign_keys == {
+            ("group_id",): "RESTRICT",
+            ("scope",): "RESTRICT",
+        }
+        assert group_user_foreign_keys == {
+            ("group_id",): "RESTRICT",
+            ("user_id",): "CASCADE",
+        }
+        assert group_group_foreign_keys == {
+            ("parent_group_id",): "RESTRICT",
+            ("child_group_id",): "RESTRICT",
+        }
+    finally:
+        engine.dispose()
+
+
 def test_usermgr_reports_outdated_identity_schema_before_reading_password(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -656,6 +821,32 @@ def test_usermgr_reports_outdated_identity_schema_before_reading_password(
     assert "Auth database schema is not up to date" in captured.err
     assert "uv run migrate upgrade" in captured.err
     assert "is_admin" in captured.err
+
+
+def test_usermgr_reports_missing_group_tables_before_reading_password(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_path = tmp_path / "users-only.sqlite3"
+    database_url = sqlite_file_url(database_path)
+    assert (
+        migrate_module.main(["--database-url", database_url, "upgrade", "b7f8c3b4b2a1"])
+        == 0
+    )
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    exit_code = usermgr.main(
+        ["create", "missing-groups@example.com", "--password", "-"]
+    )
+
+    assert exit_code == 1
+    assert stdin.tell() == 0
+    captured = capsys.readouterr()
+    assert "Auth database schema is not up to date" in captured.err
+    assert "Missing identity_group table" in captured.err
 
 
 def test_usermgr_reports_missing_identity_table_before_reading_password(
@@ -684,7 +875,7 @@ def test_usermgr_identity_schema_error_uses_qualified_table_name(
     class MissingTableSession:
         async def run_sync(self, _function):
             return usermgr.IdentitySchemaStatus(
-                table_name="identity_user",
+                primary_table_name="identity_user",
                 table_exists=False,
                 missing_columns=(),
             )
@@ -700,10 +891,22 @@ def test_usermgr_identity_schema_error_uses_qualified_table_name(
 def test_usermgr_identity_schema_status_normalises_column_name_case(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    tables_by_name = {
+        table.name: table
+        for table in (
+            User.__table__,
+            Group.__table__,
+            Scope.__table__,
+            GroupScope.__table__,
+            GroupUser.__table__,
+            GroupGroup.__table__,
+        )
+    }
+
     class FakeInspector:
         def has_table(self, table_name: str, *, schema: str | None = None) -> bool:
-            assert table_name == User.__table__.name
-            assert schema == User.__table__.schema
+            assert table_name in tables_by_name
+            assert schema == tables_by_name[table_name].schema
             return True
 
         def get_columns(
@@ -712,10 +915,11 @@ def test_usermgr_identity_schema_status_normalises_column_name_case(
             *,
             schema: str | None = None,
         ) -> list[dict[str, str]]:
-            assert table_name == User.__table__.name
-            assert schema == User.__table__.schema
+            assert table_name in tables_by_name
+            assert schema == tables_by_name[table_name].schema
             return [
-                {"name": str(column.name).upper()} for column in User.__table__.columns
+                {"name": str(column.name).upper()}
+                for column in tables_by_name[table_name].columns
             ]
 
     class FakeSession:
@@ -1102,6 +1306,345 @@ def test_usermgr_create_user_with_metadata_from_stdin_password(
     assert user.preferred_name == "Operator"
     assert user.preferred_timezone == "Australia/Melbourne"
     assert user.expires_at == 4102444800.0
+
+
+def test_usermgr_scope_commands_manage_scope_records(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "scope-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    assert (
+        usermgr.main(
+            [
+                "scope",
+                "create",
+                "document:read",
+                "--description",
+                "Read documents.",
+            ]
+        )
+        == 0
+    )
+    assert (
+        usermgr.main(
+            [
+                "scope",
+                "update",
+                "document:read",
+                "--description",
+                "Read published documents.",
+            ]
+        )
+        == 0
+    )
+    assert usermgr.main(["scope", "list", "--json"]) == 0
+    listed = json.loads(capsys.readouterr().out.splitlines()[-1])
+
+    assert listed == [
+        {
+            "scope": "document:read",
+            "description": "Read published documents.",
+        }
+    ]
+
+    assert usermgr.main(["scope", "delete", "document:read"]) == 0
+
+    assert scopes_from_database(database_url) == []
+
+
+def test_usermgr_scope_delete_rejects_used_scope(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "used-scope-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    assert usermgr.main(["scope", "create", "admin:read"]) == 0
+    assert usermgr.main(["group", "create", "admins", "--scope", "admin:read"]) == 0
+
+    assert usermgr.main(["scope", "delete", "admin:read"]) == 1
+
+    assert "Scope is assigned to one or more groups." in capsys.readouterr().err
+    assert [scope.scope for scope in scopes_from_database(database_url)] == [
+        "admin:read"
+    ]
+
+
+def test_usermgr_group_target_first_commands_manage_group(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "group-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+
+    assert usermgr.main(["scope", "create", "project:read"]) == 0
+    assert usermgr.main(["scope", "create", "project:write"]) == 0
+    assert (
+        usermgr.main(
+            [
+                "group",
+                "create",
+                "project",
+                "--description",
+                "Project access",
+                "--scope",
+                "project:read",
+            ]
+        )
+        == 0
+    )
+    assert (
+        usermgr.main(
+            [
+                "group",
+                "project",
+                "update",
+                "--description",
+                "Project operators",
+                "--scope",
+                "project:write",
+                "--rm-scope",
+                "project:read",
+            ]
+        )
+        == 0
+    )
+    assert usermgr.main(["group", "project", "show", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out.splitlines()[-1])
+
+    assert shown["abbrev"] == "project"
+    assert shown["description"] == "Project operators"
+    assert shown["scopes"] == ["project:write"]
+    assert group_scopes_from_database(database_url, "project") == ["project:write"]
+
+    assert usermgr.main(["group", "project", "delete", "--force"]) == 0
+
+
+def test_usermgr_group_membership_commands_manage_users_and_child_groups(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "group-membership-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
+
+    assert usermgr.main(["create", "member@example.com", "--password", "-"]) == 0
+    assert usermgr.main(["group", "create", "parent"]) == 0
+    assert usermgr.main(["group", "create", "child"]) == 0
+    assert usermgr.main(["group", "parent", "add-user", "member@example.com"]) == 0
+    assert usermgr.main(["group", "parent", "add-group", "child"]) == 0
+    assert usermgr.main(["group", "parent", "show", "--json"]) == 0
+    shown = json.loads(capsys.readouterr().out.splitlines()[-1])
+
+    assert shown["users"] == ["member@example.com"]
+    assert shown["child_groups"] == ["child"]
+
+    assert usermgr.main(["group", "parent", "remove-user", "member@example.com"]) == 0
+    assert usermgr.main(["group", "parent", "remove-group", "child"]) == 0
+    assert usermgr.main(["group", "parent", "delete", "--force"]) == 0
+
+
+def test_usermgr_group_parser_disambiguates_user_and_group_targets() -> None:
+    ctx = click.Context(usermgr.usermgr_command, obj={"config": None})
+
+    user_args = usermgr._target_group_args(
+        ctx,
+        ("parent", "add-user", "member@example.com"),
+    )
+    group_args = usermgr._target_group_args(ctx, ("parent", "add-group", "child"))
+
+    assert user_args.user_target == "member@example.com"
+    assert user_args.child_group_target == ""
+    assert group_args.user_target == ""
+    assert group_args.child_group_target == "child"
+
+
+def test_usermgr_create_and_update_user_group_memberships(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "user-groups-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(
+        sys,
+        "stdin",
+        io.StringIO(f"{STRONG_TEST_PASSWORD}\n"),
+    )
+
+    for abbrev in ("alpha", "beta", "gamma"):
+        assert usermgr.main(["group", "create", abbrev]) == 0
+    assert (
+        usermgr.main(
+            [
+                "create",
+                "grouped@example.com",
+                "--password",
+                "-",
+                "--group",
+                "alpha",
+                "--group",
+                "beta",
+            ]
+        )
+        == 0
+    )
+    assert user_group_abbrevs_from_database(database_url, "grouped@example.com") == [
+        "alpha",
+        "beta",
+    ]
+
+    assert (
+        usermgr.main(
+            [
+                "update",
+                "grouped@example.com",
+                "--rm-group",
+                "alpha",
+                "--add-group",
+                "gamma",
+            ]
+        )
+        == 0
+    )
+    assert "updated user: grouped@example.com" in capsys.readouterr().out
+    assert user_group_abbrevs_from_database(database_url, "grouped@example.com") == [
+        "beta",
+        "gamma",
+    ]
+
+    assert (
+        usermgr.main(
+            [
+                "update",
+                "grouped@example.com",
+                "--set-group",
+                "alpha",
+            ]
+        )
+        == 0
+    )
+    assert user_group_abbrevs_from_database(database_url, "grouped@example.com") == [
+        "alpha"
+    ]
+
+
+def test_usermgr_set_group_validates_targets_before_replacing_memberships(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "user-groups-invalid-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
+
+    assert usermgr.main(["group", "create", "alpha"]) == 0
+    assert usermgr.main(["group", "create", "beta"]) == 0
+    assert (
+        usermgr.main(
+            [
+                "create",
+                "invalid-set@example.com",
+                "--password",
+                "-",
+                "--group",
+                "alpha",
+            ]
+        )
+        == 0
+    )
+
+    assert (
+        usermgr.main(
+            [
+                "update",
+                "invalid-set@example.com",
+                "--set-group",
+                "beta",
+                "--set-group",
+                "missing",
+            ]
+        )
+        == 1
+    )
+
+    assert user_group_abbrevs_from_database(
+        database_url, "invalid-set@example.com"
+    ) == ["alpha"]
+
+
+def test_usermgr_update_rejects_group_replacement_shortcut() -> None:
+    result = CliRunner().invoke(
+        usermgr.usermgr_command,
+        ["update", "user@example.com", "--group", "admins"],
+    )
+
+    assert result.exit_code == 2
+    assert "use --set-group for replacement" in result.output
+
+
+def test_usermgr_record_formatting_json_encodes_nested_values(
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    record = {
+        "email": "nested@example.com",
+        "groups": [{"abbrev": "admins", "scopes": ["read", "write"]}],
+    }
+
+    assert usermgr._format_record_value(record["groups"]) == (
+        '[{"abbrev": "admins", "scopes": ["read", "write"]}]'
+    )
+
+    usermgr._print_records(
+        [record],
+        field_names=("email", "groups"),
+        json_output=False,
+        csv_output=True,
+    )
+    rows = list(csv.DictReader(io.StringIO(capsys.readouterr().out)))
+
+    assert rows == [
+        {
+            "email": "nested@example.com",
+            "groups": '[{"abbrev": "admins", "scopes": ["read", "write"]}]',
+        }
+    ]
+
+
+def test_usermgr_group_effective_scopes_reports_folded_scopes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "effective-scopes-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
+
+    assert usermgr.main(["scope", "create", "project:read"]) == 0
+    assert usermgr.main(["group", "create", "readers", "--scope", "project:read"]) == 0
+    assert usermgr.main(["create", "reader@example.com", "--password", "-"]) == 0
+    assert usermgr.main(["group", "readers", "add-user", "reader@example.com"]) == 0
+
+    assert (
+        usermgr.main(["group", "effective-scopes", "reader@example.com", "--json"]) == 0
+    )
+    effective_scopes = json.loads(capsys.readouterr().out.splitlines()[-1])
+
+    assert effective_scopes["scopes"] == ["project:read"]
+    assert effective_scopes["groups"] == ["readers"]
+    assert effective_scopes["user"]["email"] == "reader@example.com"
 
 
 def test_usermgr_create_rejects_invalid_timezone_without_creating_user(
