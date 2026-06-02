@@ -20,9 +20,9 @@ from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy import select
 from sqlalchemy.exc import SQLAlchemyError
 
+import auth_ext.identitymgr as identitymgr
 import auth_ext.management as identity_management
 import auth_ext.sessions as identity_sessions
-import auth_ext.usermgr as usermgr
 import uniquode.migrate as migrate_module
 from auth_ext import ERROR_INACTIVE_USER
 from auth_ext.configuration import ConfigurationError
@@ -306,22 +306,23 @@ def update_user_fields(database_url: str, email: str, **values: object) -> None:
         asyncio.run(close_database(engine))
 
 
-def test_usermgr_project_script_is_defined() -> None:
+def test_identitymgr_project_script_is_defined() -> None:
     data = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
 
-    assert data["project"]["scripts"]["usermgr"] == "auth_ext.usermgr:main"
+    assert data["project"]["scripts"]["identitymgr"] == "auth_ext.identitymgr:main"
+    assert "usermgr" not in data["project"]["scripts"]
 
 
-def test_usermgr_create_positional_is_email() -> None:
-    result = CliRunner().invoke(usermgr.usermgr_command, ["create", "--help"])
+def test_identitymgr_create_positional_is_email() -> None:
+    result = CliRunner().invoke(identitymgr.identitymgr_command, ["create", "--help"])
 
     assert result.exit_code == 0
     assert "EMAIL" in result.output
     assert "TARGET" not in result.output
 
 
-def test_usermgr_update_positional_is_target() -> None:
-    result = CliRunner().invoke(usermgr.usermgr_command, ["update", "--help"])
+def test_identitymgr_update_positional_is_target() -> None:
+    result = CliRunner().invoke(identitymgr.identitymgr_command, ["update", "--help"])
 
     assert result.exit_code == 0
     assert "TARGET" in result.output
@@ -337,7 +338,7 @@ def test_dateparser_runtime_dependency_is_defined() -> None:
     )
 
 
-def test_usermgr_loads_auth_toml_configuration(
+def test_identitymgr_loads_auth_toml_configuration(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -350,7 +351,7 @@ def test_usermgr_loads_auth_toml_configuration(
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "--config",
                 str(config_path),
@@ -519,21 +520,23 @@ def test_auth_toml_rejects_unknown_password_policy_options(tmp_path: Path) -> No
     "command",
     ["create", "update", "delete", "deactivate", "list", "password"],
 )
-def test_usermgr_click_command_tree_exposes_supported_commands(command: str) -> None:
-    result = CliRunner().invoke(usermgr.usermgr_command, [command, "--help"])
+def test_identitymgr_click_command_tree_exposes_supported_commands(
+    command: str,
+) -> None:
+    result = CliRunner().invoke(identitymgr.identitymgr_command, [command, "--help"])
 
     assert result.exit_code == 0
-    assert f"Usage: usermgr {command}" in result.output
+    assert f"Usage: identitymgr {command}" in result.output
 
 
-def test_usermgr_rejects_unknown_command() -> None:
-    result = CliRunner().invoke(usermgr.usermgr_command, ["unknown"])
+def test_identitymgr_rejects_unknown_command() -> None:
+    result = CliRunner().invoke(identitymgr.identitymgr_command, ["unknown"])
 
     assert result.exit_code == 2
     assert "No such command 'unknown'" in result.output
 
 
-def test_usermgr_main_treats_falsy_click_exception_as_failure(
+def test_identitymgr_main_treats_falsy_click_exception_as_failure(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
@@ -543,9 +546,9 @@ def test_usermgr_main_treats_falsy_click_exception_as_failure(
     def raise_click_exception(*_args, **_kwargs) -> None:
         raise FalsyExitClickException("invalid usage")
 
-    monkeypatch.setattr(usermgr.usermgr_command, "main", raise_click_exception)
+    monkeypatch.setattr(identitymgr.identitymgr_command, "main", raise_click_exception)
 
-    assert usermgr.main([]) == 1
+    assert identitymgr.main([]) == 1
 
     captured = capsys.readouterr()
     assert "invalid usage" in captured.err
@@ -559,9 +562,9 @@ def test_usermgr_main_treats_falsy_click_exception_as_failure(
         ["update", "person@example.com", "--password", "secret"],
     ],
 )
-def test_usermgr_rejects_plain_command_line_password(argv: list[str]) -> None:
+def test_identitymgr_rejects_plain_command_line_password(argv: list[str]) -> None:
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         argv,
     )
 
@@ -571,9 +574,9 @@ def test_usermgr_rejects_plain_command_line_password(argv: list[str]) -> None:
 
 
 @pytest.mark.parametrize("expires_at", ["4102444800", "0"])
-def test_usermgr_rejects_conflicting_expiry_update_options(expires_at: str) -> None:
+def test_identitymgr_rejects_conflicting_expiry_update_options(expires_at: str) -> None:
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         [
             "update",
             "person@example.com",
@@ -587,9 +590,9 @@ def test_usermgr_rejects_conflicting_expiry_update_options(expires_at: str) -> N
     assert "not allowed with option '--expires-at'" in result.output
 
 
-def test_usermgr_rejects_conflicting_display_name_update_with_empty_value() -> None:
+def test_identitymgr_rejects_conflicting_display_name_update_with_empty_value() -> None:
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         [
             "update",
             "person@example.com",
@@ -603,15 +606,15 @@ def test_usermgr_rejects_conflicting_display_name_update_with_empty_value() -> N
     assert "not allowed with option '--display-name'" in result.output
 
 
-def test_usermgr_accepts_flexible_expiry_timestamp_values() -> None:
-    assert usermgr.parse_timestamp_filter("2100-01-01T00:00:00Z") == 4102444800.0
-    assert usermgr.parse_timestamp_filter("4102444800") == 4102444800.0
-    assert usermgr.parse_timestamp_filter("20250101") == 20250101.0
+def test_identitymgr_accepts_flexible_expiry_timestamp_values() -> None:
+    assert identitymgr.parse_timestamp_filter("2100-01-01T00:00:00Z") == 4102444800.0
+    assert identitymgr.parse_timestamp_filter("4102444800") == 4102444800.0
+    assert identitymgr.parse_timestamp_filter("20250101") == 20250101.0
 
 
-def test_usermgr_timestamp_parse_error_identifies_option() -> None:
+def test_identitymgr_timestamp_parse_error_identifies_option() -> None:
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["list", "--since-created-at", "not-a-date"],
     )
 
@@ -620,8 +623,8 @@ def test_usermgr_timestamp_parse_error_identifies_option() -> None:
     assert "Invalid timestamp value: not-a-date" in result.output
 
 
-def test_usermgr_help_documents_numeric_timestamp_precedence() -> None:
-    result = CliRunner().invoke(usermgr.usermgr_command, ["--help"])
+def test_identitymgr_help_documents_numeric_timestamp_precedence() -> None:
+    result = CliRunner().invoke(identitymgr.identitymgr_command, ["--help"])
 
     assert result.exit_code == 0
     assert "numeric input as Unix seconds before date parsing" in result.output
@@ -819,7 +822,7 @@ def test_migrate_upgrade_creates_authorisation_group_tables(
         engine.dispose()
 
 
-def test_usermgr_reports_outdated_identity_schema_before_reading_password(
+def test_identitymgr_reports_outdated_identity_schema_before_reading_password(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -830,7 +833,7 @@ def test_usermgr_reports_outdated_identity_schema_before_reading_password(
     stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
     monkeypatch.setattr(sys, "stdin", stdin)
 
-    exit_code = usermgr.main(["create", "legacy@example.com", "--password", "-"])
+    exit_code = identitymgr.main(["create", "legacy@example.com", "--password", "-"])
 
     assert exit_code == 1
     assert stdin.tell() == 0
@@ -840,7 +843,7 @@ def test_usermgr_reports_outdated_identity_schema_before_reading_password(
     assert "is_admin" in captured.err
 
 
-def test_usermgr_reports_missing_group_tables_before_reading_password(
+def test_identitymgr_reports_missing_group_tables_before_reading_password(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -855,7 +858,7 @@ def test_usermgr_reports_missing_group_tables_before_reading_password(
     stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
     monkeypatch.setattr(sys, "stdin", stdin)
 
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         ["create", "missing-groups@example.com", "--password", "-"]
     )
 
@@ -866,7 +869,7 @@ def test_usermgr_reports_missing_group_tables_before_reading_password(
     assert "Missing identity_group table" in captured.err
 
 
-def test_usermgr_reports_missing_identity_table_before_reading_password(
+def test_identitymgr_reports_missing_identity_table_before_reading_password(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -876,7 +879,7 @@ def test_usermgr_reports_missing_identity_table_before_reading_password(
     stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
     monkeypatch.setattr(sys, "stdin", stdin)
 
-    exit_code = usermgr.main(["create", "missing@example.com", "--password", "-"])
+    exit_code = identitymgr.main(["create", "missing@example.com", "--password", "-"])
 
     assert exit_code == 1
     assert stdin.tell() == 0
@@ -886,12 +889,12 @@ def test_usermgr_reports_missing_identity_table_before_reading_password(
     assert "Missing identity_user columns" not in captured.err
 
 
-def test_usermgr_identity_schema_error_uses_qualified_table_name(
+def test_identitymgr_identity_schema_error_uses_qualified_table_name(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class MissingTableSession:
         async def run_sync(self, _function):
-            return usermgr.IdentitySchemaStatus(
+            return identitymgr.IdentitySchemaStatus(
                 primary_table_name="identity_user",
                 table_exists=False,
                 missing_columns=(),
@@ -900,31 +903,31 @@ def test_usermgr_identity_schema_error_uses_qualified_table_name(
     monkeypatch.setattr(User.__table__, "schema", "auth")
 
     with pytest.raises(ConfigurationError) as exc_info:
-        asyncio.run(usermgr._verify_identity_schema(MissingTableSession()))  # type: ignore[arg-type]
+        asyncio.run(identitymgr._verify_identity_schema(MissingTableSession()))  # type: ignore[arg-type]
 
     assert "Missing auth.identity_user table" in str(exc_info.value)
 
 
-def test_usermgr_identity_schema_missing_columns_are_table_aware(
+def test_identitymgr_identity_schema_missing_columns_are_table_aware(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class MissingColumnSession:
         async def run_sync(self, _function):
-            return usermgr.IdentitySchemaStatus(
+            return identitymgr.IdentitySchemaStatus(
                 primary_table_name="identity_user",
                 table_exists=True,
                 missing_columns=("identity_group.description",),
             )
 
     with pytest.raises(ConfigurationError) as exc_info:
-        asyncio.run(usermgr._verify_identity_schema(MissingColumnSession()))  # type: ignore[arg-type]
+        asyncio.run(identitymgr._verify_identity_schema(MissingColumnSession()))  # type: ignore[arg-type]
 
     message = str(exc_info.value)
     assert "Missing identity schema columns: identity_group.description" in message
     assert "Missing identity_user columns" not in message
 
 
-def test_usermgr_identity_schema_status_normalises_column_name_case(
+def test_identitymgr_identity_schema_status_normalises_column_name_case(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     tables_by_name = {
@@ -962,24 +965,26 @@ def test_usermgr_identity_schema_status_normalises_column_name_case(
         def get_bind(self) -> object:
             return object()
 
-    monkeypatch.setattr(usermgr, "sqlalchemy_inspect", lambda _bind: FakeInspector())
+    monkeypatch.setattr(
+        identitymgr, "sqlalchemy_inspect", lambda _bind: FakeInspector()
+    )
 
-    status = usermgr._identity_schema_status(FakeSession())  # type: ignore[arg-type]
+    status = identitymgr._identity_schema_status(FakeSession())  # type: ignore[arg-type]
 
     assert status.table_exists is True
     assert status.missing_columns == ()
 
 
-def test_usermgr_reports_schema_inspection_error_without_leaking_context(
+def test_identitymgr_reports_schema_inspection_error_without_leaking_context(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     class FailingSession:
         async def run_sync(self, _function):
             raise SQLAlchemyError("database is locked")
 
-    with caplog.at_level(logging.DEBUG, logger="auth_ext.usermgr"):
+    with caplog.at_level(logging.DEBUG, logger="auth_ext.identitymgr"):
         with pytest.raises(ConfigurationError) as exc_info:
-            asyncio.run(usermgr._verify_identity_schema(FailingSession()))  # type: ignore[arg-type]
+            asyncio.run(identitymgr._verify_identity_schema(FailingSession()))  # type: ignore[arg-type]
 
     message = str(exc_info.value)
     assert "Auth database schema could not be inspected" in message
@@ -1301,7 +1306,7 @@ def test_request_verification_does_not_overwrite_ineligible_user_timestamp(
         asyncio.run(close_database(web_app.state.database))
 
 
-def test_usermgr_create_user_with_metadata_from_stdin_password(
+def test_identitymgr_create_user_with_metadata_from_stdin_password(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1310,7 +1315,7 @@ def test_usermgr_create_user_with_metadata_from_stdin_password(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         [
             "create",
             "operator@example.com",
@@ -1344,7 +1349,7 @@ def test_usermgr_create_user_with_metadata_from_stdin_password(
     assert user.expires_at == 4102444800.0
 
 
-def test_usermgr_scope_commands_manage_scope_records(
+def test_identitymgr_scope_commands_manage_scope_records(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1354,7 +1359,7 @@ def test_usermgr_scope_commands_manage_scope_records(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "scope",
                 "create",
@@ -1366,7 +1371,7 @@ def test_usermgr_scope_commands_manage_scope_records(
         == 0
     )
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "scope",
                 "update",
@@ -1377,7 +1382,7 @@ def test_usermgr_scope_commands_manage_scope_records(
         )
         == 0
     )
-    assert usermgr.main(["scope", "list", "--json"]) == 0
+    assert identitymgr.main(["scope", "list", "--json"]) == 0
     listed = json.loads(capsys.readouterr().out.splitlines()[-1])
 
     assert listed == [
@@ -1387,12 +1392,12 @@ def test_usermgr_scope_commands_manage_scope_records(
         }
     ]
 
-    assert usermgr.main(["scope", "delete", "document:read"]) == 0
+    assert identitymgr.main(["scope", "delete", "document:read"]) == 0
 
     assert scopes_from_database(database_url) == []
 
 
-def test_usermgr_scope_delete_rejects_used_scope(
+def test_identitymgr_scope_delete_rejects_used_scope(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1401,10 +1406,10 @@ def test_usermgr_scope_delete_rejects_used_scope(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
-    assert usermgr.main(["scope", "create", "admin:read"]) == 0
-    assert usermgr.main(["group", "create", "admins", "--scope", "admin:read"]) == 0
+    assert identitymgr.main(["scope", "create", "admin:read"]) == 0
+    assert identitymgr.main(["group", "create", "admins", "--scope", "admin:read"]) == 0
 
-    assert usermgr.main(["scope", "delete", "admin:read"]) == 1
+    assert identitymgr.main(["scope", "delete", "admin:read"]) == 1
 
     assert "Scope is assigned to one or more groups." in capsys.readouterr().err
     assert [scope.scope for scope in scopes_from_database(database_url)] == [
@@ -1412,7 +1417,7 @@ def test_usermgr_scope_delete_rejects_used_scope(
     ]
 
 
-def test_usermgr_group_target_first_commands_manage_group(
+def test_identitymgr_group_target_first_commands_manage_group(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1421,10 +1426,10 @@ def test_usermgr_group_target_first_commands_manage_group(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
-    assert usermgr.main(["scope", "create", "project:read"]) == 0
-    assert usermgr.main(["scope", "create", "project:write"]) == 0
+    assert identitymgr.main(["scope", "create", "project:read"]) == 0
+    assert identitymgr.main(["scope", "create", "project:write"]) == 0
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "group",
                 "create",
@@ -1438,7 +1443,7 @@ def test_usermgr_group_target_first_commands_manage_group(
         == 0
     )
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "group",
                 "project",
@@ -1453,7 +1458,7 @@ def test_usermgr_group_target_first_commands_manage_group(
         )
         == 0
     )
-    assert usermgr.main(["group", "project", "show", "--json"]) == 0
+    assert identitymgr.main(["group", "project", "show", "--json"]) == 0
     shown = json.loads(capsys.readouterr().out.splitlines()[-1])
 
     assert shown["abbrev"] == "project"
@@ -1461,10 +1466,10 @@ def test_usermgr_group_target_first_commands_manage_group(
     assert shown["scopes"] == ["project:write"]
     assert group_scopes_from_database(database_url, "project") == ["project:write"]
 
-    assert usermgr.main(["group", "project", "delete", "--force"]) == 0
+    assert identitymgr.main(["group", "project", "delete", "--force"]) == 0
 
 
-def test_usermgr_group_membership_commands_manage_users_and_child_groups(
+def test_identitymgr_group_membership_commands_manage_users_and_child_groups(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1474,30 +1479,32 @@ def test_usermgr_group_membership_commands_manage_users_and_child_groups(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
-    assert usermgr.main(["create", "member@example.com", "--password", "-"]) == 0
-    assert usermgr.main(["group", "create", "parent"]) == 0
-    assert usermgr.main(["group", "create", "child"]) == 0
-    assert usermgr.main(["group", "parent", "add-user", "member@example.com"]) == 0
-    assert usermgr.main(["group", "parent", "add-group", "child"]) == 0
-    assert usermgr.main(["group", "parent", "show", "--json"]) == 0
+    assert identitymgr.main(["create", "member@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["group", "create", "parent"]) == 0
+    assert identitymgr.main(["group", "create", "child"]) == 0
+    assert identitymgr.main(["group", "parent", "add-user", "member@example.com"]) == 0
+    assert identitymgr.main(["group", "parent", "add-group", "child"]) == 0
+    assert identitymgr.main(["group", "parent", "show", "--json"]) == 0
     shown = json.loads(capsys.readouterr().out.splitlines()[-1])
 
     assert shown["users"] == ["member@example.com"]
     assert shown["child_groups"] == ["child"]
 
-    assert usermgr.main(["group", "parent", "remove-user", "member@example.com"]) == 0
-    assert usermgr.main(["group", "parent", "remove-group", "child"]) == 0
-    assert usermgr.main(["group", "parent", "delete", "--force"]) == 0
+    assert (
+        identitymgr.main(["group", "parent", "remove-user", "member@example.com"]) == 0
+    )
+    assert identitymgr.main(["group", "parent", "remove-group", "child"]) == 0
+    assert identitymgr.main(["group", "parent", "delete", "--force"]) == 0
 
 
-def test_usermgr_group_parser_disambiguates_user_and_group_targets() -> None:
-    ctx = click.Context(usermgr.usermgr_command, obj={"config": None})
+def test_identitymgr_group_parser_disambiguates_user_and_group_targets() -> None:
+    ctx = click.Context(identitymgr.identitymgr_command, obj={"config": None})
 
-    user_args = usermgr._target_group_args(
+    user_args = identitymgr._target_group_args(
         ctx,
         ("parent", "add-user", "member@example.com"),
     )
-    group_args = usermgr._target_group_args(ctx, ("parent", "add-group", "child"))
+    group_args = identitymgr._target_group_args(ctx, ("parent", "add-group", "child"))
 
     assert user_args.user_target == "member@example.com"
     assert user_args.child_group_target == ""
@@ -1505,7 +1512,7 @@ def test_usermgr_group_parser_disambiguates_user_and_group_targets() -> None:
     assert group_args.child_group_target == "child"
 
 
-def test_usermgr_create_and_update_user_group_memberships(
+def test_identitymgr_create_and_update_user_group_memberships(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1520,9 +1527,9 @@ def test_usermgr_create_and_update_user_group_memberships(
     )
 
     for abbrev in ("alpha", "beta", "gamma"):
-        assert usermgr.main(["group", "create", abbrev]) == 0
+        assert identitymgr.main(["group", "create", abbrev]) == 0
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "create",
                 "grouped@example.com",
@@ -1542,7 +1549,7 @@ def test_usermgr_create_and_update_user_group_memberships(
     ]
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "update",
                 "grouped@example.com",
@@ -1561,7 +1568,7 @@ def test_usermgr_create_and_update_user_group_memberships(
     ]
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "update",
                 "grouped@example.com",
@@ -1576,7 +1583,7 @@ def test_usermgr_create_and_update_user_group_memberships(
     ]
 
 
-def test_usermgr_create_with_missing_group_does_not_create_user(
+def test_identitymgr_create_with_missing_group_does_not_create_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1587,7 +1594,7 @@ def test_usermgr_create_with_missing_group_does_not_create_user(
     monkeypatch.setattr(sys, "stdin", stdin)
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "create",
                 "missing-create-group@example.com",
@@ -1607,7 +1614,7 @@ def test_usermgr_create_with_missing_group_does_not_create_user(
     )
 
 
-def test_usermgr_set_group_validates_targets_before_replacing_memberships(
+def test_identitymgr_set_group_validates_targets_before_replacing_memberships(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1616,10 +1623,10 @@ def test_usermgr_set_group_validates_targets_before_replacing_memberships(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
-    assert usermgr.main(["group", "create", "alpha"]) == 0
-    assert usermgr.main(["group", "create", "beta"]) == 0
+    assert identitymgr.main(["group", "create", "alpha"]) == 0
+    assert identitymgr.main(["group", "create", "beta"]) == 0
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "create",
                 "invalid-set@example.com",
@@ -1633,7 +1640,7 @@ def test_usermgr_set_group_validates_targets_before_replacing_memberships(
     )
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "update",
                 "invalid-set@example.com",
@@ -1651,9 +1658,9 @@ def test_usermgr_set_group_validates_targets_before_replacing_memberships(
     ) == ["alpha"]
 
 
-def test_usermgr_update_rejects_group_replacement_shortcut() -> None:
+def test_identitymgr_update_rejects_group_replacement_shortcut() -> None:
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["update", "user@example.com", "--group", "admins"],
     )
 
@@ -1661,7 +1668,7 @@ def test_usermgr_update_rejects_group_replacement_shortcut() -> None:
     assert "use --set-group for replacement" in result.output
 
 
-def test_usermgr_record_formatting_json_encodes_nested_values(
+def test_identitymgr_record_formatting_json_encodes_nested_values(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
     record = {
@@ -1669,11 +1676,11 @@ def test_usermgr_record_formatting_json_encodes_nested_values(
         "groups": [{"abbrev": "admins", "scopes": ["read", "write"]}],
     }
 
-    assert usermgr._format_record_value(record["groups"]) == (
+    assert identitymgr._format_record_value(record["groups"]) == (
         '[{"abbrev": "admins", "scopes": ["read", "write"]}]'
     )
 
-    usermgr._print_records(
+    identitymgr._print_records(
         [record],
         field_names=("email", "groups"),
         json_output=False,
@@ -1689,7 +1696,7 @@ def test_usermgr_record_formatting_json_encodes_nested_values(
     ]
 
 
-def test_usermgr_group_effective_scopes_reports_folded_scopes(
+def test_identitymgr_group_effective_scopes_reports_folded_scopes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1699,13 +1706,16 @@ def test_usermgr_group_effective_scopes_reports_folded_scopes(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
-    assert usermgr.main(["scope", "create", "project:read"]) == 0
-    assert usermgr.main(["group", "create", "readers", "--scope", "project:read"]) == 0
-    assert usermgr.main(["create", "reader@example.com", "--password", "-"]) == 0
-    assert usermgr.main(["group", "readers", "add-user", "reader@example.com"]) == 0
+    assert identitymgr.main(["scope", "create", "project:read"]) == 0
+    assert (
+        identitymgr.main(["group", "create", "readers", "--scope", "project:read"]) == 0
+    )
+    assert identitymgr.main(["create", "reader@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["group", "readers", "add-user", "reader@example.com"]) == 0
 
     assert (
-        usermgr.main(["group", "effective-scopes", "reader@example.com", "--json"]) == 0
+        identitymgr.main(["group", "effective-scopes", "reader@example.com", "--json"])
+        == 0
     )
     effective_scopes = json.loads(capsys.readouterr().out.splitlines()[-1])
 
@@ -1714,7 +1724,7 @@ def test_usermgr_group_effective_scopes_reports_folded_scopes(
     assert effective_scopes["user"]["email"] == "reader@example.com"
 
 
-def test_usermgr_create_rejects_invalid_timezone_without_creating_user(
+def test_identitymgr_create_rejects_invalid_timezone_without_creating_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1724,7 +1734,7 @@ def test_usermgr_create_rejects_invalid_timezone_without_creating_user(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
 
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         [
             "create",
             "invalid-timezone@example.com",
@@ -1740,7 +1750,7 @@ def test_usermgr_create_rejects_invalid_timezone_without_creating_user(
     assert identity_users_from_database(database_url) == []
 
 
-def test_usermgr_update_rejects_invalid_timezone_without_updating_user(
+def test_identitymgr_update_rejects_invalid_timezone_without_updating_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1750,7 +1760,7 @@ def test_usermgr_update_rejects_invalid_timezone_without_updating_user(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "create",
                 "invalid-update-timezone@example.com",
@@ -1764,7 +1774,7 @@ def test_usermgr_update_rejects_invalid_timezone_without_updating_user(
     )
     capsys.readouterr()
 
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         [
             "update",
             "invalid-update-timezone@example.com",
@@ -1779,59 +1789,59 @@ def test_usermgr_update_rejects_invalid_timezone_without_updating_user(
     assert user.preferred_timezone == "UTC"
 
 
-def test_usermgr_password_from_stdin_trims_crlf(
+def test_identitymgr_password_from_stdin_trims_crlf(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\r\n"))
 
-    assert usermgr._read_password("-") == "correct horse"
+    assert identitymgr._read_password("-") == "correct horse"
 
 
-def test_usermgr_password_from_stdin_rejects_extra_data(
+def test_identitymgr_password_from_stdin_rejects_extra_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("correct horse\nextra\n"))
 
-    with pytest.raises(usermgr.PasswordSourceError, match="exactly one line"):
-        usermgr._read_password("-")
+    with pytest.raises(identitymgr.PasswordSourceError, match="exactly one line"):
+        identitymgr._read_password("-")
 
 
-def test_usermgr_password_from_stdin_preserves_whitespace_and_strips_newline(
+def test_identitymgr_password_from_stdin_preserves_whitespace_and_strips_newline(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO("  spacey  \n"))
 
-    assert usermgr._read_password("-") == "  spacey  "
+    assert identitymgr._read_password("-") == "  spacey  "
 
 
-def test_usermgr_password_from_stdin_rejects_empty_input(
+def test_identitymgr_password_from_stdin_rejects_empty_input(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(sys, "stdin", io.StringIO(""))
 
-    with pytest.raises(usermgr.PasswordSourceError, match="No password received"):
-        usermgr._read_password("-")
+    with pytest.raises(identitymgr.PasswordSourceError, match="No password received"):
+        identitymgr._read_password("-")
 
 
-def test_usermgr_password_from_stdin_rejects_tty(
+def test_identitymgr_password_from_stdin_rejects_tty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     stdin = io.StringIO("correct horse\n")
     stdin.isatty = lambda: True  # type: ignore[method-assign]
     monkeypatch.setattr(sys, "stdin", stdin)
 
-    with pytest.raises(usermgr.PasswordSourceError, match="interactive stdin"):
-        usermgr._read_password("-")
+    with pytest.raises(identitymgr.PasswordSourceError, match="interactive stdin"):
+        identitymgr._read_password("-")
 
 
-def test_usermgr_read_password_rejects_invalid_source() -> None:
+def test_identitymgr_read_password_rejects_invalid_source() -> None:
     with pytest.raises(
-        usermgr.PasswordSourceError, match="Unsupported password source"
+        identitymgr.PasswordSourceError, match="Unsupported password source"
     ):
-        usermgr._read_password("invalid")
+        identitymgr._read_password("invalid")
 
 
-def test_usermgr_create_rejects_duplicate_email(
+def test_identitymgr_create_rejects_duplicate_email(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1841,17 +1851,17 @@ def test_usermgr_create_rejects_duplicate_email(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "duplicate@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "duplicate@example.com", "--password", "-"]) == 0
 
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    exit_code = usermgr.main(["create", "duplicate@example.com", "--password", "-"])
+    exit_code = identitymgr.main(["create", "duplicate@example.com", "--password", "-"])
 
     assert exit_code == 1
     assert "already exists" in capsys.readouterr().err
     assert len(identity_users_from_database(database_url)) == 1
 
 
-def test_usermgr_list_json_omits_null_fields(
+def test_identitymgr_list_json_omits_null_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1861,7 +1871,7 @@ def test_usermgr_list_json_omits_null_fields(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "create",
                 "listed@example.com",
@@ -1875,7 +1885,7 @@ def test_usermgr_list_json_omits_null_fields(
     )
     capsys.readouterr()
 
-    exit_code = usermgr.main(["list", "--json"])
+    exit_code = identitymgr.main(["list", "--json"])
 
     assert exit_code == 0
     [record] = json.loads(capsys.readouterr().out)
@@ -1886,7 +1896,7 @@ def test_usermgr_list_json_omits_null_fields(
     assert "hashed_password" not in record
 
 
-def test_usermgr_update_resolves_id_and_updates_user_fields(
+def test_identitymgr_update_resolves_id_and_updates_user_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1894,10 +1904,10 @@ def test_usermgr_update_resolves_id_and_updates_user_fields(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "update@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "update@example.com", "--password", "-"]) == 0
     [created_user] = identity_users_from_database(database_url)
 
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         [
             "update",
             str(created_user.id),
@@ -1926,7 +1936,7 @@ def test_usermgr_update_resolves_id_and_updates_user_fields(
     assert user.expires_at == 4102444800.0
 
 
-def test_usermgr_update_no_expires_at_without_existing_expiry_is_noop(
+def test_identitymgr_update_no_expires_at_without_existing_expiry_is_noop(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -1935,11 +1945,11 @@ def test_usermgr_update_no_expires_at_without_existing_expiry_is_noop(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "no-expiry@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "no-expiry@example.com", "--password", "-"]) == 0
     [created_user] = identity_users_from_database(database_url)
     capsys.readouterr()
 
-    exit_code = usermgr.main(["update", "no-expiry@example.com", "--no-expires-at"])
+    exit_code = identitymgr.main(["update", "no-expiry@example.com", "--no-expires-at"])
 
     assert exit_code == 1
     assert "No user changes" in capsys.readouterr().err
@@ -1948,7 +1958,7 @@ def test_usermgr_update_no_expires_at_without_existing_expiry_is_noop(
     assert user.modified_at == created_user.modified_at
 
 
-def test_usermgr_update_can_clear_optional_string_fields(
+def test_identitymgr_update_can_clear_optional_string_fields(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1956,9 +1966,9 @@ def test_usermgr_update_can_clear_optional_string_fields(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "clear@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "clear@example.com", "--password", "-"]) == 0
     assert (
-        usermgr.main(
+        identitymgr.main(
             [
                 "update",
                 "clear@example.com",
@@ -1973,7 +1983,7 @@ def test_usermgr_update_can_clear_optional_string_fields(
         == 0
     )
 
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         [
             "update",
             "clear@example.com",
@@ -1997,7 +2007,7 @@ def test_usermgr_update_can_clear_optional_string_fields(
         ("not-an-email@", "email address is invalid"),
     ],
 )
-def test_usermgr_update_reports_malformed_targets(
+def test_identitymgr_update_reports_malformed_targets(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2008,13 +2018,13 @@ def test_usermgr_update_reports_malformed_targets(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
-    exit_code = usermgr.main(["update", target, "--admin"])
+    exit_code = identitymgr.main(["update", target, "--admin"])
 
     assert exit_code == 1
     assert expected_message in capsys.readouterr().err
 
 
-def test_usermgr_update_rejects_final_superuser_demotion(
+def test_identitymgr_update_rejects_final_superuser_demotion(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2024,11 +2034,13 @@ def test_usermgr_update_rejects_final_superuser_demotion(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
-        usermgr.main(["create", "root@example.com", "--password", "-", "--superuser"])
+        identitymgr.main(
+            ["create", "root@example.com", "--password", "-", "--superuser"]
+        )
         == 0
     )
 
-    exit_code = usermgr.main(["update", "root@example.com", "--no-superuser"])
+    exit_code = identitymgr.main(["update", "root@example.com", "--no-superuser"])
 
     assert exit_code == 1
     assert "final superuser" in capsys.readouterr().err
@@ -2036,7 +2048,7 @@ def test_usermgr_update_rejects_final_superuser_demotion(
     assert user.is_superuser is True
 
 
-def test_usermgr_delete_and_deactivate_protect_superusers(
+def test_identitymgr_delete_and_deactivate_protect_superusers(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2046,14 +2058,14 @@ def test_usermgr_delete_and_deactivate_protect_superusers(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
-        usermgr.main(
+        identitymgr.main(
             ["create", "protected@example.com", "--password", "-", "--superuser"]
         )
         == 0
     )
 
-    assert usermgr.main(["delete", "protected@example.com", "--force"]) == 1
-    assert usermgr.main(["deactivate", "protected@example.com", "--force"]) == 1
+    assert identitymgr.main(["delete", "protected@example.com", "--force"]) == 1
+    assert identitymgr.main(["deactivate", "protected@example.com", "--force"]) == 1
 
     captured = capsys.readouterr()
     assert "superuser" in captured.err
@@ -2061,7 +2073,7 @@ def test_usermgr_delete_and_deactivate_protect_superusers(
     assert user.is_active is True
 
 
-def test_usermgr_delete_protects_non_final_superuser(
+def test_identitymgr_delete_protects_non_final_superuser(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2071,9 +2083,11 @@ def test_usermgr_delete_protects_non_final_superuser(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("first-root@example.com", "second-root@example.com"):
         monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-        assert usermgr.main(["create", email, "--password", "-", "--superuser"]) == 0
+        assert (
+            identitymgr.main(["create", email, "--password", "-", "--superuser"]) == 0
+        )
 
-    exit_code = usermgr.main(["delete", "first-root@example.com", "--force"])
+    exit_code = identitymgr.main(["delete", "first-root@example.com", "--force"])
 
     assert exit_code == 1
     assert "cannot be deleted" in capsys.readouterr().err
@@ -2083,7 +2097,7 @@ def test_usermgr_delete_protects_non_final_superuser(
     }
 
 
-def test_usermgr_delete_and_deactivate_normal_users_with_force(
+def test_identitymgr_delete_and_deactivate_normal_users_with_force(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2091,9 +2105,11 @@ def test_usermgr_delete_and_deactivate_normal_users_with_force(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "delete@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "delete@example.com", "--password", "-"]) == 0
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "deactivate@example.com", "--password", "-"]) == 0
+    assert (
+        identitymgr.main(["create", "deactivate@example.com", "--password", "-"]) == 0
+    )
     delete_token = create_session_token_for_user(database_url, "delete@example.com")
     deactivate_token = create_session_token_for_user(
         database_url,
@@ -2104,10 +2120,10 @@ def test_usermgr_delete_and_deactivate_normal_users_with_force(
         deactivate_token,
     }
 
-    assert usermgr.main(["delete", "delete@example.com", "--force"]) == 0
+    assert identitymgr.main(["delete", "delete@example.com", "--force"]) == 0
     assert access_tokens_from_database(database_url) == [deactivate_token]
 
-    assert usermgr.main(["deactivate", "deactivate@example.com", "--force"]) == 0
+    assert identitymgr.main(["deactivate", "deactivate@example.com", "--force"]) == 0
 
     [remaining_user] = identity_users_from_database(database_url)
     assert remaining_user.email == "deactivate@example.com"
@@ -2115,7 +2131,7 @@ def test_usermgr_delete_and_deactivate_normal_users_with_force(
     assert access_tokens_from_database(database_url) == []
 
 
-def test_usermgr_deactivate_only_revokes_target_user_sessions(
+def test_identitymgr_deactivate_only_revokes_target_user_sessions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2124,18 +2140,18 @@ def test_usermgr_deactivate_only_revokes_target_user_sessions(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("alice@example.com", "bob@example.com"):
         monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-        assert usermgr.main(["create", email, "--password", "-"]) == 0
+        assert identitymgr.main(["create", email, "--password", "-"]) == 0
 
     alice_token = create_session_token_for_user(database_url, "alice@example.com")
     bob_token = create_session_token_for_user(database_url, "bob@example.com")
     assert set(access_tokens_from_database(database_url)) == {alice_token, bob_token}
 
-    assert usermgr.main(["deactivate", "alice@example.com", "--force"]) == 0
+    assert identitymgr.main(["deactivate", "alice@example.com", "--force"]) == 0
 
     assert access_tokens_from_database(database_url) == [bob_token]
 
 
-def test_usermgr_delete_confirmation_identifies_resolved_user(
+def test_identitymgr_delete_confirmation_identifies_resolved_user(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2144,19 +2160,19 @@ def test_usermgr_delete_confirmation_identifies_resolved_user(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "confirm@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "confirm@example.com", "--password", "-"]) == 0
     [user] = identity_users_from_database(database_url)
     monkeypatch.setattr("builtins.input", lambda prompt: print(prompt) or "no")
     capsys.readouterr()
 
-    exit_code = usermgr.main(["delete", str(user.id)])
+    exit_code = identitymgr.main(["delete", str(user.id)])
 
     assert exit_code == 1
     assert "confirm@example.com" in capsys.readouterr().out
     assert len(identity_users_from_database(database_url)) == 1
 
 
-def test_usermgr_password_revokes_sessions_by_default(
+def test_identitymgr_password_revokes_sessions_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2164,18 +2180,20 @@ def test_usermgr_password_revokes_sessions_by_default(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "password@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "password@example.com", "--password", "-"]) == 0
     token = create_session_token_for_user(database_url, "password@example.com")
     assert access_tokens_from_database(database_url) == [token]
 
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{UPDATED_STRONG_TEST_PASSWORD}\n"))
-    exit_code = usermgr.main(["password", "password@example.com", "--password", "-"])
+    exit_code = identitymgr.main(
+        ["password", "password@example.com", "--password", "-"]
+    )
 
     assert exit_code == 0
     assert access_tokens_from_database(database_url) == []
 
 
-def test_usermgr_update_password_revokes_sessions_by_default(
+def test_identitymgr_update_password_revokes_sessions_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2184,13 +2202,14 @@ def test_usermgr_update_password_revokes_sessions_by_default(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
-        usermgr.main(["create", "update-password@example.com", "--password", "-"]) == 0
+        identitymgr.main(["create", "update-password@example.com", "--password", "-"])
+        == 0
     )
     token = create_session_token_for_user(database_url, "update-password@example.com")
     assert access_tokens_from_database(database_url) == [token]
 
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{UPDATED_STRONG_TEST_PASSWORD}\n"))
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         ["update", "update-password@example.com", "--password", "-"]
     )
 
@@ -2198,7 +2217,7 @@ def test_usermgr_update_password_revokes_sessions_by_default(
     assert access_tokens_from_database(database_url) == []
 
 
-def test_usermgr_password_can_preserve_sessions(
+def test_identitymgr_password_can_preserve_sessions(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2206,11 +2225,11 @@ def test_usermgr_password_can_preserve_sessions(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "preserve@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "preserve@example.com", "--password", "-"]) == 0
     token = create_session_token_for_user(database_url, "preserve@example.com")
 
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{UPDATED_STRONG_TEST_PASSWORD}\n"))
-    exit_code = usermgr.main(
+    exit_code = identitymgr.main(
         ["password", "preserve@example.com", "--password", "-", "--no-revoke"]
     )
 
@@ -2218,7 +2237,7 @@ def test_usermgr_password_can_preserve_sessions(
     assert access_tokens_from_database(database_url) == [token]
 
 
-def test_usermgr_interactive_password_mismatch_aborts_when_input_ends(
+def test_identitymgr_interactive_password_mismatch_aborts_when_input_ends(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2227,7 +2246,7 @@ def test_usermgr_interactive_password_mismatch_aborts_when_input_ends(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["create", "mismatch@example.com"],
         input="first password\nsecond password\n",
     )
@@ -2239,7 +2258,7 @@ def test_usermgr_interactive_password_mismatch_aborts_when_input_ends(
     assert identity_users_from_database(database_url) == []
 
 
-def test_usermgr_interactive_password_prompt_retries_after_mismatch(
+def test_identitymgr_interactive_password_prompt_retries_after_mismatch(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2248,7 +2267,7 @@ def test_usermgr_interactive_password_prompt_retries_after_mismatch(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["create", "retry@example.com"],
         input=(
             "first password\n"
@@ -2267,7 +2286,7 @@ def test_usermgr_interactive_password_prompt_retries_after_mismatch(
 
 
 @pytest.mark.parametrize("password_source", ["-", "stdin"])
-def test_usermgr_create_with_stdin_password_does_not_prompt(
+def test_identitymgr_create_with_stdin_password_does_not_prompt(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     password_source: str,
@@ -2279,7 +2298,7 @@ def test_usermgr_create_with_stdin_password_does_not_prompt(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["create", email, "--password", password_source],
         input=f"{STRONG_TEST_PASSWORD}\n",
     )
@@ -2291,7 +2310,7 @@ def test_usermgr_create_with_stdin_password_does_not_prompt(
     assert user.email == email
 
 
-def test_usermgr_create_with_empty_stdin_password_reports_password_option(
+def test_identitymgr_create_with_empty_stdin_password_reports_password_option(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2300,7 +2319,7 @@ def test_usermgr_create_with_empty_stdin_password_reports_password_option(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
 
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["create", "empty-stdin@example.com", "--password", "-"],
         input="",
     )
@@ -2311,7 +2330,7 @@ def test_usermgr_create_with_empty_stdin_password_reports_password_option(
     assert identity_users_from_database(database_url) == []
 
 
-def test_usermgr_password_command_prompts_by_default(
+def test_identitymgr_password_command_prompts_by_default(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2320,11 +2339,12 @@ def test_usermgr_password_command_prompts_by_default(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
     assert (
-        usermgr.main(["create", "default-prompt@example.com", "--password", "-"]) == 0
+        identitymgr.main(["create", "default-prompt@example.com", "--password", "-"])
+        == 0
     )
 
     result = CliRunner().invoke(
-        usermgr.usermgr_command,
+        identitymgr.identitymgr_command,
         ["password", "default-prompt@example.com"],
         input=f"{UPDATED_STRONG_TEST_PASSWORD}\n{UPDATED_STRONG_TEST_PASSWORD}\n",
     )
@@ -2334,7 +2354,7 @@ def test_usermgr_password_command_prompts_by_default(
     assert "Password:" in result.stderr
 
 
-def test_usermgr_list_filters_by_email_domain_flags_and_effective_activity(
+def test_identitymgr_list_filters_by_email_domain_flags_and_effective_activity(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2344,24 +2364,26 @@ def test_usermgr_list_filters_by_email_domain_flags_and_effective_activity(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("alpha@example.com", "beta@example.org", "gamma@example.com"):
         monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-        assert usermgr.main(["create", email, "--password", "-"]) == 0
-    assert usermgr.main(["update", "alpha@example.com", "--admin"]) == 0
-    assert usermgr.main(["deactivate", "beta@example.org", "--force"]) == 0
+        assert identitymgr.main(["create", email, "--password", "-"]) == 0
+    assert identitymgr.main(["update", "alpha@example.com", "--admin"]) == 0
+    assert identitymgr.main(["deactivate", "beta@example.org", "--force"]) == 0
     update_user_fields(database_url, "gamma@example.com", expires_at=time() - 60)
     capsys.readouterr()
 
-    assert usermgr.main(["list", "--json", "--domain", "example.com", "--admin"]) == 0
+    assert (
+        identitymgr.main(["list", "--json", "--domain", "example.com", "--admin"]) == 0
+    )
     [admin_record] = json.loads(capsys.readouterr().out)
     assert admin_record["email"] == "alpha@example.com"
 
-    assert usermgr.main(["list", "--json", "--inactive"]) == 0
+    assert identitymgr.main(["list", "--json", "--inactive"]) == 0
     inactive_emails = {
         record["email"] for record in json.loads(capsys.readouterr().out)
     }
     assert inactive_emails == {"beta@example.org", "gamma@example.com"}
 
 
-def test_usermgr_list_uses_shared_effective_active_timestamp(
+def test_identitymgr_list_uses_shared_effective_active_timestamp(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2370,7 +2392,7 @@ def test_usermgr_list_uses_shared_effective_active_timestamp(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
     update_user_fields(database_url, "boundary@example.com", expires_at=200.0)
     capsys.readouterr()
 
@@ -2380,14 +2402,14 @@ def test_usermgr_list_uses_shared_effective_active_timestamp(
         lambda: next(clock_values),
     )
 
-    assert usermgr.main(["list", "--json", "--active"]) == 0
+    assert identitymgr.main(["list", "--json", "--active"]) == 0
 
     [record] = json.loads(capsys.readouterr().out)
     assert record["email"] == "boundary@example.com"
     assert record["effective_active"] is True
 
 
-def test_usermgr_active_filter_uses_exclusive_expiry_boundary(
+def test_identitymgr_active_filter_uses_exclusive_expiry_boundary(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2396,26 +2418,26 @@ def test_usermgr_active_filter_uses_exclusive_expiry_boundary(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "boundary@example.com", "--password", "-"]) == 0
     update_user_fields(database_url, "boundary@example.com", expires_at=200.0)
     monkeypatch.setattr("auth_ext.management.current_timestamp", lambda: 200.0)
     capsys.readouterr()
 
-    assert usermgr.main(["list", "--json"]) == 0
+    assert identitymgr.main(["list", "--json"]) == 0
     [boundary_record] = json.loads(capsys.readouterr().out)
     assert boundary_record["email"] == "boundary@example.com"
     assert boundary_record["effective_active"] is False
 
-    assert usermgr.main(["list", "--json", "--active"]) == 0
+    assert identitymgr.main(["list", "--json", "--active"]) == 0
     assert json.loads(capsys.readouterr().out) == []
 
-    assert usermgr.main(["list", "--json", "--inactive"]) == 0
+    assert identitymgr.main(["list", "--json", "--inactive"]) == 0
     [record] = json.loads(capsys.readouterr().out)
     assert record["email"] == "boundary@example.com"
     assert record["effective_active"] is False
 
 
-def test_usermgr_list_timestamp_filters_and_ordering(
+def test_identitymgr_list_timestamp_filters_and_ordering(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2425,7 +2447,7 @@ def test_usermgr_list_timestamp_filters_and_ordering(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("first@z.example", "second@y.example", "third@y.example"):
         monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-        assert usermgr.main(["create", email, "--password", "-"]) == 0
+        assert identitymgr.main(["create", email, "--password", "-"]) == 0
 
     update_user_fields(
         database_url,
@@ -2451,7 +2473,7 @@ def test_usermgr_list_timestamp_filters_and_ordering(
     capsys.readouterr()
 
     assert (
-        usermgr.main(
+        identitymgr.main(
             ["list", "--json", "--since-created-at", "250", "--order", "email-domain"]
         )
         == 0
@@ -2462,7 +2484,7 @@ def test_usermgr_list_timestamp_filters_and_ordering(
         "third@y.example",
     ]
 
-    assert usermgr.main(["list", "--json", "-l", "450"]) == 0
+    assert identitymgr.main(["list", "--json", "-l", "450"]) == 0
     records = json.loads(capsys.readouterr().out)
     assert {record["email"] for record in records} == {
         "first@z.example",
@@ -2470,7 +2492,7 @@ def test_usermgr_list_timestamp_filters_and_ordering(
     }
 
 
-def test_usermgr_last_login_order_keeps_nulls_last(
+def test_identitymgr_last_login_order_keeps_nulls_last(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2480,12 +2502,12 @@ def test_usermgr_last_login_order_keeps_nulls_last(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("never@example.com", "recent@example.com"):
         monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-        assert usermgr.main(["create", email, "--password", "-"]) == 0
+        assert identitymgr.main(["create", email, "--password", "-"]) == 0
 
     update_user_fields(database_url, "recent@example.com", last_login_at=100.0)
     capsys.readouterr()
 
-    assert usermgr.main(["list", "--json", "--order", "last-login-at"]) == 0
+    assert identitymgr.main(["list", "--json", "--order", "last-login-at"]) == 0
 
     records = json.loads(capsys.readouterr().out)
     assert [record["email"] for record in records] == [
@@ -2494,7 +2516,7 @@ def test_usermgr_last_login_order_keeps_nulls_last(
     ]
 
 
-def test_usermgr_email_domain_order_rejects_unsupported_dialect(
+def test_identitymgr_email_domain_order_rejects_unsupported_dialect(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2529,7 +2551,7 @@ def test_usermgr_email_domain_order_rejects_unsupported_dialect(
         asyncio.run(close_database(engine))
 
 
-def test_usermgr_list_filters_by_login_presence(
+def test_identitymgr_list_filters_by_login_presence(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2539,39 +2561,39 @@ def test_usermgr_list_filters_by_login_presence(
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     for email in ("never@example.com", "recent@example.com"):
         monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-        assert usermgr.main(["create", email, "--password", "-"]) == 0
+        assert identitymgr.main(["create", email, "--password", "-"]) == 0
 
     update_user_fields(database_url, "recent@example.com", last_login_at=100.0)
     capsys.readouterr()
 
-    assert usermgr.main(["list", "--json", "--never-logged-in"]) == 0
+    assert identitymgr.main(["list", "--json", "--never-logged-in"]) == 0
     [never_record] = json.loads(capsys.readouterr().out)
     assert never_record["email"] == "never@example.com"
 
-    assert usermgr.main(["list", "--json", "--logged-in"]) == 0
+    assert identitymgr.main(["list", "--json", "--logged-in"]) == 0
     [logged_in_record] = json.loads(capsys.readouterr().out)
     assert logged_in_record["email"] == "recent@example.com"
 
 
-def test_usermgr_timestamp_parser_handles_numeric_iso_and_natural_values() -> None:
-    assert usermgr.parse_timestamp_filter("4102444800") == 4102444800.0
-    assert usermgr.parse_timestamp_filter("20250101") == 20250101.0
-    assert usermgr.parse_timestamp_filter("2100-01-01T00:00:00Z") == 4102444800.0
-    assert isinstance(usermgr.parse_timestamp_filter("1 June 2030"), float)
+def test_identitymgr_timestamp_parser_handles_numeric_iso_and_natural_values() -> None:
+    assert identitymgr.parse_timestamp_filter("4102444800") == 4102444800.0
+    assert identitymgr.parse_timestamp_filter("20250101") == 20250101.0
+    assert identitymgr.parse_timestamp_filter("2100-01-01T00:00:00Z") == 4102444800.0
+    assert isinstance(identitymgr.parse_timestamp_filter("1 June 2030"), float)
 
 
-def test_usermgr_timestamp_parser_rejects_invalid_values() -> None:
+def test_identitymgr_timestamp_parser_rejects_invalid_values() -> None:
     with pytest.raises(ValueError, match="Invalid timestamp value"):
-        usermgr.parse_timestamp_filter("not-a-date")
+        identitymgr.parse_timestamp_filter("not-a-date")
 
 
-def test_usermgr_timestamp_parser_uses_day_month_year_order(
+def test_identitymgr_timestamp_parser_uses_day_month_year_order(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.setattr(usermgr, "_local_timezone_name", lambda: "UTC")
+    monkeypatch.setattr(identitymgr, "_local_timezone_name", lambda: "UTC")
 
     assert (
-        usermgr.parse_timestamp_filter("01/02/2030")
+        identitymgr.parse_timestamp_filter("01/02/2030")
         == datetime(
             2030,
             2,
@@ -2591,11 +2613,11 @@ def test_usermgr_timestamp_parser_uses_day_month_year_order(
         (None, "UTC"),
     ],
 )
-def test_usermgr_timezone_name_uses_available_tzinfo_name(
+def test_identitymgr_timezone_name_uses_available_tzinfo_name(
     tzinfo: object,
     expected: str,
 ) -> None:
-    assert usermgr._timezone_name_from_tzinfo(tzinfo) == expected
+    assert identitymgr._timezone_name_from_tzinfo(tzinfo) == expected
 
 
 def test_auth_database_url_parser_handles_relative_and_absolute_sqlite_paths(
@@ -2633,23 +2655,27 @@ def test_auth_database_url_rejects_unsupported_scheme(tmp_path: Path) -> None:
         resolve_database_url("mysql+aiomysql://localhost/auth", tmp_path)
 
 
-def test_usermgr_human_output_formats_only_known_timestamp_fields() -> None:
+def test_identitymgr_human_output_formats_only_known_timestamp_fields() -> None:
     assert (
-        usermgr._format_human_value("created_at", 4102444800.0)
+        identitymgr._format_human_value("created_at", 4102444800.0)
         == "2100-01-01T00:00:00+00:00"
     )
     assert (
-        usermgr._format_human_value("created_at", 4102444800)
+        identitymgr._format_human_value("created_at", 4102444800)
         == "2100-01-01T00:00:00+00:00"
     )
-    assert usermgr._format_human_value("quota", 1.5) == 1.5
+    assert identitymgr._format_human_value("quota", 1.5) == 1.5
 
 
-def test_usermgr_timestamp_fields_are_centralised() -> None:
-    assert usermgr.USER_RECORD_FIELDS is identity_management.USER_RECORD_FIELDS
-    assert usermgr.USER_TIMESTAMP_FIELDS is identity_management.USER_TIMESTAMP_FIELDS
-    assert usermgr.TIMESTAMP_FIELDS == frozenset(usermgr.USER_TIMESTAMP_FIELDS)
-    assert set(usermgr.USER_TIMESTAMP_FIELDS).issubset(usermgr.USER_RECORD_FIELDS)
+def test_identitymgr_timestamp_fields_are_centralised() -> None:
+    assert identitymgr.USER_RECORD_FIELDS is identity_management.USER_RECORD_FIELDS
+    assert (
+        identitymgr.USER_TIMESTAMP_FIELDS is identity_management.USER_TIMESTAMP_FIELDS
+    )
+    assert identitymgr.TIMESTAMP_FIELDS == frozenset(identitymgr.USER_TIMESTAMP_FIELDS)
+    assert set(identitymgr.USER_TIMESTAMP_FIELDS).issubset(
+        identitymgr.USER_RECORD_FIELDS
+    )
 
 
 @pytest.mark.parametrize(
@@ -2675,17 +2701,17 @@ def test_usermgr_timestamp_fields_are_centralised() -> None:
         (r"foo\_", r"foo\_"),
     ],
 )
-def test_usermgr_sql_wildcard_pattern_examples(
+def test_identitymgr_sql_wildcard_pattern_examples(
     pattern: str,
     expected: str,
 ) -> None:
     assert identity_management._sql_wildcard_pattern(pattern) == expected
 
 
-def test_usermgr_human_output_handles_missing_record_fields(
+def test_identitymgr_human_output_handles_missing_record_fields(
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    usermgr._print_user_records(
+    identitymgr._print_user_records(
         [{"email": "partial@example.com", "id": "user-1"}],
         json_output=False,
         csv_output=False,
@@ -2697,7 +2723,7 @@ def test_usermgr_human_output_handles_missing_record_fields(
     )
 
 
-def test_usermgr_csv_output_uses_iso_timestamp_strings(
+def test_identitymgr_csv_output_uses_iso_timestamp_strings(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
@@ -2706,16 +2732,16 @@ def test_usermgr_csv_output_uses_iso_timestamp_strings(
     initialise_identity_database(database_url)
     monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
     monkeypatch.setattr(sys, "stdin", io.StringIO(f"{STRONG_TEST_PASSWORD}\n"))
-    assert usermgr.main(["create", "csv@example.com", "--password", "-"]) == 0
+    assert identitymgr.main(["create", "csv@example.com", "--password", "-"]) == 0
     update_user_fields(database_url, "csv@example.com", created_at=4102444800.0)
     capsys.readouterr()
 
-    assert usermgr.main(["list", "--csv"]) == 0
+    assert identitymgr.main(["list", "--csv"]) == 0
 
     [record] = csv.DictReader(io.StringIO(capsys.readouterr().out)).__iter__()
     assert record["email"] == "csv@example.com"
     assert record["created_at"] == "2100-01-01T00:00:00+00:00"
 
 
-def test_usermgr_csv_fieldnames_are_stable() -> None:
-    assert usermgr._csv_fieldnames() == list(usermgr.USER_RECORD_FIELDS)
+def test_identitymgr_csv_fieldnames_are_stable() -> None:
+    assert identitymgr._csv_fieldnames() == list(identitymgr.USER_RECORD_FIELDS)

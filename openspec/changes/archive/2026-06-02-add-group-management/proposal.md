@@ -21,7 +21,7 @@ effective user capabilities are resolved by recursively traversing that graph.
   or recursing indefinitely.
 - Record the decision that users require no direct flags; groups and scopes are
   the durable capability mechanism.
-- Add group-management operations to `usermgr` so local operators can manage
+- Add group-management operations to `identitymgr` so local operators can manage
   groups before API-backed administration exists.
 - Preserve existing `is_admin` and `is_superuser` user fields as local identity
   and bootstrap/user-management state rather than treating them as the long-term
@@ -47,7 +47,7 @@ effective user capabilities are resolved by recursively traversing that graph.
 ## Impact
 
 - Affected areas include `auth_ext` authorisation contracts, persistence models,
-  Alembic migrations, `usermgr`, validation, tests, and operator documentation.
+  Alembic migrations, `identitymgr`, validation, tests, and operator documentation.
 - This change is a prerequisite for API tokens/scopes and for completing
   API-backed user-management behaviour.
 - Auth-provider runtime implementation remains deferred, but it should consume

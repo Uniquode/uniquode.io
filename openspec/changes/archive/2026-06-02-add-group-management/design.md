@@ -7,7 +7,7 @@ subject have?" without embedding policy in the OAuth provider or API layer.
 
 Current user management stores local user metadata on `auth_ext.models.User` and
 exposes local administrative operations through `auth_ext.management` and the
-`usermgr` Click command. Existing `is_admin` and `is_superuser` fields are useful
+`identitymgr` Click command. Existing `is_admin` and `is_superuser` fields are useful
 for bootstrap and local management safety, but they are too coarse to be the
 durable authorisation model for API tokens, OAuth scopes, and feature-gated
 surfaces.
@@ -34,7 +34,7 @@ change.
 - Support group-to-user and group-to-group membership.
 - Resolve effective user scopes through recursive group traversal with cycle
   protection and duplicate elimination.
-- Add local `usermgr` group-management operations for operators before
+- Add local `identitymgr` group-management operations for operators before
   API-backed administration exists.
 - Keep the model suitable for later API-token and `auth_provider` scope policy.
 
@@ -92,7 +92,7 @@ needs to identify a group. The abbreviation should be fixed at creation time and
 not editable through normal group update operations.
 
 Rationale: stable IDs are appropriate for persistence and integration, but they
-are awkward in daily `usermgr` usage. A unique abbreviation gives operators a
+are awkward in daily `identitymgr` usage. A unique abbreviation gives operators a
 safe, memorable handle without making the human-facing label the only durable
 identifier. Making abbreviations immutable avoids broken operator runbooks and
 keeps CLI references stable.
@@ -191,32 +191,32 @@ Alternative considered: enforce full acyclic graph constraints in the database.
 Rejected because portable recursive graph constraints across SQLite and
 PostgreSQL would add complexity out of proportion to this foundation slice.
 
-### 7. Extend `usermgr` with group subcommands and user membership options
+### 7. Extend `identitymgr` with group subcommands and user membership options
 
-`usermgr` should gain group-management capability under a clear command shape,
+`identitymgr` should gain group-management capability under a clear command shape,
 for example:
 
-- `usermgr group create <abbrev> --description ... --scope ...`
-- `usermgr group <id-or-abbrev> update --description ... --scope ... --rm-scope ...`
-- `usermgr group <id-or-abbrev> delete [--force]`
-- `usermgr group <id-or-abbrev> show [--json]`
-- `usermgr group <id-or-abbrev> add-user <user-target>`
-- `usermgr group <id-or-abbrev> remove-user <user-target>`
-- `usermgr group <id-or-abbrev> add-group <child-id-or-abbrev>`
-- `usermgr group <id-or-abbrev> remove-group <child-id-or-abbrev>`
-- `usermgr group list [--json|--csv]`
-- `usermgr scope create <scope> --description ...`
-- `usermgr scope update <scope> --description ...`
-- `usermgr scope delete <scope>`
-- `usermgr scope list [--json|--csv]`
-- `usermgr group effective-scopes <user-target>`
+- `identitymgr group create <abbrev> --description ... --scope ...`
+- `identitymgr group <id-or-abbrev> update --description ... --scope ... --rm-scope ...`
+- `identitymgr group <id-or-abbrev> delete [--force]`
+- `identitymgr group <id-or-abbrev> show [--json]`
+- `identitymgr group <id-or-abbrev> add-user <user-target>`
+- `identitymgr group <id-or-abbrev> remove-user <user-target>`
+- `identitymgr group <id-or-abbrev> add-group <child-id-or-abbrev>`
+- `identitymgr group <id-or-abbrev> remove-group <child-id-or-abbrev>`
+- `identitymgr group list [--json|--csv]`
+- `identitymgr scope create <scope> --description ...`
+- `identitymgr scope update <scope> --description ...`
+- `identitymgr scope delete <scope>`
+- `identitymgr scope list [--json|--csv]`
+- `identitymgr group effective-scopes <user-target>`
 
 User create/update flows should also support group membership:
 
-- `usermgr create <email> --group <id-or-abbrev> --group <id-or-abbrev>`
-- `usermgr update <user-target> --add-group <id-or-abbrev>`
-- `usermgr update <user-target> --rm-group <id-or-abbrev>`
-- `usermgr update <user-target> --set-group <id-or-abbrev> --set-group <id-or-abbrev>`
+- `identitymgr create <email> --group <id-or-abbrev> --group <id-or-abbrev>`
+- `identitymgr update <user-target> --add-group <id-or-abbrev>`
+- `identitymgr update <user-target> --rm-group <id-or-abbrev>`
+- `identitymgr update <user-target> --set-group <id-or-abbrev> --set-group <id-or-abbrev>`
 
 `--group` on create is additive because the user has no existing groups.
 `update` should avoid a bare `--group` replacement operation because it is too
@@ -231,10 +231,7 @@ tool preserves operator workflow and avoids inventing an admin API prematurely.
 Alternative considered: create a separate `groupmgr` script. Rejected because
 groups are part of local identity administration and share configuration,
 schema preflight, output modes, and target-resolution conventions with
-`usermgr`.
-
-Future direction: as the CLI grows beyond user-only operations, `usermgr` should
-eventually be renamed to `identitymgr`.
+`identitymgr`.
 
 ### 8. Keep auth-provider integration contract-only for this slice
 
@@ -251,7 +248,7 @@ the group/scope policy dependency but leaves runtime provider implementation to
 
 - [Risk] Nested group graphs can create cycles or unexpectedly broad access. →
   Mitigation: resolver visited-set protection, management validation for common
-  mistakes, unseen-only nested group selection lists, clear `usermgr group show`
+  mistakes, unseen-only nested group selection lists, clear `identitymgr group show`
   and `effective-scopes` output.
 - [Risk] String scopes can drift without documentation. → Mitigation:
   store scopes as records with optional descriptions and make group assignments
@@ -260,7 +257,7 @@ the group/scope policy dependency but leaves runtime provider implementation to
   invalidate scope caches on every group, membership, scope, or group-scope
   mutation; rebuild on demand rather than persisting cached results.
 - [Risk] CLI command surface may become large. → Mitigation: keep group commands
-  under a single `usermgr group` command tree and preserve JSON/CSV/human output
+  under a single `identitymgr group` command tree and preserve JSON/CSV/human output
   conventions.
 - [Risk] Operator-facing abbreviations can collide or drift from operator
   documentation. → Mitigation: enforce uniqueness, make abbreviations immutable
@@ -280,9 +277,9 @@ the group/scope policy dependency but leaves runtime provider implementation to
    membership.
 2. Add management service functions for group CRUD, membership changes, and
    cached effective-scope resolution.
-3. Add `usermgr group` commands and user create/update group options that call
+3. Add `identitymgr group` commands and user create/update group options that call
    the management service boundary and preserve existing output conventions.
-4. Add validation coverage for migration metadata and user-manager schema
+4. Add validation coverage for migration metadata and identity-manager schema
    preflight.
 5. Document group concepts, scope resolution, and operator examples.
 

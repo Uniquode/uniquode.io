@@ -4,54 +4,64 @@
 TBD - created by archiving change add-user-manager. Update Purpose after archive.
 ## Requirements
 ### Requirement: User manager command
-The system SHALL provide an `auth_ext`-owned CLI script named `usermgr` for administrative local-user management.
+The system SHALL provide an `auth_ext`-owned CLI script named `identitymgr` for
+administrative local identity management, including users, groups, scopes,
+memberships, and effective-scope inspection.
 
 #### Scenario: Project script exists
 - **WHEN** a developer inspects project scripts
-- **THEN** `usermgr` is defined as a runnable project command
+- **THEN** `identitymgr` is defined as a runnable project command
+- **AND** `usermgr` is not defined as a project command
 
 #### Scenario: Command uses identity foundation
-- **WHEN** `usermgr` performs user operations
-- **THEN** it uses the configured identity persistence and FastAPI Users/auth-extension identity services rather than duplicating password or user-lifecycle logic
+- **WHEN** `identitymgr` performs user, group, scope, membership, or
+  effective-scope operations
+- **THEN** it uses the configured identity persistence and FastAPI
+  Users/auth-extension identity services rather than duplicating password,
+  user-lifecycle, or authorisation-scope logic
 
 #### Scenario: Command loads generic auth configuration
 - **WHEN** an operator supplies `--config path/to/auth.toml`
-- **THEN** `usermgr` reads identity configuration from the `[auth]` table in that file
-- **AND** relative SQLite database paths are resolved relative to the config file directory
+- **THEN** `identitymgr` reads identity configuration from the `[auth]` table in
+  that file
+- **AND** relative SQLite database paths are resolved relative to the config file
+  directory
 
 #### Scenario: Command supports database override
 - **WHEN** `AUTH_DATABASE_URL` is set
-- **THEN** `usermgr` uses that database URL instead of the value from `[auth]`
+- **THEN** `identitymgr` uses that database URL instead of the value from
+  `[auth]`
 
 #### Scenario: Scriptable output is available
 - **WHEN** an operator requests JSON or CSV output
-- **THEN** `usermgr` emits the requested machine-readable format without password material
+- **THEN** `identitymgr` emits the requested machine-readable format without
+  password material
 
 ### Requirement: User creation
-The `usermgr` command SHALL create local users through a controlled administrative path.
+The `identitymgr` command SHALL create local users through a controlled administrative path.
 
 #### Scenario: Create standard user
-- **WHEN** an operator runs `usermgr create` with a valid email and password input
+- **WHEN** an operator runs `identitymgr create` with a valid email and password input
 - **THEN** the command creates a verified local non-admin, non-superuser account
 
 #### Scenario: Create admin
-- **WHEN** an operator runs `usermgr create` with the admin option
+- **WHEN** an operator runs `identitymgr create` with the admin option
 - **THEN** the command creates a verified local user with admin status
 
 #### Scenario: Create superuser
-- **WHEN** an operator runs `usermgr create` with the superuser option
+- **WHEN** an operator runs `identitymgr create` with the superuser option
 - **THEN** the command creates a verified local user with superuser status
 
 #### Scenario: Create unverified user
-- **WHEN** an operator runs `usermgr create` with the unverified option
+- **WHEN** an operator runs `identitymgr create` with the unverified option
 - **THEN** the command creates a local user that must complete the email-token verification flow
 
 #### Scenario: Create user with profile metadata
-- **WHEN** an operator runs `usermgr create` with display-name, preferred-name, or timezone options
+- **WHEN** an operator runs `identitymgr create` with display-name, preferred-name, or timezone options
 - **THEN** the command stores the supplied metadata on the user account
 
 #### Scenario: Create user with expiry
-- **WHEN** an operator runs `usermgr create` with an expiry option
+- **WHEN** an operator runs `identitymgr create` with an expiry option
 - **THEN** the command stores the supplied expiry timestamp on the user account
 
 #### Scenario: Duplicate user is rejected
@@ -59,7 +69,7 @@ The `usermgr` command SHALL create local users through a controlled administrati
 - **THEN** the command fails without creating a duplicate account
 
 #### Scenario: Password can be read from stdin
-- **WHEN** an operator runs `usermgr create` with `--password -`
+- **WHEN** an operator runs `identitymgr create` with `--password -`
 - **THEN** the command reads one password value from stdin and does not prompt for confirmation
 
 ### Requirement: Password policy
@@ -123,7 +133,7 @@ Local users SHALL store operational metadata needed for user management.
 - **THEN** the user stores no preferred-name value
 
 ### Requirement: User target resolution
-The `usermgr` command SHALL resolve user command targets predictably.
+The `identitymgr` command SHALL resolve user command targets predictably.
 
 #### Scenario: Email target is supplied
 - **WHEN** an operator supplies a user target containing `@`
@@ -138,18 +148,18 @@ The `usermgr` command SHALL resolve user command targets predictably.
 - **THEN** the command fails with an invalid-target error instead of reporting the user as missing
 
 ### Requirement: User update
-The `usermgr` command SHALL update existing users through explicit field options.
+The `identitymgr` command SHALL update existing users through explicit field options.
 
 #### Scenario: Update admin status
-- **WHEN** an operator runs `usermgr update` with `--admin` or `--no-admin`
+- **WHEN** an operator runs `identitymgr update` with `--admin` or `--no-admin`
 - **THEN** the command updates the user's admin state
 
 #### Scenario: Update verification status
-- **WHEN** an operator runs `usermgr update` with `--verify` or `--no-verify`
+- **WHEN** an operator runs `identitymgr update` with `--verify` or `--no-verify`
 - **THEN** the command updates the user's verification state
 
 #### Scenario: Update superuser status
-- **WHEN** an operator runs `usermgr update` with `--superuser` or `--no-superuser`
+- **WHEN** an operator runs `identitymgr update` with `--superuser` or `--no-superuser`
 - **THEN** the command updates the user's superuser state
 
 #### Scenario: Sole superuser cannot be demoted
@@ -157,30 +167,30 @@ The `usermgr` command SHALL update existing users through explicit field options
 - **THEN** the command fails without changing that account
 
 #### Scenario: Update profile metadata
-- **WHEN** an operator runs `usermgr update` with display-name, preferred-name, or timezone options
+- **WHEN** an operator runs `identitymgr update` with display-name, preferred-name, or timezone options
 - **THEN** the command updates the supplied metadata fields
 
 #### Scenario: Clear profile metadata
-- **WHEN** an operator runs `usermgr update` with no-display-name, no-preferred-name, or no-timezone options
+- **WHEN** an operator runs `identitymgr update` with no-display-name, no-preferred-name, or no-timezone options
 - **THEN** the command clears the supplied nullable metadata fields
 
 #### Scenario: Update expiry
-- **WHEN** an operator runs `usermgr update` with an expiry option
+- **WHEN** an operator runs `identitymgr update` with an expiry option
 - **THEN** the command updates the user's expiry timestamp
 
 #### Scenario: Clear expiry
-- **WHEN** an operator runs `usermgr update` with a no-expiry option
+- **WHEN** an operator runs `identitymgr update` with a no-expiry option
 - **THEN** the command clears the user's expiry timestamp
 
 #### Scenario: Update password
-- **WHEN** an operator runs `usermgr update` with password input
+- **WHEN** an operator runs `identitymgr update` with password input
 - **THEN** the command changes the user's password through the existing identity boundary
 
 ### Requirement: User deletion
-The `usermgr` command SHALL delete users only through an explicit destructive operation.
+The `identitymgr` command SHALL delete users only through an explicit destructive operation.
 
 #### Scenario: Delete requires confirmation
-- **WHEN** an operator runs `usermgr delete` without a force option
+- **WHEN** an operator runs `identitymgr delete` without a force option
 - **THEN** the command asks for confirmation before deleting the target user
 
 #### Scenario: Delete removes target user
@@ -196,10 +206,10 @@ The `usermgr` command SHALL delete users only through an explicit destructive op
 - **THEN** the command reports that no matching user was found
 
 ### Requirement: User deactivation
-The `usermgr` command SHALL deactivate users without deleting the account row.
+The `identitymgr` command SHALL deactivate users without deleting the account row.
 
 #### Scenario: Deactivate target user
-- **WHEN** an operator runs `usermgr deactivate` for an existing user
+- **WHEN** an operator runs `identitymgr deactivate` for an existing user
 - **THEN** the command marks the user inactive without removing the user record
 
 #### Scenario: Deactivate rejects superuser
@@ -211,10 +221,10 @@ The `usermgr` command SHALL deactivate users without deleting the account row.
 - **THEN** existing identity checks reject or neutralise the inactive account
 
 ### Requirement: User listing
-The `usermgr` command SHALL list users with filters and ordering suitable for operational inspection.
+The `identitymgr` command SHALL list users with filters and ordering suitable for operational inspection.
 
 #### Scenario: List all users
-- **WHEN** an operator runs `usermgr list` with no filters
+- **WHEN** an operator runs `identitymgr list` with no filters
 - **THEN** the command prints local users in a readable tabular or line-oriented format
 
 #### Scenario: Filter by admin status
@@ -268,7 +278,7 @@ The `usermgr` command SHALL list users with filters and ordering suitable for op
 - **THEN** fields with no value are omitted from each user object
 
 ### Requirement: Password change
-The `usermgr` command SHALL support changing a user's password through interactive confirmation.
+The `identitymgr` command SHALL support changing a user's password through interactive confirmation.
 
 #### Scenario: Password change prompts for confirmation
 - **WHEN** an operator runs the password-change command
@@ -295,10 +305,10 @@ The `usermgr` command SHALL support changing a user's password through interacti
 - **THEN** existing sessions for that user are preserved
 
 ### Requirement: API-backed mode deferred
-The system SHALL defer API-backed `usermgr` operation until administrative API tokens/scopes exist.
+The system SHALL defer API-backed `identitymgr` operation until administrative API tokens/scopes exist.
 
 #### Scenario: Initial implementation uses local service mode
-- **WHEN** the first `usermgr` implementation is delivered
+- **WHEN** the first `identitymgr` implementation is delivered
 - **THEN** it operates through `auth_ext` configured services and database access rather than requiring an admin API token or host-specific settings object
 
 #### Scenario: Future API mode requires admin scope
@@ -306,12 +316,12 @@ The system SHALL defer API-backed `usermgr` operation until administrative API t
 - **THEN** it requires an authenticated token with explicit administrative privileges or scopes
 
 ### Requirement: User manager Click parser
-The system SHALL use Click for the `usermgr` command parser while preserving the
+The system SHALL use Click for the `identitymgr` command parser while preserving the
 existing local operator command interface and management outcomes.
 
 #### Scenario: User manager subcommands remain available
-- **WHEN** an operator runs `usermgr create`, `usermgr update`, `usermgr delete`,
-  `usermgr deactivate`, `usermgr list`, or `usermgr password`
+- **WHEN** an operator runs `identitymgr create`, `identitymgr update`, `identitymgr delete`,
+  `identitymgr deactivate`, `identitymgr list`, or `identitymgr password`
 - **THEN** the command accepts the same command names, positional arguments, and
   option names as before the parser migration
 
@@ -330,3 +340,172 @@ existing local operator command interface and management outcomes.
   contracts and returns the same success or failure exit status as before the
   parser migration
 
+### Requirement: Group management commands
+The `identitymgr` command SHALL provide local group and scope management commands
+through the existing auth configuration and database boundaries.
+
+#### Scenario: Group command tree exists
+- **WHEN** an operator runs `identitymgr group --help`
+- **THEN** the command lists group create, update, delete, list, show,
+  membership, scope, and effective-scope operations
+
+#### Scenario: Scope command tree exists
+- **WHEN** an operator runs `identitymgr scope --help`
+- **THEN** the command lists scope create, update, delete, and list operations
+
+#### Scenario: Group commands use existing configuration
+- **WHEN** an operator supplies `--config path/to/auth.toml` or
+  `AUTH_DATABASE_URL` for a group or scope command
+- **THEN** the command uses the same effective identity configuration and
+  database resolution as existing user commands
+
+### Requirement: Group target resolution
+The `identitymgr` command SHALL resolve group command targets by stable group ID or
+unique group abbreviation.
+
+#### Scenario: Group abbreviation target is supplied
+- **WHEN** an operator supplies a group target matching an existing abbreviation
+- **THEN** the command resolves the target to that group
+
+#### Scenario: Group identifier target is supplied
+- **WHEN** an operator supplies a group target matching an existing group ID
+- **THEN** the command resolves the target to that group
+
+#### Scenario: Unknown group target is supplied
+- **WHEN** an operator supplies a group target that matches no group ID or
+  abbreviation
+- **THEN** the command fails with an invalid group target error
+
+### Requirement: Group lifecycle operations
+The `identitymgr` command SHALL allow operators to create, inspect, update, list,
+and delete groups safely.
+
+#### Scenario: Create group
+- **WHEN** an operator runs `identitymgr group create <abbrev>` with a description
+  and one or more scopes
+- **THEN** the command creates a group with a stable ID, immutable abbreviation,
+  description, and scope assignments
+
+#### Scenario: Update group description
+- **WHEN** an operator runs `identitymgr group <id-or-abbrev> update` with a new
+  description
+- **THEN** the command updates the group description without changing the group
+  abbreviation
+
+#### Scenario: List groups
+- **WHEN** an operator runs `identitymgr group list`
+- **THEN** the command emits group records in human-readable output by default
+  and supports JSON or CSV output when requested
+
+#### Scenario: Show group
+- **WHEN** an operator runs `identitymgr group <id-or-abbrev> show`
+- **THEN** the command shows the group's ID, abbreviation, description, scopes,
+  user memberships, child groups, and parent groups
+
+#### Scenario: Delete group with memberships is rejected
+- **WHEN** an operator runs `identitymgr group <id-or-abbrev> delete` for a group
+  that has users, child groups, or parent groups
+- **THEN** the command fails without deleting the group
+
+### Requirement: Scope lifecycle operations
+The `identitymgr` command SHALL allow operators to create, update, and list scope
+records with optional descriptive text.
+
+#### Scenario: Create scope
+- **WHEN** an operator runs `identitymgr scope create <scope> --description <text>`
+- **THEN** the command creates the scope record with the supplied description
+
+#### Scenario: Update scope description
+- **WHEN** an operator runs `identitymgr scope update <scope> --description <text>`
+- **THEN** the command updates the scope description without changing the scope
+  string
+
+#### Scenario: Delete unused scope
+- **WHEN** an operator runs `identitymgr scope delete <scope>` for a scope that is not
+  assigned to any group
+- **THEN** the command removes the scope record
+
+#### Scenario: Delete used scope is rejected
+- **WHEN** an operator runs `identitymgr scope delete <scope>` for a scope assigned to
+  one or more groups
+- **THEN** the command fails without removing the scope record
+
+#### Scenario: List scopes
+- **WHEN** an operator runs `identitymgr scope list`
+- **THEN** the command emits scope records in human-readable output by default
+  and supports JSON or CSV output when requested
+
+### Requirement: Group membership operations
+The `identitymgr` command SHALL allow operators to assign and remove user and nested
+group membership while preventing duplicates and cycles.
+
+#### Scenario: Add user to group
+- **WHEN** an operator runs `identitymgr group <id-or-abbrev> add-user <user-target>`
+- **THEN** the command adds the target user to the group
+
+#### Scenario: Remove user from group
+- **WHEN** an operator runs `identitymgr group <id-or-abbrev> remove-user <user-target>`
+- **THEN** the command removes the target user from the group
+
+#### Scenario: Add child group
+- **WHEN** an operator runs `identitymgr group <parent-id-or-abbrev> add-group
+  <child-id-or-abbrev>`
+- **THEN** the command adds the child group to the parent group when the
+  relationship does not create a duplicate or cycle
+
+#### Scenario: Remove child group
+- **WHEN** an operator runs `identitymgr group <parent-id-or-abbrev> remove-group
+  <child-id-or-abbrev>`
+- **THEN** the command removes the child group from the parent group
+
+#### Scenario: Cyclic child group is rejected
+- **WHEN** an operator attempts to add a child group that would create a cycle
+- **THEN** the command fails without changing group membership
+
+### Requirement: User group membership options
+The `identitymgr` command SHALL support group membership while creating or updating
+users.
+
+#### Scenario: Create user with groups
+- **WHEN** an operator runs `identitymgr create <email> --group <id-or-abbrev>` one
+  or more times
+- **THEN** the command creates the user and assigns the user to the supplied
+  groups
+
+#### Scenario: Add group to user
+- **WHEN** an operator runs `identitymgr update <user-target> --add-group
+  <id-or-abbrev>`
+- **THEN** the command adds the user to that group without replacing other group
+  memberships
+
+#### Scenario: Remove group from user
+- **WHEN** an operator runs `identitymgr update <user-target> --rm-group
+  <id-or-abbrev>`
+- **THEN** the command removes the user from that group without changing other
+  group memberships
+
+#### Scenario: Set user groups
+- **WHEN** an operator runs `identitymgr update <user-target> --set-group
+  <id-or-abbrev>` one or more times
+- **THEN** the command replaces the user's direct group memberships with exactly
+  the supplied groups
+
+#### Scenario: Group replacement is explicit
+- **WHEN** an operator runs `identitymgr update <user-target> --group
+  <id-or-abbrev>`
+- **THEN** the command rejects the option because replacement uses `--set-group`
+  and incremental updates use `--add-group` or `--rm-group`
+
+### Requirement: Effective scope inspection
+The `identitymgr` command SHALL allow operators to inspect effective scopes for a
+user target.
+
+#### Scenario: Show effective scopes
+- **WHEN** an operator runs `identitymgr group effective-scopes <user-target>`
+- **THEN** the command prints the de-duplicated scopes resolved through direct
+  and nested group membership
+
+#### Scenario: Effective scopes are scriptable
+- **WHEN** an operator requests JSON output for effective scopes
+- **THEN** the command emits machine-readable user, group path, and scope data
+  without password material

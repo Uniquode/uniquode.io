@@ -3,7 +3,7 @@
 - [x] 1.1 Add `auth_ext.models` SQLAlchemy models for `identity_group`, `identity_scope`, `identity_group_scope`, `identity_group_user`, and `identity_group_group`.
 - [x] 1.2 Add uniqueness, foreign-key, and lookup indexes for group abbreviations, scope strings, group-scope assignments, user memberships, and nested group memberships.
 - [x] 1.3 Add the Alembic migration under `src/uniquode/migrations/versions` for the new authorisation tables and downgrade removal.
-- [x] 1.4 Extend the user-manager identity schema preflight so stale auth databases report missing group/scope tables or columns before command execution.
+- [x] 1.4 Extend the identity-manager identity schema preflight so stale auth databases report missing group/scope tables or columns before command execution.
 - [x] 1.5 Add migration metadata tests confirming the new tables are part of the reusable `auth_ext` metadata and application migration discovery.
 
 ## 2. Group And Scope Services
@@ -30,15 +30,15 @@
 
 ## 4. User Manager CLI
 
-- [x] 4.1 Add `usermgr scope create`, `usermgr scope update`, `usermgr scope delete`, and `usermgr scope list` commands using existing configuration, database, and output-mode conventions.
-- [x] 4.2 Add `usermgr group create`, `usermgr group list`, `usermgr group <id-or-abbrev> update`, `usermgr group <id-or-abbrev> show`, and `usermgr group <id-or-abbrev> delete` commands.
-- [x] 4.3 Add `usermgr group <id-or-abbrev> add-user` and `usermgr group <id-or-abbrev> remove-user` commands for direct user membership.
-- [x] 4.4 Add `usermgr group <id-or-abbrev> add-group` and `usermgr group <id-or-abbrev> remove-group` commands for nested group membership.
-- [x] 4.5 Add repeatable `--scope` and `--rm-scope` options to `usermgr group <id-or-abbrev> update` for assigning and removing group scope assignments.
-- [x] 4.6 Add `usermgr group effective-scopes <user-target>` with human and JSON output that includes user, group path, and de-duplicated scope data without password material.
-- [x] 4.7 Add repeatable `--group <id-or-abbrev>` support to `usermgr create` and assign the new user to the requested groups in the same management flow.
-- [x] 4.8 Add repeatable `--add-group`, `--rm-group`, and `--set-group` support to `usermgr update` with explicit replacement only through `--set-group`.
-- [x] 4.9 Reject `usermgr update --group` with a usage error that directs operators to `--set-group`, `--add-group`, or `--rm-group`.
+- [x] 4.1 Add `identitymgr scope create`, `identitymgr scope update`, `identitymgr scope delete`, and `identitymgr scope list` commands using existing configuration, database, and output-mode conventions.
+- [x] 4.2 Add `identitymgr group create`, `identitymgr group list`, `identitymgr group <id-or-abbrev> update`, `identitymgr group <id-or-abbrev> show`, and `identitymgr group <id-or-abbrev> delete` commands.
+- [x] 4.3 Add `identitymgr group <id-or-abbrev> add-user` and `identitymgr group <id-or-abbrev> remove-user` commands for direct user membership.
+- [x] 4.4 Add `identitymgr group <id-or-abbrev> add-group` and `identitymgr group <id-or-abbrev> remove-group` commands for nested group membership.
+- [x] 4.5 Add repeatable `--scope` and `--rm-scope` options to `identitymgr group <id-or-abbrev> update` for assigning and removing group scope assignments.
+- [x] 4.6 Add `identitymgr group effective-scopes <user-target>` with human and JSON output that includes user, group path, and de-duplicated scope data without password material.
+- [x] 4.7 Add repeatable `--group <id-or-abbrev>` support to `identitymgr create` and assign the new user to the requested groups in the same management flow.
+- [x] 4.8 Add repeatable `--add-group`, `--rm-group`, and `--set-group` support to `identitymgr update` with explicit replacement only through `--set-group`.
+- [x] 4.9 Reject `identitymgr update --group` with a usage error that directs operators to `--set-group`, `--add-group`, or `--rm-group`.
 
 ## 5. Auth Provider Contract Alignment
 
@@ -55,5 +55,5 @@
 - [x] 6.5 Add service tests for effective-scope resolution across direct groups, nested groups, duplicated scopes, missing membership, and runtime cache invalidation.
 - [x] 6.6 Add CLI tests for the group and scope command trees, target resolution by ID or abbreviation, JSON/CSV/human output, and operator error messages.
 - [x] 6.7 Add CLI tests for create `--group`, update `--add-group`, update `--rm-group`, update `--set-group`, and rejected update `--group` behaviour.
-- [x] 6.8 Update operator documentation with group, scope, membership, effective-scope, and future `identitymgr` direction examples.
-- [x] 6.9 Run `openspec validate add-group-management --strict` and the relevant project test commands for the changed auth extension and user-manager surfaces.
+- [x] 6.8 Update operator documentation with group, scope, membership, and effective-scope examples.
+- [x] 6.9 Run `openspec validate add-group-management --strict` and the relevant project test commands for the changed auth extension and identity-manager surfaces.
