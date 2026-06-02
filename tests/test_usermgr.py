@@ -142,6 +142,23 @@ def identity_users_from_database(database_url: str) -> list[User]:
         asyncio.run(close_database(engine))
 
 
+def identity_user_from_database(database_url: str, email: str) -> User | None:
+    settings = Settings(database_url=database_url)
+    engine = create_database_engine(settings)
+    session_factory = create_session_factory(engine)
+
+    async def load_user() -> User | None:
+        async with session_scope(session_factory) as session:
+            return (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one_or_none()
+
+    try:
+        return asyncio.run(load_user())
+    finally:
+        asyncio.run(close_database(engine))
+
+
 def access_tokens_from_database(database_url: str) -> list[str]:
     from auth_ext.models import AccessToken
 
@@ -888,6 +905,25 @@ def test_usermgr_identity_schema_error_uses_qualified_table_name(
     assert "Missing auth.identity_user table" in str(exc_info.value)
 
 
+def test_usermgr_identity_schema_missing_columns_are_table_aware(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class MissingColumnSession:
+        async def run_sync(self, _function):
+            return usermgr.IdentitySchemaStatus(
+                primary_table_name="identity_user",
+                table_exists=True,
+                missing_columns=("identity_group.description",),
+            )
+
+    with pytest.raises(ConfigurationError) as exc_info:
+        asyncio.run(usermgr._verify_identity_schema(MissingColumnSession()))  # type: ignore[arg-type]
+
+    message = str(exc_info.value)
+    assert "Missing identity schema columns: identity_group.description" in message
+    assert "Missing identity_user columns" not in message
+
+
 def test_usermgr_identity_schema_status_normalises_column_name_case(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1538,6 +1574,37 @@ def test_usermgr_create_and_update_user_group_memberships(
     assert user_group_abbrevs_from_database(database_url, "grouped@example.com") == [
         "alpha"
     ]
+
+
+def test_usermgr_create_with_missing_group_does_not_create_user(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    database_url = sqlite_file_url(tmp_path / "missing-create-group-cli.sqlite3")
+    initialise_identity_database(database_url)
+    monkeypatch.setenv("AUTH_DATABASE_URL", database_url)
+    stdin = io.StringIO(f"{STRONG_TEST_PASSWORD}\n")
+    monkeypatch.setattr(sys, "stdin", stdin)
+
+    assert (
+        usermgr.main(
+            [
+                "create",
+                "missing-create-group@example.com",
+                "--password",
+                "-",
+                "--group",
+                "missing",
+            ]
+        )
+        == 1
+    )
+
+    assert stdin.tell() == 0
+    assert (
+        identity_user_from_database(database_url, "missing-create-group@example.com")
+        is None
+    )
 
 
 def test_usermgr_set_group_validates_targets_before_replacing_memberships(
