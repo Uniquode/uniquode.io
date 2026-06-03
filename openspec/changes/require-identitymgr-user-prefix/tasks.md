@@ -7,8 +7,8 @@
   modes, and internal service dispatch behaviour under the new group.
 - [x] 1.4 Ensure old top-level user action commands are not registered as
   aliases and fail with normal Click unknown-command errors.
-- [x] 1.5 Treat a trailing `help` token as equivalent to the corresponding
-  `--help` option without invoking the target operation.
+- [x] 1.5 Treat command-position `help` paths as equivalent to the
+  corresponding `--help` option without invoking the target operation.
 
 ## 2. Documentation And Examples
 
@@ -31,8 +31,8 @@
   not invoke user operations.
 - [x] 3.4 Keep existing group, scope, membership, output, password-source, and
   schema-preflight coverage passing under the new user command namespace.
-- [x] 3.5 Add coverage that `identitymgr ... help` matches
-  `identitymgr ... --help`.
+- [x] 3.5 Add coverage that command-position `help` paths match the
+  corresponding `--help` option.
 
 ## 4. Verification
 

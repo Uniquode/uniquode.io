@@ -285,9 +285,9 @@ user-management operations through a resource-oriented `user` command group.
 - **THEN** the command fails with a normal Click unknown-command error instead
   of invoking a user operation
 
-#### Scenario: Help suffix is accepted
-- **WHEN** an operator runs `identitymgr help`, `identitymgr user help`, or
-  `identitymgr scope help`
+#### Scenario: Help paths are accepted
+- **WHEN** an operator runs `identitymgr help`, `identitymgr help user create`,
+  or `identitymgr user help create`
 - **THEN** the command emits the same help output as the corresponding
   `--help` option without invoking the operation
 - **AND** command argument or option values equal to `help` remain ordinary
