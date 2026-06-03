@@ -3,7 +3,8 @@
 ### Requirement: FastAPI Users baseline integration
 The system SHALL use FastAPI Users for the baseline local account lifecycle and
 authentication primitives where they fit the project identity model, with
-reusable identity routes and default identity templates owned by `auth_ext`.
+reusable identity routes, default identity templates, static assets, and model
+metadata owned by `auth_ext` when that module is installed.
 
 #### Scenario: FastAPI Users dependency is present
 - **WHEN** a developer inspects project runtime dependencies
@@ -19,8 +20,15 @@ reusable identity routes and default identity templates owned by `auth_ext`.
 
 #### Scenario: Application includes identity surfaces intentionally
 - **WHEN** the application wants to expose identity pages or APIs
-- **THEN** it enables the `auth_ext` route module or equivalent integration
-  explicitly rather than receiving routes through implicit package scanning
+- **THEN** it includes `auth_ext` in `installed_modules` or enables an
+  equivalent explicit integration rather than receiving routes through implicit
+  package scanning
+
+#### Scenario: Public-only application can omit identity surfaces
+- **WHEN** the application omits `auth_ext` from `installed_modules`
+- **THEN** identity routes, identity templates, identity static assets,
+  identity context providers, and identity model metadata are not loaded into
+  that application instance
 
 #### Scenario: Application keeps product ownership around identity flows
 - **WHEN** FastAPI Users or `auth_ext` provides account lifecycle or
@@ -34,6 +42,12 @@ reusable identity routes and default identity templates owned by `auth_ext`.
   `auth_ext` default identity template
 - **THEN** the application template is used without changing the `auth_ext`
   route or view implementation
+
+#### Scenario: Application can override identity static assets
+- **WHEN** the application supplies a static asset at the same logical path as
+  an `auth_ext` default identity asset
+- **THEN** the application asset is used without changing the `auth_ext` route
+  or view implementation
 
 ### Requirement: Integration feature flag abstraction
 The system SHALL gate optional identity integrations through an explicit
@@ -67,6 +81,6 @@ settings or feature-flag abstraction before exposing their routes or flows.
   options object before passing them to reusable identity modules
 
 #### Scenario: Route module inclusion does not bypass feature flags
-- **WHEN** the application enables an identity route module
+- **WHEN** the application installs an identity route module
 - **THEN** disabled optional identity integration routes remain unavailable
   unless their feature flag and required configuration are enabled

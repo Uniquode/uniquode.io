@@ -2,24 +2,29 @@
 
 ### Requirement: Global web resource roots
 The system SHALL provide application-owned default template and static resource
-roots while supporting enabled module package template sources in the same
-logical template namespace.
+override roots while supporting installed module package template and static
+asset sources in the same logical namespaces.
 
 #### Scenario: Application template root has a settings-backed default
 - **WHEN** a developer inspects the project settings or rendering configuration
 - **THEN** the application defines a configurable application Jinja2 template
   root with a default value of `src/templates/`
 
-#### Scenario: Enabled modules can add package template sources
-- **WHEN** the application enables route modules that declare package templates
+#### Scenario: Installed modules can add package template sources
+- **WHEN** the application installs modules that declare package templates
 - **THEN** the renderer includes those package template sources after the
   application template root
 
 #### Scenario: Global static root has a settings-backed default
 - **WHEN** a developer inspects the project settings or static asset
   configuration
-- **THEN** the application defines a configurable global static asset root with
-  a default value of `src/static/`
+- **THEN** the application defines a configurable application static asset root
+  with a default value of `src/static/`
+
+#### Scenario: Installed modules can add package static sources
+- **WHEN** the application installs modules that declare package static assets
+- **THEN** the static asset resolver includes those package static sources after
+  the application static root
 
 #### Scenario: Static route prefix has a settings-backed default
 - **WHEN** a developer inspects the project settings or static asset
@@ -30,7 +35,7 @@ logical template namespace.
 ### Requirement: Template hierarchy and reusable components
 The system SHALL provide a baseline logical template hierarchy and reusable
 server-rendered component structure for HTML pages, allowing application
-templates to override enabled module package templates by logical path.
+templates to override installed module package templates by logical path.
 
 #### Scenario: Base template hierarchy exists
 - **WHEN** a developer inspects the initial template set
@@ -43,7 +48,7 @@ templates to override enabled module package templates by logical path.
   path `components/`
 
 #### Scenario: Module-local components are supported
-- **WHEN** an enabled module introduces reusable templates that are primarily
+- **WHEN** an installed module introduces reusable templates that are primarily
   local to that module
 - **THEN** the module can publish those templates from its package template
   source under logical paths such as `<module-base>/components/`
@@ -53,10 +58,34 @@ templates to override enabled module package templates by logical path.
 - **THEN** it supplies the replacement at the same logical template path in the
   application template root
 
+### Requirement: Static assets and style resources
+The system SHALL support application-owned static overrides and installed module
+package static defaults in a single logical static namespace that can be served
+at runtime or exported by tooling.
+
+#### Scenario: Application-owned style assets remain available
+- **WHEN** a browser requests an application-owned static asset such as
+  `styles/app.css`
+- **THEN** the static route serves the asset from the application static root
+
+#### Scenario: Module-owned static assets are available
+- **WHEN** an installed module publishes package static assets
+- **THEN** the static route can serve those assets by logical path
+
+#### Scenario: Application static override keeps logical path stable
+- **WHEN** the application overrides a module-provided static asset
+- **THEN** it supplies the replacement at the same logical static path in the
+  application static root
+
+#### Scenario: Static namespace can be exported
+- **WHEN** a collectstatic-style tool exports the logical static namespace
+- **THEN** it uses the same application-first and module precedence rules as
+  runtime static serving
+
 ### Requirement: HTML requests use a dispatcher protocol
 The system SHALL provide an internal HTML request-dispatch layer under FastAPI
 for page-oriented handlers, with route definitions composed from explicitly
-enabled route modules.
+installed application modules.
 
 #### Scenario: HTML views register declaratively
 - **WHEN** a developer adds a page-oriented HTML view
@@ -68,8 +97,8 @@ enabled route modules.
 - **THEN** the module exposes declarative route definitions through its route
   module rather than requiring the application to duplicate each route
 
-#### Scenario: Application enables feature module routes explicitly
-- **WHEN** the application includes a route module in its enabled module list
+#### Scenario: Application installs feature module routes explicitly
+- **WHEN** the application includes a module in `installed_modules`
 - **THEN** the dispatcher registers that module's page and partial routes in
   configured order
 
@@ -85,18 +114,18 @@ enabled route modules.
 
 ### Requirement: Web-structure validation is available
 The system SHALL provide an initial validation surface for the web foundation
-that can detect structural errors across application and enabled module web
+that can detect structural errors across application and installed module web
 resources before runtime.
 
 #### Scenario: Validation command checks implemented web structure
 - **WHEN** a developer runs the documented web-structure validation command
-- **THEN** the command inspects the implemented route, template, static asset,
-  module route, package template, and template-context-provider structures and
-  reports detected errors
+- **THEN** the command inspects implemented route, template, static asset,
+  installed module, package template, package static, and
+  template-context-provider structures and reports detected errors
 
 #### Scenario: Broken references fail validation
-- **WHEN** an implemented route, template reference, package template reference,
-  context provider reference, or static asset reference cannot be resolved by
-  the validation surface
+- **WHEN** an implemented route, template reference, package template
+  reference, static asset reference, context provider reference, or module
+  surface reference cannot be resolved by the validation surface
 - **THEN** the validation command reports the failure instead of silently
   succeeding
