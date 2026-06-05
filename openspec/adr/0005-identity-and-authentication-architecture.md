@@ -121,7 +121,10 @@ Support local OAuth2 authorisation capability where project requirements call fo
 
 Design provider integration behind an extension boundary so additional providers such as Google, Apple, GitHub, and others can be added without changing the local account model.
 
-Keep the internal OAuth2 provider separate from the advanced-authentication addon. Internal OAuth2 provider work belongs behind an internal `auth-provider` boundary and should be deferred until local users and the authorisation model provide stable subjects, groups, flags, and scopes.
+Keep any internal OAuth2 provider separate from the advanced-authentication
+addon. Internal OAuth2 provider work belongs behind a separate provider boundary
+and should be deferred until local users, the authorisation model, and a
+concrete delegated-access requirement exist.
 
 ## Consequences
 
@@ -167,7 +170,10 @@ relying on host-specific settings modules.
 
 Supporting both OAuth2 client and local OAuth2 authorisation capability creates a broader identity surface area than a simple social-login implementation. That flexibility is intentional, but it should be implemented in staged slices rather than all at once.
 
-Separating `auth-provider` from FastAPI Users and `fastapi-users-auth-ext` keeps delegated authorisation and token issuance distinct from user authentication and MFA. Authlib is expected to provide most OAuth2/OIDC protocol machinery for that later boundary.
+Separating future provider work from FastAPI Users and
+`fastapi-users-auth-ext` keeps delegated authorisation and token issuance
+distinct from user authentication and MFA. Authlib is expected to provide most
+OAuth2/OIDC protocol machinery for that later boundary if it is needed.
 
 API token support allows machine access without forcing browser-facing workflows onto non-browser consumers.
 
@@ -180,7 +186,8 @@ API token support allows machine access without forcing browser-facing workflows
 - What passkey and recovery flows are required before passkey support is considered production-ready.
 - Which external provider should be implemented first.
 - Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-ext`.
-- Which Authlib server primitives are sufficient for the later internal `auth-provider` integration.
+- Which Authlib server primitives are sufficient for a later internal provider
+  integration, if one is required.
 
 ## Follow-Up Work
 
@@ -190,7 +197,8 @@ API token support allows machine access without forcing browser-facing workflows
   account-linking, provider, and recovery workflows.
 - Define the provider integration boundary and the first provider implementation slice.
 - Define the `fastapi-users-auth-ext` addon boundary and its initial storage protocols.
-- Define the internal `auth-provider` boundary after the authorisation model establishes groups, flags, and scopes.
+- Define the internal provider boundary after the authorisation model
+  establishes groups, flags, and scopes and a concrete provider use case exists.
 
 ## Revision Notes
 

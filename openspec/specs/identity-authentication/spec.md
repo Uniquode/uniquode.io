@@ -258,13 +258,15 @@ The system SHALL NOT require an internal OAuth2 authorisation provider to suppor
 - **WHEN** password-based browser login is implemented
 - **THEN** it operates through the local identity and session boundary without requiring an internal OAuth2 authorisation server
 
-#### Scenario: OAuth2 provider waits for authorisation foundation
+#### Scenario: OAuth2 provider waits for a concrete requirement
 - **WHEN** the project designs internal OAuth2 scopes or grants
-- **THEN** that work depends on stable local users and the later authorisation model for groups, flags, and scopes
+- **THEN** that work depends on a concrete API, federation, or delegated-access
+  requirement and stable local users plus authorisation scopes
 
 #### Scenario: OAuth2 provider is a separate boundary
 - **WHEN** internal OAuth2 provider work begins
-- **THEN** it is implemented through the separate `auth-provider` boundary rather than as part of baseline local-user authentication
+- **THEN** it is implemented through a separate provider boundary rather than as
+  part of baseline local-user authentication
 
 ### Requirement: Group-backed capability resolution
 The identity boundary SHALL expose local user capabilities through group-backed

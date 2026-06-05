@@ -57,8 +57,8 @@
 - [ ] 6.2 Modify `identity-authentication` so the canonical local-user ceremony
   supports concrete TOTP, recovery-code, WebAuthn/passkey, and linked provider
   assertions.
-- [ ] 6.3 Preserve the distinction between third-party OAuth client login and the
-  separate internal `auth_provider` OAuth2/OIDC provider boundary.
+- [ ] 6.3 Preserve the distinction between third-party OAuth client login and
+  any future internal OAuth2/OIDC provider work.
 
 ## 7. Validation And Follow-Up
 
