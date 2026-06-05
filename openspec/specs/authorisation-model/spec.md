@@ -1,7 +1,9 @@
-# authorisation-groups Specification
+# authorisation-model Specification
 
 ## Purpose
-TBD - created by archiving change add-group-management. Update Purpose after archive.
+Define the reusable authorisation model for groups, scopes, group membership,
+nested group membership, effective-scope resolution, and runtime cache
+invalidation. CLI management commands are specified by `auth-management-cli`.
 ## Requirements
 ### Requirement: Authorisation groups
 The system SHALL provide groups as reusable authorisation capability containers

@@ -1,9 +1,12 @@
-# user-management-cli Specification
+# auth-management-cli Specification
 
 ## Purpose
-TBD - created by archiving change add-user-manager. Update Purpose after archive.
+Define the package-owned administrative authentication management CLI for local
+users, groups, scopes, memberships, password operations, and effective-scope
+inspection. The current project command is `identitymgr`; a future command
+rename to `authmgr` requires a separate behaviour change.
 ## Requirements
-### Requirement: User manager command
+### Requirement: Auth management command
 The system SHALL provide an `auth_ext`-owned CLI script named `identitymgr` for
 administrative local identity management, including users, groups, scopes,
 memberships, and effective-scope inspection.
@@ -322,11 +325,11 @@ The system SHALL defer API-backed `identitymgr` operation until administrative A
 - **WHEN** a future API-backed mode is introduced
 - **THEN** it requires an authenticated token with explicit administrative privileges or scopes
 
-### Requirement: User manager Click parser
+### Requirement: Auth management Click parser
 The system SHALL use Click for the `identitymgr` command parser while exposing
 user-management operations through a resource-oriented `user` command group.
 
-#### Scenario: User manager subcommands are grouped under user
+#### Scenario: User subcommands are grouped under user
 - **WHEN** an operator runs `identitymgr user --help`
 - **THEN** the command lists `create`, `update`, `delete`, `deactivate`,
   `list`, and `password` user subcommands
@@ -357,7 +360,7 @@ user-management operations through a resource-oriented `user` command group.
 - **AND** direct command-line password values other than `-` or the prompt
   sentinel are rejected
 
-#### Scenario: User manager outputs remain compatible
+#### Scenario: Auth management outputs remain compatible
 - **WHEN** user-management operations succeed or fail
 - **THEN** the command preserves the existing human, JSON, and CSV output
   contracts and returns the same success or failure exit status as before the

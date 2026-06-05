@@ -26,7 +26,7 @@ None.
 
 ### Modified Capabilities
 
-- `user-management-cli`: Require user operations to be addressed through
+- `auth-management-cli`: Require user operations to be addressed through
   `identitymgr user ...` and reject the old top-level user action commands.
 
 ## Impact

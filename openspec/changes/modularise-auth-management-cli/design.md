@@ -101,7 +101,7 @@ contract.
 2. Export `main` and supported test-facing helpers from `__init__.py`.
 3. Keep `pyproject.toml` unchanged unless implementation proves a stable
    `auth_ext.identitymgr:main` export is not viable.
-4. Run focused identity-manager CLI tests during each split step.
+4. Run focused auth-management CLI tests during each split step.
 5. Run linting, formatting, type checking, the full test suite, and strict
    OpenSpec validation before handoff.
 

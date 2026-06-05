@@ -12,7 +12,7 @@ OAuth2 login/linking, and any local OAuth2 authorisation capability have clear
 boundaries before implementation work begins.
 Local OAuth2/OIDC provider runtime implementation is split into
 `implement-auth-provider-runtime` and remains blocked on group-managed scope
-resolution from `add-group-management`.
+resolution from the implemented `authorisation-model` capability.
 
 ## What Changes
 
@@ -55,6 +55,7 @@ resolution from `add-group-management`.
 - Concrete OAuth/OIDC runtime dependencies must remain requirement-scoped and
   should be selected during the design artifact.
 - Auth-provider runtime endpoints should be deferred to
-  `implement-auth-provider-runtime` until group/scope authorisation exists.
+  `implement-auth-provider-runtime` until the provider design binds to the
+  existing group/scope authorisation model.
 - Existing browser login, session resolution, and identity management behaviour
   must remain compatible.

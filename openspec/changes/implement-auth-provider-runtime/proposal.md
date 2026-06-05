@@ -2,7 +2,7 @@
 
 Linear: [UT-214](https://linear.app/uniquode/issue/UT-214/implement-auth-provider-runtime)
 Parent: [UT-174](https://linear.app/uniquode/issue/UT-174/api-and-oauth2)
-Depends on: [UT-213](https://linear.app/uniquode/issue/UT-213/add-group-management)
+Depends on: `authorisation-model` capability, implemented by UT-213.
 
 The repository now has an `auth_provider` package shell and accepted provider
 contracts, but runtime OAuth2/OIDC provider behaviour is intentionally not yet
@@ -35,7 +35,7 @@ after authorisation groups and scopes are available.
   accepted contracts and token strategy.
 - `api-access`: Use the provider runtime where local OAuth2 access tokens are
   required for machine-oriented APIs.
-- `authorisation-groups`: Supply scope policy for subject/client access
+- `authorisation-model`: Supply scope policy for subject/client access
   decisions.
 
 ## Impact
@@ -44,8 +44,8 @@ after authorisation groups and scopes are available.
   refresh-token persistence, client/consent/grant stores, signing-key handling,
   authorisation group/scope resolution, validation, tests, and deployment
   documentation.
-- This work is deliberately deferred until group management and scope resolution
-  exist.
+- This work is deliberately deferred until provider design binds to the
+  existing group/scope authorisation model.
 - Existing browser sessions and local identity flows must remain independent of
   local OAuth2 provider runtime behaviour unless a route explicitly requires API
   token semantics.

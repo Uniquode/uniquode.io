@@ -43,7 +43,7 @@
   `main` and required helper names after the package split.
 - [ ] 4.3 Add or update tests that confirm root, user, group, and scope command
   help output remains stable.
-- [ ] 4.4 Run the focused identity-manager CLI test suite during the split and
+- [ ] 4.4 Run the focused auth-management CLI test suite during the split and
   keep existing user, group, scope, membership, output, password-source, and
   schema-preflight coverage passing.
 - [ ] 4.5 Add a test or inspection that fails if command composition relies on
@@ -54,4 +54,4 @@
 - [ ] 5.1 Run Ruff formatting and linting checks for touched files.
 - [ ] 5.2 Run type checking for `src/`.
 - [ ] 5.3 Run the full test suite.
-- [ ] 5.4 Validate `modularise-identitymgr-cli` with OpenSpec strict mode.
+- [ ] 5.4 Validate `modularise-auth-management-cli` with OpenSpec strict mode.

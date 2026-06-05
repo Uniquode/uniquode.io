@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: Identity manager package entry point
+### Requirement: Auth management package entry point
 The system SHALL expose the `identitymgr` CLI through a package-owned entry
 point that remains stable while the implementation is split into focused
 modules.
@@ -20,7 +20,7 @@ modules.
   resolve or are updated through explicit package exports without changing CLI
   behaviour
 
-### Requirement: Identity manager command registration
+### Requirement: Auth management command registration
 The system SHALL compose the `identitymgr` Click command tree through explicit
 registration functions rather than automatic plugin discovery.
 
@@ -47,8 +47,8 @@ registration functions rather than automatic plugin discovery.
 - **THEN** it does not scan packages, entry points, filesystem paths, or dynamic
   plugin registries to discover command modules
 
-### Requirement: Identity manager module boundaries
-The system SHALL split identity-manager CLI responsibilities into focused
+### Requirement: Auth management module boundaries
+The system SHALL split auth-management CLI responsibilities into focused
 modules without adding new runtime dependencies.
 
 #### Scenario: Resource commands are separated

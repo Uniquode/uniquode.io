@@ -25,17 +25,17 @@ without changing the operator-facing command contract.
 
 ### New Capabilities
 
-- `identitymgr-cli-composition`: Defines the internal package composition and
-  explicit command-registration contract for the `identitymgr` CLI.
+None.
 
 ### Modified Capabilities
 
-None.
+- `auth-management-cli`: Defines the internal package composition and explicit
+  command-registration contract for the current `identitymgr` CLI.
 
 ## Impact
 
 - Affects `src/auth_ext/identitymgr.py`, the `auth_ext.identitymgr` import
-  boundary, CLI command registration, and identity-manager CLI tests.
+  boundary, CLI command registration, and auth-management CLI tests.
 - The project script remains `identitymgr = "auth_ext.identitymgr:main"`.
 - No database, persistence, identity-service, or operator-facing CLI behaviour
   changes are intended.
