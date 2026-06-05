@@ -1,30 +1,30 @@
 ## MODIFIED Requirements
 
-### Requirement: Global web resource roots
-The system SHALL provide application-owned default template and static resource
-override roots while supporting installed module package template and static
-asset sources in the same logical namespaces.
+### Requirement: Module-owned web resources
+The system SHALL load template and static resources from configured modules
+while keeping global template behaviour and static serving/export options in
+composition configuration.
 
-#### Scenario: Application template root has a settings-backed default
-- **WHEN** a developer inspects the project settings or rendering configuration
-- **THEN** the application defines a configurable application Jinja2 template
-  root with a default value of `src/templates/`
+#### Scenario: Template behaviour has global configuration
+- **WHEN** a developer inspects the project composition configuration
+- **THEN** the application defines configurable Jinja2 template reload and cache
+  behaviour without requiring a global filesystem template root
 
-#### Scenario: Installed modules can add package template sources
+#### Scenario: Configured modules can add package template sources
 - **WHEN** the application installs modules that declare package templates
-- **THEN** the renderer includes those package template sources after the
-  application template root
+- **THEN** the renderer includes those package template sources according to
+  configured module order
 
-#### Scenario: Global static root has a settings-backed default
-- **WHEN** a developer inspects the project settings or static asset
+#### Scenario: Static serving and export have global configuration
+- **WHEN** a developer inspects the project composition or static asset
   configuration
-- **THEN** the application defines a configurable application static asset root
-  with a default value of `src/static/`
+- **THEN** the application defines a configurable static URL path and static
+  export root without requiring a global filesystem static root
 
-#### Scenario: Installed modules can add package static sources
+#### Scenario: Configured modules can add package static sources
 - **WHEN** the application installs modules that declare package static assets
-- **THEN** the static asset resolver includes those package static sources after
-  the application static root
+- **THEN** the static asset resolver includes those package static sources
+  according to configured module order
 
 #### Scenario: Static route prefix has a settings-backed default
 - **WHEN** a developer inspects the project settings or static asset
@@ -34,53 +34,58 @@ asset sources in the same logical namespaces.
 
 ### Requirement: Template hierarchy and reusable components
 The system SHALL provide a baseline logical template hierarchy and reusable
-server-rendered component structure for HTML pages, allowing application
-templates to override installed module package templates by logical path.
+server-rendered component structure for HTML pages, allowing later configured
+modules to override earlier configured module package templates by logical path.
 
 #### Scenario: Base template hierarchy exists
 - **WHEN** a developer inspects the initial template set
 - **THEN** it includes a ubiquitous base page template and a base HTML error
-  template in the application template root
+  template in the `web_core` package template source
 
 #### Scenario: Shared components have a conventional location
 - **WHEN** a developer inspects the template tree
-- **THEN** shared application-owned reusable components live under the logical
-  path `components/`
+- **THEN** shared reusable `web_core` components live under the logical path
+  `components/`
 
 #### Scenario: Module-local components are supported
-- **WHEN** an installed module introduces reusable templates that are primarily
+- **WHEN** a configured module introduces reusable templates that are primarily
   local to that module
 - **THEN** the module can publish those templates from its package template
   source under logical paths such as `<module-base>/components/`
 
-#### Scenario: Application override keeps logical path stable
-- **WHEN** the application overrides a module-provided template
+#### Scenario: Module override keeps logical path stable
+- **WHEN** a later configured module overrides a module-provided template
 - **THEN** it supplies the replacement at the same logical template path in the
-  application template root
+  module package template source
 
 ### Requirement: Static assets and style resources
-The system SHALL support application-owned static overrides and installed module
-package static defaults in a single logical static namespace that can be served
-at runtime or exported by tooling.
+The system SHALL support configured module package static defaults and overrides
+in a single logical static namespace that can be served at runtime or exported
+by tooling.
 
-#### Scenario: Application-owned style assets remain available
-- **WHEN** a browser requests an application-owned static asset such as
+#### Scenario: Module-owned style assets remain available
+- **WHEN** a browser requests a configured module static asset such as
   `styles/app.css`
-- **THEN** the static route serves the asset from the application static root
+- **THEN** the static route serves the asset from the selected module static
+  source
+
+#### Scenario: Web core provides baseline styles
+- **WHEN** `web_core` is included as the reusable web foundation module
+- **THEN** it provides a baseline stylesheet under the logical static path
+  `styles/app.css`
 
 #### Scenario: Module-owned static assets are available
-- **WHEN** an installed module publishes package static assets
+- **WHEN** a configured module publishes package static assets
 - **THEN** the static route can serve those assets by logical path
 
-#### Scenario: Application static override keeps logical path stable
-- **WHEN** the application overrides a module-provided static asset
+#### Scenario: Module static override keeps logical path stable
+- **WHEN** a later configured module overrides a module-provided static asset
 - **THEN** it supplies the replacement at the same logical static path in the
-  application static root
+  module package static source
 
 #### Scenario: Static namespace can be exported
 - **WHEN** a collectstatic-style tool exports the logical static namespace
-- **THEN** it uses the same application-first and module precedence rules as
-  runtime static serving
+- **THEN** it uses the same module precedence rules as runtime static serving
 
 ### Requirement: HTML requests use a dispatcher protocol
 The system SHALL provide an internal HTML request-dispatch layer under FastAPI
@@ -98,7 +103,7 @@ installed application modules.
   module rather than requiring the application to duplicate each route
 
 #### Scenario: Application installs feature module routes explicitly
-- **WHEN** the application includes a module in `installed_modules`
+- **WHEN** the application includes a module in `modules`
 - **THEN** the dispatcher registers that module's page and partial routes in
   configured order
 
@@ -114,14 +119,19 @@ installed application modules.
 
 ### Requirement: Web-structure validation is available
 The system SHALL provide an initial validation surface for the web foundation
-that can detect structural errors across application and installed module web
+that can detect structural errors across application and configured module web
 resources before runtime.
 
 #### Scenario: Validation command checks implemented web structure
 - **WHEN** a developer runs the documented web-structure validation command
 - **THEN** the command inspects implemented route, template, static asset,
-  installed module, package template, package static, and
+  configured module, package template, package static, and
   template-context-provider structures and reports detected errors
+
+#### Scenario: Web validation is provided by web core
+- **WHEN** reusable web-structure validation is discovered
+- **THEN** it is contributed by `web_core.validation` rather than by the
+  `uniquode` application package
 
 #### Scenario: Broken references fail validation
 - **WHEN** an implemented route, template reference, package template

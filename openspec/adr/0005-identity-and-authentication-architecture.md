@@ -62,7 +62,12 @@ the ceremony without password or local MFA when policy allows.
 
 Use FastAPI Users for baseline local account lifecycle and authentication primitives where they fit the project identity model.
 
-Keep application ownership of account creation policy, user-facing templates, email delivery, redirects, and project-specific error handling around FastAPI Users flows.
+Keep application ownership of account creation policy, email delivery,
+redirects, product navigation, and project-specific error handling around
+FastAPI Users and `auth_ext` flows. Reusable layout and theme defaults belong
+to the composed web foundation and can be overridden by host applications
+through the composed module template and static namespaces. Reusable default
+identity routes and identity page templates belong to `auth_ext`.
 
 Plan for passkey support as a first-class local authentication method.
 
@@ -96,6 +101,12 @@ If `auth_ext` ships SQLAlchemy ORM models, they should live in an
 `models` is reserved for SQLAlchemy ORM models, and the package exposes
 Alembic-ready `metadata` for host applications that explicitly enable those
 models.
+
+Migration revisions for those models should be bundled with `auth_ext` under
+the module's migration version directory. The host migration command composes
+configured module version locations into one database-wide Alembic graph; the
+database records applied revisions, but the revision files are repository
+artifacts owned by the modules that own the models.
 
 Support API access through session-backed requests where appropriate and through API tokens for machine-oriented access.
 

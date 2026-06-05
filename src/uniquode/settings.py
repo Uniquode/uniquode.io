@@ -3,31 +3,43 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
 from secrets import token_urlsafe
-from typing import Any, Final, Literal, cast, get_args
+from typing import Final, Literal, cast, get_args
 
 from envex import Env
 
+import data_core
+import web_core
 from auth_ext.options import (
     IdentityOptions,
     is_generate_local_identity_secret,
 )
-from uniquode.configuration import ConfigurationError
-from uniquode.database_urls import (
+from data_core.database_urls import (
     SQLITE_ASYNC_DATABASE_URL_PREFIX,
     SQLITE_MEMORY_DATABASE_URL,
     resolve_database_url,
 )
+from uniquode.configuration import ConfigurationError
 from uniquode.environment import (
     IDENTITY_ENV_SETTINGS,
     SETTINGS_ENV_SETTINGS,
-    EnvironmentSetting,
     load_environment,
+)
+from web_core.composition import (
+    AppConfig,
+)
+from web_core.diagnostics import wrapped_error
+from web_core.settings import (
+    SettingsLoadError,
+    env_setting_is_set,
+    load_composed_settings,
+    values_from_env_settings,
 )
 
 __all__ = (
     "DEFAULT_ALEMBIC_CONFIG",
     "DEFAULT_DATABASE_FILE",
     "DEFAULT_DATABASE_URL",
+    "DEFAULT_MODULES",
     "DEFAULT_MIGRATIONS_ROOT",
     "DEFAULT_STATIC_ROOT",
     "DEFAULT_TEMPLATE_ROOT",
@@ -52,14 +64,17 @@ DEPLOYMENT_ENVIRONMENT_ERROR: Final = (
     + "."
 )
 
-DEFAULT_TEMPLATE_ROOT = Path("src/templates")
-DEFAULT_STATIC_ROOT = Path("src/static")
-DEFAULT_MIGRATIONS_ROOT = Path("src/uniquode/migrations")
+_DATA_CORE_PACKAGE_ROOT = Path(data_core.__file__).resolve().parent
+_WEB_CORE_PACKAGE_ROOT = Path(web_core.__file__).resolve().parent
+DEFAULT_TEMPLATE_ROOT = _WEB_CORE_PACKAGE_ROOT / "templates"
+DEFAULT_STATIC_ROOT = _WEB_CORE_PACKAGE_ROOT / "static"
+DEFAULT_MIGRATIONS_ROOT = _DATA_CORE_PACKAGE_ROOT / "migrations"
 DEFAULT_ALEMBIC_CONFIG = Path("alembic.ini")
 DEFAULT_DATABASE_FILE = Path("uniquode.sqlite3")
 DEFAULT_DATABASE_URL = (
     f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}{DEFAULT_DATABASE_FILE.as_posix()}"
 )
+DEFAULT_MODULES: Final = ("web_core", "public", "uniquode", "auth_ext")
 CSRF_TOKEN_SECRET_BYTES = 32
 _GENERATE_LOCAL_CSRF_SECRET = "__generate-local-csrf-secret__"
 
@@ -80,6 +95,9 @@ class Settings:
     csrf_cookie_secure: bool | None = None
     identity_options: IdentityOptions = field(default_factory=IdentityOptions)
     static_url_path: str = "/static/"
+    template_auto_reload: bool | None = None
+    template_cache_size: int = 400
+    app_config: AppConfig | None = None
     csrf_token_secret_configured: bool = field(init=False, repr=False)
 
     def __post_init__(self) -> None:
@@ -94,10 +112,11 @@ class Settings:
         )
         object.__setattr__(self, "csrf_cookie_secure", csrf_cookie_secure)
         csrf_secret_configured = self._csrf_secret_is_configured(self.csrf_token_secret)
-        self._validate_identity_options(
-            self.deployment_environment,
-            self.identity_options,
-        )
+        if self.identity_enabled:
+            self._validate_identity_options(
+                self.deployment_environment,
+                self.identity_options,
+            )
         self._validate_csrf_options(
             self.deployment_environment,
             csrf_secret_configured,
@@ -127,31 +146,60 @@ class Settings:
         object.__setattr__(
             self,
             "template_root",
-            self._resolve_path(self.template_root, project_root, DEFAULT_TEMPLATE_ROOT),
+            self._resolve_path(
+                self.template_root,
+                project_root,
+                DEFAULT_TEMPLATE_ROOT,
+                "template_root",
+            ),
         )
         object.__setattr__(
             self,
             "static_root",
-            self._resolve_path(self.static_root, project_root, DEFAULT_STATIC_ROOT),
+            self._resolve_path(
+                self.static_root,
+                project_root,
+                DEFAULT_STATIC_ROOT,
+                "static_root",
+            ),
         )
         object.__setattr__(
             self,
             "migrations_root",
             self._resolve_path(
-                self.migrations_root, project_root, DEFAULT_MIGRATIONS_ROOT
+                self.migrations_root,
+                project_root,
+                DEFAULT_MIGRATIONS_ROOT,
+                "migrations_root",
             ),
         )
         object.__setattr__(
             self,
             "alembic_config",
             self._resolve_path(
-                self.alembic_config, project_root, DEFAULT_ALEMBIC_CONFIG
+                self.alembic_config,
+                project_root,
+                DEFAULT_ALEMBIC_CONFIG,
+                "alembic_config",
             ),
         )
 
     @staticmethod
-    def _resolve_path(path: Path, project_root: Path, default_path: Path) -> Path:
-        resolved_path = path or default_path
+    def _resolve_path(
+        path: Path | str | None,
+        project_root: Path,
+        default_path: Path,
+        setting_name: str,
+    ) -> Path:
+        if path is None:
+            resolved_path = default_path
+        elif isinstance(path, str):
+            if not path.strip():
+                raise ConfigurationError(f"{setting_name} must not be blank.")
+            resolved_path = Path(path)
+        else:
+            resolved_path = path
+
         if not resolved_path.is_absolute():
             resolved_path = project_root / resolved_path
 
@@ -226,6 +274,45 @@ class Settings:
     def static_mount_path(self) -> str:
         return f"/{self.static_url_path.strip('/')}"
 
+    @staticmethod
+    def _normalised_path(path: Path) -> Path:
+        try:
+            return path.resolve(strict=False)
+        except (OSError, RuntimeError):
+            return path.absolute()
+
+    @classmethod
+    def _paths_refer_to_same_location(cls, left: Path, right: Path) -> bool:
+        try:
+            return left.samefile(right)
+        except (OSError, RuntimeError):
+            return cls._normalised_path(left) == cls._normalised_path(right)
+
+    @property
+    def uses_filesystem_template_root(self) -> bool:
+        return not self._paths_refer_to_same_location(
+            self.template_root,
+            DEFAULT_TEMPLATE_ROOT,
+        )
+
+    @property
+    def uses_filesystem_static_root(self) -> bool:
+        return not self._paths_refer_to_same_location(
+            self.static_root,
+            DEFAULT_STATIC_ROOT,
+        )
+
+    @property
+    def modules(self) -> tuple[str, ...]:
+        if self.app_config is None:
+            return DEFAULT_MODULES
+
+        return self.app_config.modules
+
+    @property
+    def identity_enabled(self) -> bool:
+        return "auth_ext" in self.modules
+
 
 def load_settings(
     *,
@@ -243,103 +330,26 @@ def load_settings(
     not mutate `os.environ`. `project_root` is used as the dotenv search root and
     as the base for resolving relative configured paths and SQLite database URLs.
     """
-    env = load_environment(
-        environ=environ,
-        project_root=project_root,
-        read_dotenv=read_dotenv,
-    )
-    settings_kwargs: dict[str, Any] = {}
-    if project_root is not None:
-        settings_kwargs["project_root"] = project_root
-    _set_env_fields(env, settings_kwargs, SETTINGS_ENV_SETTINGS)
-
-    identity_options = _identity_options_from_environment(env)
-    if identity_options is not None:
-        settings_kwargs["identity_options"] = identity_options
-
-    return Settings(**settings_kwargs)
+    try:
+        return load_composed_settings(
+            Settings,
+            environment_loader=load_environment,
+            env_settings=SETTINGS_ENV_SETTINGS,
+            extra_value_loaders=(_identity_options_kwargs_from_environment,),
+            environ=environ,
+            project_root=project_root,
+            read_dotenv=read_dotenv,
+        )
+    except SettingsLoadError as exc:
+        raise wrapped_error(ConfigurationError, exc) from exc
 
 
-def _identity_options_from_environment(env: Env) -> IdentityOptions | None:
-    if not any(env.is_set(env_setting.name) for env_setting in IDENTITY_ENV_SETTINGS):
-        return None
+def _identity_options_kwargs_from_environment(env: Env) -> dict[str, IdentityOptions]:
+    if not env_setting_is_set(env, IDENTITY_ENV_SETTINGS):
+        return {}
 
-    identity_kwargs: dict[str, Any] = {}
-    _set_env_fields(env, identity_kwargs, IDENTITY_ENV_SETTINGS)
-    return IdentityOptions(**identity_kwargs)
-
-
-def _set_env_fields(
-    env: Env,
-    values: dict[str, Any],
-    env_settings: tuple[EnvironmentSetting, ...],
-) -> None:
-    for env_setting in env_settings:
-        if env_setting.value_type == "path":
-            _set_env_path(env, values, env_setting.field_name, env_setting.name)
-        elif env_setting.value_type == "bool":
-            _set_env_bool(env, values, env_setting.field_name, env_setting.name)
-        elif env_setting.value_type == "int":
-            _set_env_int(env, values, env_setting.field_name, env_setting.name)
-        else:
-            _set_env_value(env, values, env_setting.field_name, env_setting.name)
-
-
-def _set_env_value(
-    env: Env,
-    values: dict[str, Any],
-    setting_name: str,
-    env_name: str,
-    *,
-    default: str | None = None,
-) -> None:
-    if env.is_set(env_name):
-        _reject_blank_env_value(env, env_name)
-        values[setting_name] = env.get(env_name)
-    elif default is not None:
-        values[setting_name] = default
-
-
-def _set_env_path(
-    env: Env,
-    values: dict[str, Any],
-    setting_name: str,
-    env_name: str,
-) -> None:
-    if env.is_set(env_name):
-        _reject_blank_env_value(env, env_name)
-        values[setting_name] = Path(env.get(env_name))
-
-
-def _set_env_bool(
-    env: Env,
-    values: dict[str, Any],
-    setting_name: str,
-    env_name: str,
-) -> None:
-    if env.is_set(env_name):
-        _reject_blank_env_value(env, env_name)
-        try:
-            values[setting_name] = env.bool(env_name)
-        except ValueError as exc:
-            raise ConfigurationError(f"{env_name} must be a boolean value.") from exc
-
-
-def _set_env_int(
-    env: Env,
-    values: dict[str, Any],
-    setting_name: str,
-    env_name: str,
-) -> None:
-    if env.is_set(env_name):
-        _reject_blank_env_value(env, env_name)
-        try:
-            values[setting_name] = env.int(env_name)
-        except ValueError as exc:
-            raise ConfigurationError(f"{env_name} must be an integer value.") from exc
-
-
-def _reject_blank_env_value(env: Env, env_name: str) -> None:
-    raw_value = env.get(env_name)
-    if raw_value is None or not raw_value.strip():
-        raise ConfigurationError(f"{env_name} must not be blank.")
+    return {
+        "identity_options": IdentityOptions(
+            **values_from_env_settings(env, IDENTITY_ENV_SETTINGS)
+        )
+    }

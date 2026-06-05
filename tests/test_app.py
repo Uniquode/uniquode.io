@@ -1,12 +1,17 @@
+import ast
 import asyncio
+import importlib
 import inspect
 import json
 import logging
 import os
 import re
+import subprocess
+import sys
 import tomllib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from textwrap import dedent
 
 import click
 import pytest
@@ -23,10 +28,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
 import auth_ext.sessions as identity_users
+import data_core.migrate as data_migrate_module
+import tools.migrate as migrate_module
+import tools.runserver as runserver_module
 import uniquode.asgi as asgi_module
 import uniquode.environment as environment_module
-import uniquode.migrate as migrate_module
-import uniquode.runserver as runserver_module
 from auth_ext import (
     ERROR_ALREADY_EXISTS,
     ERROR_IDENTITY_CHANGED,
@@ -63,6 +69,30 @@ from auth_ext.sessions import (
     require_current_user,
     session_cookie_secure_for_request,
 )
+from data_core.migration_metadata import (
+    MigrationConfigError,
+    load_model_metadata,
+    model_packages_from_modules,
+)
+from data_core.persistence import (
+    Database,
+    close_database,
+    create_database,
+    create_database_engine,
+    create_session_factory,
+    is_supported_database_url,
+    session_scope,
+    sqlite_database_path,
+)
+from data_core.surfaces import DataCompositionError
+from tools.project import runtime_project_root
+from tools.runserver import (
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_RELOAD,
+    RELOAD_ENV_VAR,
+    env_requests_reload,
+)
 from uniquode.app import create_app
 from uniquode.asgi import app
 from uniquode.configuration import ConfigurationError
@@ -70,6 +100,7 @@ from uniquode.environment import (
     ENV_ACCOUNT_CREATION_POLICY,
     ENV_ADVANCED_AUTH,
     ENV_ALEMBIC_CONFIG,
+    ENV_APP_CONFIG,
     ENV_APP_ENV,
     ENV_APP_NAME,
     ENV_APP_RELOAD,
@@ -88,37 +119,33 @@ from uniquode.environment import (
     ENV_VERIFICATION_SECRET,
     load_environment,
 )
-from uniquode.migration_metadata import ENABLED_MODEL_PACKAGES, load_model_metadata
-from uniquode.models import metadata as uniquode_metadata
-from uniquode.persistence import (
-    Database,
-    close_database,
-    create_database,
-    create_database_engine,
-    create_session_factory,
-    is_supported_database_url,
-    session_scope,
-    sqlite_database_path,
-)
 from uniquode.routes.health import health
-from uniquode.runserver import (
-    DEFAULT_HOST,
-    DEFAULT_PORT,
-    DEFAULT_RELOAD,
-    RELOAD_ENV_VAR,
-    env_requests_reload,
-    runtime_project_root,
+from uniquode.settings import (
+    DEFAULT_MIGRATIONS_ROOT,
+    DEFAULT_STATIC_ROOT,
+    DEFAULT_TEMPLATE_ROOT,
+    SQLITE_MEMORY_DATABASE_URL,
+    Settings,
+    load_settings,
 )
-from uniquode.settings import SQLITE_MEMORY_DATABASE_URL, Settings, load_settings
-from uniquode.web.csrf import (
+from web_core.composition import (
+    AppConfig,
+    CompositionError,
+    RouteOptions,
+    StaticOptions,
+    TemplateOptions,
+)
+from web_core.context import get_request_context
+from web_core.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
     CsrfProtector,
 )
-from uniquode.web.errors import EmptyBodyResponseException
-from uniquode.web.renderer import TemplateRenderer
-from uniquode.web.route_contract import _normalise_path_prefix
+from web_core.errors import EmptyBodyResponseException
+from web_core.renderer import TemplateRenderer
+from web_core.route_contract import _normalise_path_prefix
+from web_core.static import ComposedStaticFiles, NoStaticFiles
 
 CSRF_INPUT_PATTERN = re.compile(
     rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
@@ -127,6 +154,47 @@ CSRF_INPUT_PATTERN = re.compile(
 
 def sqlite_file_url(path: Path) -> str:
     return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
+
+
+def write_app_config(
+    path: Path,
+    *,
+    modules: tuple[str, ...] = ("uniquode", "public", "auth_ext"),
+    static_url_path: str = "/static/",
+    static_export_root: str = "static",
+) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        f"""
+        modules = {json.dumps(list(modules))}
+
+        [templates]
+        auto_reload = true
+        cache_size = 0
+
+        [static]
+        url_path = {json.dumps(static_url_path)}
+        export_root = {json.dumps(static_export_root)}
+        """,
+        encoding="utf-8",
+    )
+    return path
+
+
+def build_test_app_config(
+    root: Path,
+    *,
+    modules: tuple[str, ...],
+    route_prefixes: dict[str, str] | None = None,
+) -> AppConfig:
+    return AppConfig(
+        config_path=(root / "app.toml").resolve(),
+        project_root=root.resolve(),
+        modules=modules,
+        routes=RouteOptions(prefixes=route_prefixes or {}),
+        templates=TemplateOptions(auto_reload=True, cache_size=0),
+        static=StaticOptions(url_path="/static/", export_root=Path("static")),
+    )
 
 
 def test_asgi_app_imports() -> None:
@@ -178,9 +246,20 @@ def test_runserver_project_script_is_defined() -> None:
     with pyproject.open("rb") as handle:
         data = tomllib.load(handle)
 
-    assert data["project"]["scripts"]["runserver"] == "uniquode.runserver:main"
-    assert data["project"]["scripts"]["validate"] == "uniquode.validate:main"
-    assert data["project"]["scripts"]["migrate"] == "uniquode.migrate:main"
+    assert data["project"]["scripts"]["runserver"] == "tools.runserver:main"
+    assert data["project"]["scripts"]["validate"] == "tools.validate:main"
+    assert data["project"]["scripts"]["migrate"] == "tools.migrate:main"
+
+
+def test_data_core_migrate_requires_injected_settings_loader(capsys) -> None:
+    exit_code = data_migrate_module.main(["current"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "configuration: failed" in captured.err
+    assert "Migration settings loader is not configured." in captured.err
 
 
 @pytest.mark.parametrize(
@@ -410,6 +489,27 @@ def test_migrate_reports_operation_errors_cleanly(
     assert captured.out == ""
     assert "migration: failed" in captured.err
     assert str(exception) in captured.err
+
+
+def test_migrate_reports_metadata_configuration_errors_cleanly(
+    tmp_path,
+    monkeypatch,
+    capsys,
+) -> None:
+    def fail_current(_config) -> None:
+        raise MigrationConfigError("bad module metadata")
+
+    monkeypatch.setattr(migrate_module.command, "current", fail_current)
+    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
+
+    exit_code = migrate_module.main(["current"])
+
+    captured = capsys.readouterr()
+    assert exit_code == 1
+    assert captured.out == ""
+    assert "configuration: failed" in captured.err
+    assert "bad module metadata" in captured.err
+    assert "Traceback" not in captured.err
 
 
 @pytest.mark.parametrize(
@@ -700,6 +800,163 @@ def test_create_app_mounts_configurable_static_files() -> None:
     assert Path(static_app.directory) == settings.static_root
 
 
+def test_create_app_serves_static_files_from_configured_modules() -> None:
+    web_app = create_app()
+
+    static_routes = [r for r in web_app.routes if getattr(r, "name", None) == "static"]
+    assert len(static_routes) == 1
+    assert isinstance(static_routes[0].app, ComposedStaticFiles)
+
+    response = TestClient(web_app).get("/static/styles/app.css")
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
+    assert "--web-core-colour-page-bg" in response.text
+
+
+def test_create_app_omitting_web_core_mounts_empty_static_route(
+    tmp_path: Path,
+) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            app_config=build_test_app_config(tmp_path, modules=("public",)),
+        )
+    )
+
+    try:
+        static_routes = [
+            route
+            for route in web_app.routes
+            if getattr(route, "name", None) == "static"
+        ]
+        response = TestClient(web_app).get("/static/styles/app.css")
+
+        assert len(static_routes) == 1
+        assert isinstance(static_routes[0].app, NoStaticFiles)
+        assert str(web_app.url_path_for("static", path="/styles/app.css")) == (
+            "/static/styles/app.css"
+        )
+        assert response.status_code == 404
+        assert response.headers["content-type"].startswith("text/plain")
+        assert "--web-core-colour-page-bg" not in response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_app_applies_configured_route_prefixes(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = tmp_path / "prefixed_route_app"
+    package_root.mkdir()
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+    (package_root / "routes.py").write_text(
+        dedent(
+            """
+            from fastapi.responses import Response
+            from web_core.routing import HtmlRouteDefinition, ModuleRoutes
+
+            class View:
+                async def render(self, request, renderer):
+                    del request, renderer
+                    return Response("prefixed")
+
+            module_routes = ModuleRoutes(
+                page_routes=(HtmlRouteDefinition(
+                    path="ping",
+                    name="prefixed:ping",
+                    methods=("GET",),
+                    surface="page",
+                    view=View(),
+                ),),
+            )
+            """
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            app_config=build_test_app_config(
+                tmp_path,
+                modules=("prefixed_route_app",),
+                route_prefixes={"prefixed_route_app": "/tools/"},
+            ),
+        )
+    )
+
+    try:
+        client = TestClient(web_app)
+
+        assert client.get("/tools/ping").text == "prefixed"
+        assert client.get("/ping").status_code == 404
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_app_registers_routes_only_from_configured_modules(
+    tmp_path: Path,
+) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            app_config=build_test_app_config(tmp_path, modules=("public",)),
+        )
+    )
+
+    try:
+        route_names = {
+            route.name
+            for route in web_app.routes
+            if isinstance(route, APIRoute) and route.name is not None
+        }
+
+        assert "public:home" in route_names
+        assert "identity:login" not in route_names
+        assert "health" not in route_names
+        assert not hasattr(web_app.state, "identity_options")
+        assert not hasattr(web_app.state, "identity_delivery")
+        assert not hasattr(web_app.state, "fastapi_users")
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_app_honours_explicit_template_root_with_module_templates(
+    tmp_path: Path,
+) -> None:
+    template_root = tmp_path / "templates"
+    (template_root / "public/pages").mkdir(parents=True)
+    (template_root / "public/pages/home.html").write_text(
+        "filesystem template override",
+        encoding="utf-8",
+    )
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            template_root=template_root,
+            app_config=build_test_app_config(
+                tmp_path,
+                modules=("web_core", "public"),
+            ),
+        )
+    )
+
+    try:
+        response = TestClient(web_app).get("/")
+
+        assert response.status_code == 200
+        assert response.text == "filesystem template override"
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 def test_missing_static_asset_does_not_render_html_error_page() -> None:
     client = TestClient(create_app(), raise_server_exceptions=False)
 
@@ -714,13 +971,60 @@ def test_missing_static_asset_does_not_render_html_error_page() -> None:
 def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
+    assert settings.app_config is None
+    assert settings.modules == ("web_core", "public", "uniquode", "auth_ext")
     assert settings.database_url == (
         f"sqlite+aiosqlite:///{(tmp_path / 'uniquode.sqlite3').resolve().as_posix()}"
     )
-    assert settings.template_root == (tmp_path / "src/templates").resolve()
-    assert settings.static_root == (tmp_path / "src/static").resolve()
-    assert settings.migrations_root == (tmp_path / "src/uniquode/migrations").resolve()
+    assert settings.template_auto_reload is None
+    assert settings.template_cache_size == 400
+    assert settings.template_root == DEFAULT_TEMPLATE_ROOT.resolve()
+    assert settings.static_root == DEFAULT_STATIC_ROOT.resolve()
+    assert settings.migrations_root == DEFAULT_MIGRATIONS_ROOT.resolve()
     assert settings.alembic_config == (tmp_path / "alembic.ini").resolve()
+
+
+def test_settings_normalises_roots_before_filesystem_root_checks(
+    tmp_path: Path,
+) -> None:
+    project_root = Path.cwd()
+    settings = Settings(
+        project_root=tmp_path,
+        template_root=project_root / DEFAULT_TEMPLATE_ROOT.relative_to(project_root),
+        static_root=project_root / DEFAULT_STATIC_ROOT.relative_to(project_root),
+    )
+
+    assert settings.template_root == DEFAULT_TEMPLATE_ROOT.resolve()
+    assert settings.static_root == DEFAULT_STATIC_ROOT.resolve()
+    assert settings.uses_filesystem_template_root is False
+    assert settings.uses_filesystem_static_root is False
+
+
+def test_settings_treats_symlinked_default_roots_as_defaults(tmp_path: Path) -> None:
+    template_link = tmp_path / "templates-link"
+    static_link = tmp_path / "static-link"
+    try:
+        template_link.symlink_to(DEFAULT_TEMPLATE_ROOT, target_is_directory=True)
+        static_link.symlink_to(DEFAULT_STATIC_ROOT, target_is_directory=True)
+    except OSError as exc:
+        pytest.skip(f"Filesystem does not support directory symlinks: {exc}")
+
+    settings = Settings(template_root=template_link, static_root=static_link)
+
+    assert settings.uses_filesystem_template_root is False
+    assert settings.uses_filesystem_static_root is False
+
+
+@pytest.mark.parametrize(
+    "setting_name",
+    ("template_root", "static_root", "migrations_root", "alembic_config"),
+)
+def test_settings_rejects_blank_path_values(setting_name: str) -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match=rf"{setting_name} must not be blank\.",
+    ):
+        Settings(**{setting_name: "   "})
 
 
 def test_settings_default_database_url_uses_async_sqlalchemy_driver() -> None:
@@ -744,6 +1048,84 @@ def test_settings_resolves_sqlite_database_url_without_moving_query_into_path(
         f"sqlite+aiosqlite:///"
         f"{(tmp_path / 'uniquode.sqlite3').resolve().as_posix()}?mode=ro#fragment"
     )
+
+
+def test_load_settings_allows_missing_default_app_toml(tmp_path) -> None:
+    settings = load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
+
+    assert settings.app_config is None
+    assert settings.modules == ("web_core", "public", "uniquode", "auth_ext")
+
+
+def test_load_settings_reads_default_app_toml(tmp_path) -> None:
+    config_path = write_app_config(
+        tmp_path / "app.toml",
+        modules=("public", "auth_ext"),
+        static_url_path="/assets/",
+    )
+
+    settings = load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
+
+    assert settings.app_config is not None
+    assert settings.app_config.config_path == config_path.resolve()
+    assert settings.modules == ("public", "auth_ext")
+    assert settings.template_auto_reload is True
+    assert settings.template_cache_size == 0
+    assert settings.template_root == DEFAULT_TEMPLATE_ROOT.resolve()
+    assert settings.static_root == DEFAULT_STATIC_ROOT.resolve()
+    assert settings.static_mount_path == "/assets"
+
+
+def test_load_settings_uses_app_config_environment_override(tmp_path) -> None:
+    config_path = write_app_config(
+        tmp_path / "config" / "application.toml",
+        modules=("public",),
+        static_url_path="/public-static/",
+    )
+
+    settings = load_settings(
+        environ={ENV_APP_CONFIG: "config/application.toml"},
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.app_config is not None
+    assert settings.app_config.config_path == config_path.resolve()
+    assert settings.modules == ("public",)
+    assert settings.template_root == DEFAULT_TEMPLATE_ROOT.resolve()
+    assert settings.static_root == DEFAULT_STATIC_ROOT.resolve()
+    assert settings.static_mount_path == "/public-static"
+
+
+def test_load_settings_environment_overrides_app_toml_paths(tmp_path) -> None:
+    write_app_config(
+        tmp_path / "app.toml",
+        static_url_path="/configured-static/",
+    )
+
+    settings = load_settings(
+        environ={
+            ENV_STATIC_ROOT: "env/static",
+            ENV_STATIC_URL: "assets",
+            ENV_TEMPLATE_ROOT: "env/templates",
+        },
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.app_config is not None
+    assert settings.template_root == (tmp_path / "env/templates").resolve()
+    assert settings.static_root == (tmp_path / "env/static").resolve()
+    assert settings.static_mount_path == "/assets"
+
+
+def test_load_settings_rejects_missing_app_config_override(tmp_path) -> None:
+    with pytest.raises(ConfigurationError, match="App config file does not exist"):
+        load_settings(
+            environ={ENV_APP_CONFIG: "missing.toml"},
+            project_root=tmp_path,
+            read_dotenv=False,
+        )
 
 
 def test_load_settings_uses_environment_values(tmp_path) -> None:
@@ -826,6 +1208,7 @@ def test_load_settings_resolves_env_paths_from_project_root(tmp_path) -> None:
     ("env_name", "expected_message"),
     [
         (ENV_DATABASE_URL, "DATABASE_URL must not be blank"),
+        (ENV_APP_CONFIG, "APP_CONFIG must not be blank"),
         (ENV_SESSION_LIFETIME, "SESSION_LIFETIME must not be blank"),
         (ENV_STATIC_URL, "STATIC_URL must not be blank"),
         (ENV_TEMPLATE_ROOT, "TEMPLATE_ROOT must not be blank"),
@@ -993,6 +1376,23 @@ def test_non_local_settings_require_configured_identity_token_secrets() -> None:
 
     assert settings.identity_options.token_secrets_configured is True
     assert settings.csrf_token_secret_configured is True
+    assert settings.csrf_cookie_secure is True
+
+
+def test_non_local_settings_skip_identity_policy_when_auth_ext_is_omitted(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        deployment_environment="production",
+        csrf_token_secret="production-csrf-secret",
+        app_config=build_test_app_config(
+            tmp_path,
+            modules=("web_core", "public", "uniquode"),
+        ),
+    )
+
+    assert settings.identity_enabled is False
+    assert settings.modules == ("web_core", "public", "uniquode")
     assert settings.csrf_cookie_secure is True
 
 
@@ -1294,17 +1694,144 @@ def test_auth_ext_models_export_migration_metadata() -> None:
     assert auth_ext_metadata is Base.metadata
 
 
-def test_enabled_model_packages_are_explicit_for_current_application() -> None:
-    assert ENABLED_MODEL_PACKAGES == ("uniquode.models", "auth_ext.models")
+def test_model_packages_are_derived_from_modules() -> None:
+    assert model_packages_from_modules(("uniquode", "public", "auth_ext")) == (
+        "auth_ext.models",
+    )
 
 
-def test_enabled_model_packages_load_migration_metadata_in_order() -> None:
+def test_configured_model_packages_load_migration_metadata_in_order() -> None:
     metadata_values = load_model_metadata()
 
-    assert len(metadata_values) == len(ENABLED_MODEL_PACKAGES)
+    assert len(metadata_values) == 1
     assert all(isinstance(value, MetaData) for value in metadata_values)
-    assert metadata_values[0] is uniquode_metadata
-    assert metadata_values[1] is auth_ext_metadata
+    assert metadata_values == (auth_ext_metadata,)
+
+
+def test_model_metadata_loader_deduplicates_shared_metadata_objects() -> None:
+    metadata_values = load_model_metadata(("data_core.models", "auth_ext.models"))
+
+    assert metadata_values == (auth_ext_metadata,)
+
+
+def test_model_metadata_loader_reads_modules_from_app_toml(
+    tmp_path,
+) -> None:
+    write_app_config(
+        tmp_path / "app.toml",
+        modules=("auth_ext", "public", "uniquode"),
+    )
+
+    metadata_values = load_model_metadata(project_root=tmp_path)
+
+    assert metadata_values == (auth_ext_metadata,)
+
+
+def test_model_metadata_loader_uses_default_modules_when_app_toml_is_absent(
+    tmp_path,
+) -> None:
+    metadata_values = load_model_metadata(
+        project_root=tmp_path,
+        default_modules=("web_core", "public", "uniquode", "auth_ext"),
+    )
+
+    assert metadata_values == (auth_ext_metadata,)
+
+
+def test_model_metadata_loader_preserves_composition_error_cause(
+    tmp_path,
+) -> None:
+    with pytest.raises(
+        MigrationConfigError,
+        match="App config file does not exist",
+    ) as exc_info:
+        load_model_metadata(project_root=tmp_path)
+
+    assert isinstance(exc_info.value.__cause__, CompositionError)
+
+
+def test_model_metadata_loader_skips_modules_without_models() -> None:
+    assert load_model_metadata(modules=("public",)) == ()
+
+
+def test_model_metadata_loader_reports_missing_module() -> None:
+    with pytest.raises(
+        MigrationConfigError,
+        match="Configured module 'missing_module'",
+    ) as exc_info:
+        load_model_metadata(modules=("missing_module",))
+
+    assert isinstance(exc_info.value.__cause__, DataCompositionError)
+
+
+def test_model_metadata_loader_rejects_invalid_installed_module_models(
+    tmp_path,
+    monkeypatch,
+) -> None:
+    module_root = tmp_path / "invalid_models_app"
+    module_root.mkdir()
+    (module_root / "__init__.py").write_text("", encoding="utf-8")
+    (module_root / "models.py").write_text("metadata = object()\n", encoding="utf-8")
+    monkeypatch.syspath_prepend(str(tmp_path))
+
+    with pytest.raises(
+        MigrationConfigError,
+        match=r"invalid_models_app.models.*must expose SQLAlchemy metadata",
+    ) as exc_info:
+        load_model_metadata(modules=("invalid_models_app",))
+
+    assert isinstance(exc_info.value.__cause__, DataCompositionError)
+
+
+def test_alembic_metadata_loading_avoids_runtime_startup_imports() -> None:
+    code = """
+import json
+import sys
+from pathlib import Path
+
+from data_core.migration_metadata import load_model_metadata
+
+metadata_values = load_model_metadata(project_root=Path.cwd())
+forbidden_modules = (
+    "auth_ext.sessions",
+    "jinja2",
+    "uniquode.app",
+    "uniquode.asgi",
+    "uniquode.routes",
+    "web_core.renderer",
+)
+print(
+    json.dumps(
+        {
+            "metadata_count": len(metadata_values),
+            "forbidden_imports": [
+                module for module in forbidden_modules if module in sys.modules
+            ],
+        }
+    )
+)
+"""
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+    payload = json.loads(result.stdout)
+    assert payload == {"metadata_count": 1, "forbidden_imports": []}
+
+
+def test_migrate_alembic_config_carries_app_config_path(tmp_path) -> None:
+    config_path = write_app_config(tmp_path / "app.toml")
+
+    settings = load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
+    config = migrate_module.build_alembic_config(settings)
+
+    assert config.get_main_option("app_config") == config_path.resolve().as_posix()
+    assert config.get_main_option("version_locations").endswith(
+        "auth_ext/migrations/versions"
+    )
 
 
 def test_model_metadata_loader_with_no_packages_returns_empty_tuple() -> None:
@@ -1313,23 +1840,29 @@ def test_model_metadata_loader_with_no_packages_returns_empty_tuple() -> None:
 
 def test_model_metadata_loader_rejects_packages_without_metadata() -> None:
     with pytest.raises(
-        RuntimeError,
+        MigrationConfigError,
         match=r"dummy_no_metadata.*Module origin:.*Available attributes:",
-    ):
+    ) as exc_info:
         load_model_metadata(("dummy_no_metadata",))
+
+    assert isinstance(exc_info.value.__cause__, DataCompositionError)
 
 
 def test_model_metadata_loader_rejects_non_metadata_attribute() -> None:
     with pytest.raises(
-        RuntimeError,
+        MigrationConfigError,
         match=r"dummy_invalid_metadata.*Module origin:.*Available attributes:",
-    ):
+    ) as exc_info:
         load_model_metadata(("dummy_invalid_metadata",))
+
+    assert isinstance(exc_info.value.__cause__, DataCompositionError)
 
 
 def test_model_metadata_loader_reports_missing_configured_package() -> None:
-    with pytest.raises(RuntimeError, match="could not be imported"):
+    with pytest.raises(MigrationConfigError, match="could not be imported") as exc_info:
         load_model_metadata(("missing_model_package",))
+
+    assert isinstance(exc_info.value.__cause__, DataCompositionError)
 
 
 def test_model_metadata_loader_preserves_nested_import_failures() -> None:
@@ -1819,6 +2352,56 @@ def test_identity_login_logout_and_current_user_routes() -> None:
 
         logged_out_user = client.get("/api/identity/current-user")
         assert logged_out_user.json() == {"authenticated": False}
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_context_provider_exposes_safe_template_user() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+
+    @web_app.get("/test/template-user", include_in_schema=False)
+    async def template_user_context(request: Request) -> dict[str, object]:
+        context = get_request_context(request)
+        user = context.get("user")
+        return {
+            "email": getattr(user, "email", None),
+            "identity": context.get("identity"),
+            "template_user_type": type(user).__name__,
+            "has_hashed_password": hasattr(user, "hashed_password"),
+            "has_oauth_accounts": hasattr(user, "oauth_accounts"),
+        }
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/login")
+        login_response = client.post(
+            "/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+
+        response = client.get("/test/template-user")
+
+        assert response.status_code == 200
+        assert response.json() == {
+            "email": "person@example.com",
+            "identity": {
+                "authenticated": True,
+                "is_superuser": False,
+                "is_verified": False,
+            },
+            "template_user_type": "TemplateUser",
+            "has_hashed_password": False,
+            "has_oauth_accounts": False,
+        }
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -3357,7 +3940,7 @@ def test_partial_route_renders_fragment_only() -> None:
 def test_api_route_stays_machine_oriented() -> None:
     client = TestClient(create_app())
 
-    response = client.get("/api/public/theme")
+    response = client.get("/api/web/theme")
 
     assert response.status_code == 200
     assert response.json() == {"theme_mode": "auto"}
@@ -3633,6 +4216,65 @@ def test_theme_mode_route_redirects_without_htmx() -> None:
     assert "HttpOnly" in response.headers["set-cookie"]
 
 
+@pytest.mark.parametrize(
+    "return_to",
+    [
+        "https://evil.example/theme",
+        "//evil.example/theme",
+        "/\\evil.example/theme",
+    ],
+)
+def test_theme_mode_route_normalises_unsafe_redirect_return_to(
+    return_to: str,
+) -> None:
+    client = TestClient(create_app(), follow_redirects=False)
+    home_page = client.get("/")
+
+    response = client.post(
+        "/partials/theme-mode",
+        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert response.cookies["theme_mode"] == "dark"
+
+
+def test_theme_mode_route_normalises_unsafe_htmx_return_to() -> None:
+    client = TestClient(create_app())
+    home_page = client.get("/")
+    return_to = "https://evil.example/theme"
+
+    response = client.post(
+        "/partials/theme-mode",
+        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert return_to not in response.text
+    assert 'name="return_to" value="/"' in response.text
+    assert response.cookies["theme_mode"] == "dark"
+
+
+def test_theme_mode_route_handles_malformed_form_body_with_csrf_header() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    home_page = client.get("/")
+
+    response = client.post(
+        "/partials/theme-mode",
+        content=b"--broken\r\nnot-form-data",
+        headers={
+            "HX-Request": "true",
+            CSRF_HEADER_NAME: csrf_token_from(home_page),
+            "content-type": "multipart/form-data; boundary=broken",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.cookies["theme_mode"] == "auto"
+
+
 def test_theme_mode_route_requires_csrf() -> None:
     client = TestClient(create_app())
 
@@ -3699,7 +4341,7 @@ def test_home_page_renders_reusable_theme_selector_component() -> None:
 
 def test_base_layout_updates_root_theme_from_htmx_event() -> None:
     layout_template = (
-        Path(__file__).resolve().parents[1] / "src/templates/layouts/page.html"
+        Path(__file__).resolve().parents[1] / "src/web_core/templates/layouts/page.html"
     ).read_text()
 
     assert 'addEventListener("theme-mode-changed"' in layout_template
@@ -3710,8 +4352,96 @@ def test_base_layout_updates_root_theme_from_htmx_event() -> None:
     )
 
 
+def test_auth_ext_owns_default_identity_templates() -> None:
+    source_root = Path(__file__).resolve().parents[1] / "src"
+    auth_template = source_root / "auth_ext/templates/identity/pages/login.html"
+    application_template = source_root / "uniquode/templates/identity/pages/login.html"
+
+    assert auth_template.is_file()
+    assert not application_template.exists()
+    assert '{% extends "layouts/page.html" %}' in auth_template.read_text()
+
+
+def test_auth_ext_routes_do_not_import_application_package() -> None:
+    route_module = Path(__file__).resolve().parents[1] / "src/auth_ext/routes.py"
+    tree = ast.parse(
+        route_module.read_text(encoding="utf-8"), filename=str(route_module)
+    )
+    imported_modules = {
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    } | {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+
+    assert not any(
+        module == "uniquode" or module.startswith("uniquode.")
+        for module in imported_modules
+    )
+
+
+def test_auth_ext_publishes_identity_module_routes() -> None:
+    from auth_ext.routes import module_routes
+
+    route_names = {route.name for route in module_routes.page_routes}
+    api_route_names = {
+        route.name for router in module_routes.api_routers for route in router.routes
+    }
+
+    assert "identity:login" in route_names
+    assert "identity:signup" in route_names
+    assert "identity:account" in route_names
+    assert "identity:api:current-user" in api_route_names
+
+
+def test_later_application_module_can_override_auth_ext_identity_template(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    package_root = tmp_path / "identity_override_app"
+    template_root = package_root / "templates/identity/pages"
+    template_root.mkdir(parents=True)
+    (package_root / "__init__.py").write_text("", encoding="utf-8")
+    (template_root / "login.html").write_text(
+        """
+        {% extends "layouts/page.html" %}
+        {% block content %}
+        <h1>Overridden login</h1>
+        {% endblock %}
+        """,
+        encoding="utf-8",
+    )
+    monkeypatch.syspath_prepend(str(tmp_path))
+    importlib.invalidate_caches()
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            app_config=build_test_app_config(
+                tmp_path,
+                modules=("web_core", "auth_ext", "uniquode", "identity_override_app"),
+            ),
+        )
+    )
+
+    try:
+        response = TestClient(web_app).get("/login")
+
+        assert response.status_code == 200
+        assert "Overridden login" in response.text
+        assert 'autocomplete="email"' not in response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 def test_template_renderer_falls_back_when_route_name_is_missing() -> None:
-    renderer = TemplateRenderer(Path(__file__).resolve().parents[1] / "src/templates")
+    renderer = TemplateRenderer(
+        Path(__file__).resolve().parents[1] / "src/web_core/templates"
+    )
     request = Request({"type": "http", "headers": [], "method": "GET", "path": "/"})
 
     response = renderer.render_page(
@@ -3731,9 +4461,28 @@ def test_template_renderer_falls_back_when_route_name_is_missing() -> None:
     assert b'id="theme-selector"' in response.body
 
 
+def test_create_app_applies_configured_template_cache_options() -> None:
+    renderer = create_app().state.renderer
+
+    assert renderer.auto_reload is True
+    assert renderer.cache_size == 0
+    assert renderer.environment.auto_reload is True
+
+
+def test_template_renderer_accepts_cached_template_configuration() -> None:
+    renderer = TemplateRenderer(
+        Path(__file__).resolve().parents[1] / "src/web_core/templates",
+        auto_reload=False,
+        cache_size=50,
+    )
+
+    assert renderer.environment.auto_reload is False
+    assert renderer.cache_size == 50
+
+
 def test_template_renderer_rejects_internal_context_overrides() -> None:
     renderer = TemplateRenderer(
-        Path(__file__).resolve().parents[1] / "src/templates",
+        Path(__file__).resolve().parents[1] / "src/web_core/templates",
         csrf=CsrfProtector("test-secret"),
     )
     request = Request({"type": "http", "headers": [], "method": "GET", "path": "/"})
@@ -3756,13 +4505,13 @@ def test_template_renderer_rejects_internal_context_overrides() -> None:
 
 def test_project_stylesheet_defines_semantic_theme_tokens() -> None:
     stylesheet = (
-        Path(__file__).resolve().parents[1] / "src/static/styles/app.css"
+        Path(__file__).resolve().parents[1] / "src/web_core/static/styles/app.css"
     ).read_text()
 
-    assert "--u-colour-page-bg" in stylesheet
-    assert "--u-colour-surface" in stylesheet
-    assert "--u-colour-text" in stylesheet
-    assert "--u-colour-accent" in stylesheet
+    assert "--web-core-colour-page-bg" in stylesheet
+    assert "--web-core-colour-surface" in stylesheet
+    assert "--web-core-colour-text" in stylesheet
+    assert "--web-core-colour-accent" in stylesheet
     assert 'html[data-theme="light"]' in stylesheet
     assert 'html[data-theme="dark"]' in stylesheet
     assert "@media (prefers-color-scheme: dark)" in stylesheet
@@ -3770,7 +4519,7 @@ def test_project_stylesheet_defines_semantic_theme_tokens() -> None:
 
 def test_base_layout_uses_theme_tokens_without_template_colour_branching() -> None:
     layout_template = (
-        Path(__file__).resolve().parents[1] / "src/templates/layouts/page.html"
+        Path(__file__).resolve().parents[1] / "src/web_core/templates/layouts/page.html"
     ).read_text()
 
     assert "{% if theme_attribute %} data-theme=" in layout_template

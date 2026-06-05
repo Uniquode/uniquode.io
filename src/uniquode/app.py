@@ -1,18 +1,34 @@
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Awaitable, Callable
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
+from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
+from starlette.types import ASGIApp
 
-from auth_ext.delivery import NullIdentityDelivery
-from auth_ext.sessions import create_fastapi_users
-from uniquode.persistence import close_database, create_database
+from data_core.persistence import close_database, create_database
 from uniquode.routes import register_routes
 from uniquode.settings import Settings, load_settings
-from uniquode.web.csrf import CsrfProtector
-from uniquode.web.dispatcher import HtmlDispatcher
-from uniquode.web.errors import register_error_handlers
-from uniquode.web.renderer import TemplateRenderer
+from web_core.context import (
+    resolve_context_providers,
+    set_request_context,
+    validate_context_providers,
+)
+from web_core.csrf import CsrfProtector
+from web_core.dispatcher import HtmlDispatcher
+from web_core.errors import ErrorHandlerOptions, register_error_handlers
+from web_core.renderer import (
+    RESERVED_TEMPLATE_CONTEXT_KEYS,
+    TemplateRenderer,
+)
+from web_core.resources import PackageResourceSource
+from web_core.route_contract import API_PATH_PREFIX
+from web_core.static import ComposedStaticFiles, NoStaticFiles
+from web_core.surfaces import (
+    context_providers_from_modules,
+    static_sources_from_modules,
+    template_sources_from_modules,
+)
 
 
 @asynccontextmanager
@@ -25,14 +41,30 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
             await close_database(database)
 
 
+async def template_context_middleware(
+    request: Request,
+    call_next: Callable[[Request], Awaitable[Response]],
+) -> Response:
+    if _should_resolve_template_context(request):
+        providers = request.app.state.template_context_providers
+        context = await resolve_context_providers(
+            providers,
+            request,
+            reserved_keys=RESERVED_TEMPLATE_CONTEXT_KEYS,
+        )
+        set_request_context(request, context)
+
+    return await call_next(request)
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or load_settings()
     app = FastAPI(title=app_settings.app_name, lifespan=lifespan)
     app.state.settings = app_settings
+    app.state.static_mount_path = app_settings.static_mount_path
     app.state.database = create_database(app_settings)
-    app.state.identity_options = app_settings.identity_options
-    app.state.identity_delivery = NullIdentityDelivery()
-    app.state.fastapi_users = create_fastapi_users(app_settings.identity_options)
+    if _identity_enabled(app_settings):
+        _configure_identity(app, app_settings)
     csrf_cookie_secure = app_settings.csrf_cookie_secure
     if csrf_cookie_secure is None:  # pragma: no cover - Settings normalises this
         raise RuntimeError("CSRF cookie security setting was not normalised.")
@@ -40,13 +72,73 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app_settings.csrf_token_secret,
         cookie_secure=csrf_cookie_secure,
     )
-    app.state.renderer = TemplateRenderer(app_settings.template_root, app.state.csrf)
+    template_sources = template_sources_from_modules(app_settings.modules)
+    template_root = (
+        app_settings.template_root
+        if app_settings.uses_filesystem_template_root or not template_sources
+        else None
+    )
+    app.state.renderer = TemplateRenderer(
+        template_root=template_root,
+        csrf=app.state.csrf,
+        template_sources=template_sources,
+        auto_reload=app_settings.template_auto_reload,
+        cache_size=app_settings.template_cache_size,
+    )
+    app.state.template_context_providers = validate_context_providers(
+        context_providers_from_modules(app_settings.modules)
+    )
+    app.middleware("http")(template_context_middleware)
     app.state.html_dispatcher = HtmlDispatcher(app.state.renderer, app.state.csrf)
-    register_error_handlers(app)
+    register_error_handlers(
+        app,
+        options=ErrorHandlerOptions(static_mount_path=app_settings.static_mount_path),
+    )
+    static_sources = static_sources_from_modules(app_settings.modules)
+    static_app = _static_app(app_settings, static_sources)
     app.mount(
         app_settings.static_mount_path,
-        StaticFiles(directory=app_settings.static_root, check_dir=False),
+        static_app,
         name="static",
     )
     register_routes(app)
     return app
+
+
+def _identity_enabled(settings: Settings) -> bool:
+    return settings.identity_enabled
+
+
+def _configure_identity(app: FastAPI, settings: Settings) -> None:
+    from auth_ext.delivery import NullIdentityDelivery
+    from auth_ext.sessions import create_fastapi_users
+
+    app.state.identity_options = settings.identity_options
+    app.state.identity_delivery = NullIdentityDelivery()
+    app.state.fastapi_users = create_fastapi_users(settings.identity_options)
+
+
+def _static_app(
+    settings: Settings,
+    static_sources: tuple[PackageResourceSource, ...],
+) -> ASGIApp:
+    if settings.uses_filesystem_static_root:
+        return StaticFiles(directory=settings.static_root, check_dir=False)
+    if static_sources:
+        return ComposedStaticFiles(static_sources)
+
+    return NoStaticFiles()
+
+
+def _should_resolve_template_context(request: Request) -> bool:
+    path = request.url.path
+    settings = request.app.state.settings
+    return not (
+        _matches_path_prefix(path, settings.static_mount_path)
+        or _matches_path_prefix(path, API_PATH_PREFIX)
+    )
+
+
+def _matches_path_prefix(path: str, prefix: str) -> bool:
+    normalised_prefix = "/" + prefix.strip("/")
+    return path == normalised_prefix or path.startswith(f"{normalised_prefix}/")

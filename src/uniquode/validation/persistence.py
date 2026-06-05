@@ -1,9 +1,18 @@
-from urllib.parse import SplitResult, urlsplit, urlunsplit
-
-from uniquode.database_urls import parse_sqlite_database_url
-from uniquode.persistence import (
+from data_core.database_urls import parse_sqlite_database_url, redact_database_url
+from data_core.persistence import (
     is_memory_database_url,
     is_supported_database_url,
+)
+from data_core.surfaces import (
+    DataCompositionError,
+    migration_version_locations_from_modules,
+    model_packages_from_modules,
+)
+from tools.validation.core import (
+    ValidationCheck,
+    ValidationResult,
+    read_text_for_validation,
+    record_check,
 )
 from uniquode.settings import (
     DEFAULT_DATABASE_FILE,
@@ -11,19 +20,13 @@ from uniquode.settings import (
     SQLITE_MEMORY_DATABASE_URL,
     Settings,
 )
-from uniquode.validation.core import (
-    ValidationCheck,
-    ValidationResult,
-    read_text_for_validation,
-    record_check,
-)
 
 
 def validate_persistence(settings: Settings) -> ValidationResult:
     errors: list[str] = []
     checks: list[ValidationCheck] = []
     default_database_url = DEFAULT_DATABASE_URL
-    display_database_url = redact_secret_value(settings.database_url)
+    display_database_url = redact_database_url(settings.database_url)
     default_sqlite_url = parse_sqlite_database_url(default_database_url)
 
     record_check(
@@ -110,19 +113,41 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                 error=f"Missing Alembic migration file: {required_path}",
             )
 
-        versions_root = settings.migrations_root / "versions"
+        try:
+            model_packages = model_packages_from_modules(settings.modules)
+            version_locations = migration_version_locations_from_modules(
+                settings.modules
+            )
+        except DataCompositionError as exc:
+            record_check(
+                checks,
+                errors,
+                passed=False,
+                description="module migration version locations load",
+                error=f"Module migration version location discovery failed: {exc}",
+            )
+            model_packages = ()
+            version_locations = ()
+
         record_check(
             checks,
             errors,
-            passed=versions_root.is_dir(),
-            description=f"Alembic versions directory exists: {versions_root}",
-            error=f"Missing Alembic versions directory: {versions_root}",
+            passed=not model_packages or bool(version_locations),
+            description=(
+                "module migration version locations exist: "
+                + ", ".join(str(path) for path in version_locations)
+            ),
+            error=(
+                "At least one configured module migration version location is required."
+            ),
         )
-        if versions_root.is_dir():
+
+        if model_packages:
             revision_files = tuple(
                 sorted(
                     path
-                    for path in versions_root.glob("*.py")
+                    for version_location in version_locations
+                    for path in version_location.glob("*.py")
                     if path.name != "__init__.py"
                 )
             )
@@ -133,7 +158,7 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                 description="Alembic migration revision exists",
                 error="At least one Alembic migration revision is required.",
             )
-            if has_revision_files:
+            if has_revision_files and "auth_ext" in settings.modules:
                 revision_contents = [
                     content
                     for path in revision_files
@@ -142,7 +167,9 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                             path,
                             checks,
                             errors,
-                            description=f"Alembic revision reads as UTF-8: {path.name}",
+                            description=(
+                                f"Alembic revision reads as UTF-8: {path.name}"
+                            ),
                         )
                     )
                     is not None
@@ -160,6 +187,19 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                         description=f"Alembic migration creates table: {table_name}",
                         error=f"Alembic migration must create table: {table_name}",
                     )
+        else:
+            record_check(
+                checks,
+                errors,
+                passed=True,
+                description=(
+                    "Alembic migration revisions optional without model modules"
+                ),
+                error=(
+                    "Alembic migration revisions are only required when "
+                    "configured modules expose model metadata."
+                ),
+            )
 
     record_check(
         checks,
@@ -177,41 +217,4 @@ def validate_persistence(settings: Settings) -> ValidationResult:
 
     return ValidationResult(
         name="persistence", errors=tuple(errors), checks=tuple(checks)
-    )
-
-
-def redact_secret_value(value: str) -> str:
-    return _redact_database_url(value)
-
-
-def _redact_database_url(value: str) -> str:
-    try:
-        parsed = urlsplit(value)
-    except ValueError:
-        return value
-
-    if not parsed.scheme or (parsed.username is None and parsed.password is None):
-        return value
-
-    credentials = "***:***" if parsed.password is not None else "***"
-    host = parsed.hostname or ""
-    if ":" in host and not host.startswith("["):
-        host = f"[{host}]"
-
-    try:
-        port = parsed.port
-    except ValueError:
-        port = None
-    if port is not None:
-        host = f"{host}:{port}"
-
-    netloc = f"{credentials}@{host}"
-    return urlunsplit(
-        SplitResult(
-            scheme=parsed.scheme,
-            netloc=netloc,
-            path=parsed.path,
-            query=parsed.query,
-            fragment=parsed.fragment,
-        )
     )

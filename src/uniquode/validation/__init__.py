@@ -1,21 +1,16 @@
-from uniquode.validation.core import ValidationCheck, ValidationResult
+from tools.validation.core import ValidationCheck, ValidationResult
 from uniquode.validation.environment import validate_environment
-from uniquode.validation.persistence import redact_secret_value, validate_persistence
-from uniquode.validation.registry import (
-    VALIDATION_TARGETS,
-    get_validation_target,
-    validation_target_names,
-)
-from uniquode.validation.web import validate_web
+from uniquode.validation.persistence import validate_persistence
+
+validation_targets = {
+    "environment": validate_environment,
+    "persistence": validate_persistence,
+}
 
 __all__ = (
-    "VALIDATION_TARGETS",
     "ValidationCheck",
     "ValidationResult",
-    "get_validation_target",
-    "redact_secret_value",
     "validate_environment",
     "validate_persistence",
-    "validate_web",
-    "validation_target_names",
+    "validation_targets",
 )

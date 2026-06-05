@@ -1,0 +1,17 @@
+modules = [
+  "web_core",
+  "public",
+  "uniquode",
+  "auth_ext",
+]
+
+[routes]
+auth_ext = "/"
+
+[templates]
+auto_reload = true
+cache_size = 0
+
+[static]
+url_path = "/static/"
+export_root = "static"

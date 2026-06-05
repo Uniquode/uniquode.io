@@ -3,14 +3,14 @@ from typing import Final
 
 from envex import Env
 
+from data_core.database_urls import redact_database_url
+from tools.validation.core import ValidationCheck, ValidationResult, record_check
 from uniquode.configuration import ConfigurationError
 from uniquode.environment import (
     SUPPORTED_ENV_VARS,
     load_environment,
 )
 from uniquode.settings import Settings
-from uniquode.validation.core import ValidationCheck, ValidationResult, record_check
-from uniquode.validation.persistence import redact_secret_value
 
 ENV_VAR_NAME_PATTERN: Final = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
@@ -47,7 +47,7 @@ def validate_environment(settings: Settings) -> ValidationResult:
         passed=bool(settings.database_url.strip()),
         description=(
             "effective database URL is available: "
-            f"{redact_secret_value(settings.database_url)}"
+            f"{redact_database_url(settings.database_url)}"
         ),
         error="Effective database URL must not be empty.",
     )
