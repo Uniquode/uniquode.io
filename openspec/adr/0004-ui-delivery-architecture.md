@@ -31,23 +31,34 @@ Use Jinja2 templates as the primary UI rendering mechanism for full-page respons
 
 Use `htmx` as the preferred dynamic enhancement layer where partial page updates, inline actions, or progressively enhanced workflows improve the interface. `htmx` is expected to be used in the initial web-foundation slice, but baseline page and form flows must still work as ordinary HTML interactions without depending on `htmx`.
 
-Use a single global template root at:
+Use configured module package template sources such as:
 
 ```text
-src/templates/
+src/web_core/templates/
+src/public/templates/
+src/auth_ext/templates/
 ```
 
-Use a single global static asset root at:
+Use configured module package static sources such as:
 
 ```text
-src/static/
+src/web_core/static/
+src/auth_ext/static/
 ```
 
-Treat `src/uniquode/` as the core application package rather than the home for all feature modules, templates, or static assets.
+Treat `src/uniquode/` as the core host application package rather than the
+home for reusable web foundation code, feature modules, templates, or static
+assets.
 
-Allow feature modules such as `auth`, `api`, `integrations`, and others to live alongside `uniquode` when required. Feature modules should integrate with the core application through route-registration glue rather than by being folded into the core package.
+Allow feature modules such as `auth_ext`, `api`, `integrations`, and others to
+live alongside `uniquode` when required. Feature modules should integrate with
+the core application through configured module surfaces rather than by being
+folded into the core package.
 
-Allow feature modules to use conventional subpaths under the global template and static roots, such as `templates/<module-base>/` and `static/<module-base>/`, so related assets remain grouped without introducing multiple template or static roots.
+Allow configured modules to own templates and static assets inside their package
+directories. Resources are addressed by stable logical paths, and later
+configured modules may override earlier module defaults by providing the same
+logical path.
 
 Keep HTML page routes, HTML partial routes, and machine-oriented API routes as distinct route surfaces:
 
@@ -69,7 +80,10 @@ The rendering system must support a coherent template hierarchy, including a ubi
 
 Reusable server-rendered components should be composed through partials, includes, macros, or similar template composition patterns rather than through a separate client-side component framework.
 
-Template rendering should use the global template root and target templates by relative path from that root. The implementation should also support local template composition so includes and related templates can be resolved coherently relative to the source template where that convention is used.
+Template rendering should use the composed logical template namespace and target
+templates by logical path. The implementation should also support local template
+composition so includes and related templates can be resolved coherently
+relative to the source template where that convention is used.
 
 No front-end asset build pipeline is required initially. Avoid introducing Sass or SCSS compilation unless a later requirement justifies it.
 
@@ -79,16 +93,18 @@ Route naming, reverse resolution, and structural validation of routes, templates
 
 ## Conventions
 
-Shared reusable server-rendered components should live under the global template root in:
+Shared reusable server-rendered components should live under the logical
+template path:
 
 ```text
-src/templates/components/
+components/
 ```
 
-Feature modules may also define module-local reusable components under conventional subpaths such as:
+Feature modules may also define module-local reusable components under logical
+subpaths such as:
 
 ```text
-src/templates/<module-base>/components/
+<module-base>/components/
 ```
 
 Use the global component path for components intended to be shared across multiple modules or page types. Use module-local component paths where reuse is primarily internal to one feature area.
@@ -103,7 +119,8 @@ The application can ship public pages, authenticated pages, and administrative w
 
 `htmx` allows targeted interactivity without forcing the project into SPA routing, state management, or an API-only browser contract.
 
-Using one global template root and one global static root keeps resource discovery simple while still allowing feature-oriented grouping through conventional subpaths.
+Using a composed logical template/static namespace keeps resource lookup stable
+while allowing feature-oriented ownership through module package sources.
 
 Keeping feature modules alongside the core package avoids turning `uniquode` into an undifferentiated container for every application concern.
 

@@ -38,7 +38,10 @@ The system SHALL define `.gitignore` entries appropriate for the Python project 
 - **THEN** it does not ignore `.agents/`
 
 ### Requirement: Source package layout
-The system SHALL use a `src/` package layout with `src/uniquode` as the core importable application package, while allowing feature modules and web resources to live in conventional sibling locations under `src/`.
+The system SHALL use a `src/` package layout with `src/uniquode` as the
+concrete application package, while allowing reusable core, data, tooling,
+feature, and resource-owning modules to live in conventional sibling locations
+under `src/`.
 
 #### Scenario: Package imports from source layout
 - **WHEN** the project is installed or run through `uv`
@@ -46,11 +49,15 @@ The system SHALL use a `src/` package layout with `src/uniquode` as the core imp
 
 #### Scenario: Infrastructure modules are separated
 - **WHEN** a developer inspects `src/uniquode`
-- **THEN** application construction, settings, route registration, models, migrations, and shared infrastructure have explicit package locations or documented module boundaries
+- **THEN** application construction, settings, and application route
+  registration remain separated from reusable web infrastructure, data
+  infrastructure, tooling, model, migration, template, and static-resource
+  ownership boundaries
 
-#### Scenario: Web resources use global roots
+#### Scenario: Web resources are module-owned
 - **WHEN** a developer inspects the source tree
-- **THEN** templates and static assets live in conventional global roots under `src/` rather than inside `src/uniquode`
+- **THEN** templates and static assets live in configured module package roots
+  such as `src/<module>/templates/` and `src/<module>/static/`
 
 #### Scenario: Feature modules may live beside the core package
 - **WHEN** a later capability introduces a feature module such as `site`, `auth`, `api`, or `integrations`
@@ -86,19 +93,29 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 
 #### Scenario: Persistence location is defined
 - **WHEN** a developer inspects the project package
-- **THEN** there is a clear package location or documented boundary for SQLAlchemy async models, session configuration, and Alembic migrations
+- **THEN** there is a clear package location or documented boundary for
+  SQLAlchemy async models, database URL handling, session configuration,
+  Alembic migration infrastructure, and module-owned migration revisions
 
 #### Scenario: Models modules contain ORM models
 - **WHEN** a package exposes a `models` module
 - **THEN** that module is reserved for SQLAlchemy ORM models and migration metadata rather than unrelated domain objects, schemas, or service contracts
 
-#### Scenario: Migration metadata is discovered from enabled model packages
+#### Scenario: Migration metadata is discovered from configured modules
 - **WHEN** Alembic migration metadata is built
-- **THEN** the application imports a deterministic configured list of enabled model packages and reads their exported `metadata` objects
+- **THEN** `data_core` derives conventional `<module>.models` packages from
+  configured modules and reads their exported `metadata` objects
 
 #### Scenario: Optional package models are explicit
 - **WHEN** optional packages such as `auth_ext` or future `auth_provider` provide SQLAlchemy models
-- **THEN** their model metadata is included in migrations only when the host application explicitly enables that package's model package
+- **THEN** their model metadata is included in migrations only when the host
+  application explicitly enables that package module
+
+#### Scenario: Module migration revisions are explicit
+- **WHEN** optional packages such as `auth_ext` or future `auth_provider`
+  provide SQLAlchemy models and migration revisions
+- **THEN** their migration version locations are included only when the host
+  application explicitly enables that package module
 
 #### Scenario: Routes are not coupled to database clients
 - **WHEN** the route modules are inspected
@@ -108,16 +125,52 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 - **WHEN** a developer inspects persistence configuration
 - **THEN** PostgreSQL is supported for production and SQLite is supported for local development and lightweight tests where behaviour remains portable
 
+#### Scenario: Data infrastructure helpers are reusable
+- **WHEN** application startup, migration tooling, validation, or tests need
+  database URL parsing, database URL resolution, async engine creation, session
+  factory creation, or session scope helpers
+- **THEN** those helpers are provided by `data_core` rather than by the
+  `uniquode` application package
+
+#### Scenario: Migration command settings are injected
+- **WHEN** generic migration command infrastructure needs application settings,
+  default modules, or the default database URL
+- **THEN** a host adapter supplies those values instead of `data_core` importing
+  the `uniquode` application package
+
+#### Scenario: Module surface conventions are centralised
+- **WHEN** reusable web, data, and tooling layers need conventional configured
+  module surface names or export attribute names
+- **THEN** those strings are defined in one reusable convention module rather
+  than being duplicated across discovery implementations
+
 ### Requirement: Template conventions
-The system SHALL define the baseline Jinja2 server-rendered template and static asset locations and provide rendering conventions without introducing product-specific UI before requirements need it.
+The system SHALL define baseline Jinja2 server-rendered template and static
+asset conventions through configured module package sources without introducing
+product-specific UI before requirements need it.
 
-#### Scenario: Template location is configurable
+#### Scenario: Template sources are module-owned
 - **WHEN** a developer inspects the project structure or configuration
-- **THEN** the Jinja2 template root is supplied through settings with a default value of `src/templates/`
+- **THEN** templates are discovered from configured module package sources such
+  as `src/<module>/templates/`
 
-#### Scenario: Static asset location is configurable
+#### Scenario: Static asset sources are module-owned
 - **WHEN** a developer inspects the project structure or configuration
-- **THEN** the static asset root is supplied through settings with a default value of `src/static/`
+- **THEN** static assets are discovered from configured module package sources
+  such as `src/<module>/static/`
+
+#### Scenario: Omitted web core static defaults are not served
+- **WHEN** `web_core` is not included in the configured module list and no
+  explicit filesystem static root is configured
+- **THEN** application static serving does not fall back to `web_core` package
+  assets
+
+#### Scenario: Empty static mount preserves URL generation
+- **WHEN** no configured module contributes static assets and no explicit
+  filesystem static root is configured
+- **THEN** the application still provides the configured static route name for
+  URL generation, while requests for assets return a normal missing-asset
+  response
 
 #### Scenario: Static asset route prefix is configurable
 - **WHEN** a developer inspects the project structure or configuration
@@ -125,7 +178,8 @@ The system SHALL define the baseline Jinja2 server-rendered template and static 
 
 #### Scenario: Rendering conventions are explicit
 - **WHEN** a developer inspects the web foundation implementation
-- **THEN** there is a documented or code-defined rendering helper or boundary that renders templates by path from the configured template root
+- **THEN** there is a documented or code-defined rendering helper or boundary
+  that renders templates by logical path from the composed template namespace
 
 #### Scenario: HTML dispatch and static serving are separate concerns
 - **WHEN** a developer inspects the web foundation implementation
@@ -227,6 +281,11 @@ The system SHALL provide a project runtime command named `runserver` for local e
 - **WHEN** a developer runs the documented local server command
 - **THEN** it starts Uvicorn against `uniquode.asgi:app`
 
+#### Scenario: Runtime command implementation is tool-owned
+- **WHEN** a developer inspects the `runserver` project script entry point
+- **THEN** the command wrapper is provided by the top-level `tools` package
+  while still targeting the documented ASGI application
+
 #### Scenario: Runtime command is invoked through uv
 - **WHEN** local development instructions reference the server startup command
 - **THEN** they use `uv run runserver`
@@ -302,3 +361,7 @@ this change while preserving their documented command interfaces.
 - **THEN** the command accepts the same options and reports the same validation
   outcomes and exit status as before the parser migration
 
+#### Scenario: Validation command implementation is tool-owned
+- **WHEN** a developer inspects the `validate` project script entry point
+- **THEN** the command wrapper is provided by the top-level `tools` package and
+  discovers validation targets from configured modules

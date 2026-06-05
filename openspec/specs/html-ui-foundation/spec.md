@@ -5,16 +5,31 @@ Define the baseline HTML-first UI foundation for server-rendered pages, shared t
 
 ## Requirements
 
-### Requirement: Global web resource roots
-The system SHALL provide one global template root, one global static asset root, and one static route prefix for the HTML-first UI foundation, with all three values configurable through project settings.
+### Requirement: Module-owned web resources
+The system SHALL load template and static resources from configured modules
+while keeping global template behaviour and static serving/export options in
+composition configuration.
 
-#### Scenario: Global template root has a settings-backed default
-- **WHEN** a developer inspects the project settings or rendering configuration
-- **THEN** the application defines a configurable global Jinja2 template root with a default value of `src/templates/`
+#### Scenario: Template behaviour has global configuration
+- **WHEN** a developer inspects the project composition configuration
+- **THEN** the application defines configurable Jinja2 template reload and cache
+  behaviour without requiring a global filesystem template root
 
-#### Scenario: Global static root has a settings-backed default
-- **WHEN** a developer inspects the project settings or static asset configuration
-- **THEN** the application defines a configurable global static asset root with a default value of `src/static/`
+#### Scenario: Configured modules can add package template sources
+- **WHEN** the application installs modules that declare package templates
+- **THEN** the renderer includes those package template sources according to
+  configured module order
+
+#### Scenario: Static serving and export have global configuration
+- **WHEN** a developer inspects the project composition or static asset
+  configuration
+- **THEN** the application defines a configurable static URL path and static
+  export root without requiring a global filesystem static root
+
+#### Scenario: Configured modules can add package static sources
+- **WHEN** the application installs modules that declare package static assets
+- **THEN** the static asset resolver includes those package static sources
+  according to configured module order
 
 #### Scenario: Static route prefix has a settings-backed default
 - **WHEN** a developer inspects the project settings or static asset configuration
@@ -29,11 +44,12 @@ The system SHALL provide a baseline template hierarchy and reusable server-rende
 
 #### Scenario: Shared components have a conventional location
 - **WHEN** a developer inspects the template tree
-- **THEN** shared reusable components live under `src/templates/components/`
+- **THEN** shared reusable components live under the logical path `components/`
 
 #### Scenario: Module-local components are supported
 - **WHEN** a feature module introduces reusable templates that are primarily local to that module
-- **THEN** the templates may live under a conventional path such as `src/templates/<module-base>/components/`
+- **THEN** the module can publish those templates from its package template
+  source under logical paths such as `<module-base>/components/`
 
 ### Requirement: HTML route surfaces are explicit
 The system SHALL keep page routes, partial routes, and API routes as distinct route surfaces.
@@ -51,15 +67,23 @@ The system SHALL keep page routes, partial routes, and API routes as distinct ro
 - **THEN** the handler returns a machine-oriented response rather than a template-rendered HTML page
 
 ### Requirement: HTML requests use a dispatcher protocol
-The system SHALL provide an internal HTML request-dispatch layer under FastAPI for page-oriented handlers.
+The system SHALL provide an internal HTML request-dispatch layer under FastAPI
+for page-oriented handlers, with route definitions composed from explicitly
+installed application modules.
 
 #### Scenario: HTML views register declaratively
 - **WHEN** a developer adds a page-oriented HTML view
 - **THEN** the view registers through the HTML dispatcher mechanism rather than requiring a one-route-per-page decorator pattern
 
 #### Scenario: Route definitions are declared in feature modules
-- **WHEN** a feature module such as `site` declares its page routes
-- **THEN** the module exposes declarative route definitions that bind route metadata to registered views in the dispatcher
+- **WHEN** a feature module declares page or partial routes
+- **THEN** the module exposes declarative route definitions through its route
+  module rather than requiring the application to duplicate each route
+
+#### Scenario: Application installs feature module routes explicitly
+- **WHEN** the application includes a module in `modules`
+- **THEN** the dispatcher registers that module's page and partial routes in
+  configured order
 
 #### Scenario: Dispatcher selects a matching view
 - **WHEN** an HTML request reaches the dispatcher entry point
@@ -115,10 +139,19 @@ The system SHALL provide an initial validation surface for the web foundation th
 
 #### Scenario: Validation command checks implemented web structure
 - **WHEN** a developer runs the documented web-structure validation command
-- **THEN** the command inspects the implemented route, template, and static asset structures and reports detected errors
+- **THEN** the command inspects implemented route, template, static asset,
+  configured module, package template, package static, and
+  template-context-provider structures and reports detected errors
+
+#### Scenario: Web validation is contributed by web core
+- **WHEN** web-structure validation is discovered
+- **THEN** reusable web checks are contributed by `web_core.validation` rather
+  than by the host application package
 
 #### Scenario: Broken references fail validation
-- **WHEN** an implemented route, template reference, or static asset reference cannot be resolved by the validation surface
+- **WHEN** an implemented route, template reference, package template
+  reference, static asset reference, context provider reference, or module
+  surface reference cannot be resolved by the validation surface
 - **THEN** the validation command reports the failure instead of silently succeeding
 
 ### Requirement: Error handling is explicit across route surfaces

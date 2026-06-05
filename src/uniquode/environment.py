@@ -2,27 +2,19 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, MutableMapping
-from dataclasses import dataclass
 from pathlib import Path
-from typing import Final, Literal, cast
+from typing import Final, cast
 
 from envex import Env
 
 from uniquode.configuration import ConfigurationError
-
-EnvironmentValueType = Literal["str", "path", "bool", "int"]
-
-
-@dataclass(frozen=True, slots=True)
-class EnvironmentSetting:
-    name: str
-    field_name: str
-    value_type: EnvironmentValueType = "str"
-
+from web_core.composition import APP_CONFIG_ENV
+from web_core.settings import EnvironmentSetting
 
 ENV_ACCOUNT_CREATION_POLICY: Final = "ACCOUNT_CREATION_POLICY"
 ENV_ADVANCED_AUTH: Final = "ADVANCED_AUTH"
 ENV_ALEMBIC_CONFIG: Final = "ALEMBIC_CONFIG"
+ENV_APP_CONFIG: Final = APP_CONFIG_ENV
 ENV_APP_ENV: Final = "APP_ENV"
 ENV_APP_NAME: Final = "APP_NAME"
 ENV_APP_RELOAD: Final = "APP_RELOAD"
@@ -64,7 +56,7 @@ IDENTITY_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
 )
 SUPPORTED_SETTINGS_ENV_VARS: Final = tuple(
     env_setting.name for env_setting in SETTINGS_ENV_SETTINGS + IDENTITY_ENV_SETTINGS
-)
+) + (ENV_APP_CONFIG,)
 
 SUPPORTED_RUNSERVER_ENV_VARS: Final = (ENV_APP_RELOAD,)
 SUPPORTED_ENV_VARS: Final = SUPPORTED_SETTINGS_ENV_VARS + SUPPORTED_RUNSERVER_ENV_VARS

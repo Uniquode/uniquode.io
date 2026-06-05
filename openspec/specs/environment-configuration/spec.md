@@ -26,6 +26,12 @@ variables through the `envex` module.
 - **WHEN** tests or callers construct `Settings` with explicit values
 - **THEN** those values can be used without mutating process environment
 
+#### Scenario: Settings loading mechanics are reusable
+- **WHEN** an application uses the shared envex and app composition pattern
+- **THEN** reusable typed environment parsing, app configuration loading, and
+  settings factory invocation are provided by `web_core`, while concrete
+  settings fields and deployment policy remain application-owned
+
 ### Requirement: `.env` support
 The system SHALL support envex `.env` loading for local development
 configuration.
@@ -75,6 +81,11 @@ values.
 #### Scenario: Verbose validation masks database credentials
 - **WHEN** `validate --verbose` reports the effective database configuration
 - **THEN** it does not print secret-bearing credentials from the database URL
+
+#### Scenario: Verbose validation masks database query secrets
+- **WHEN** `validate --verbose` reports a database URL with sensitive query
+  parameters such as passwords, tokens, keys, or secrets
+- **THEN** it redacts those query parameter values before printing the URL
 
 #### Scenario: Validation reports missing or unsupported configuration
 - **WHEN** required environment-backed settings are missing or unsupported

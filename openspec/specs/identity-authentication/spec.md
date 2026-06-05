@@ -23,8 +23,24 @@ The system SHALL use FastAPI Users for the baseline local account lifecycle and 
 - **THEN** FastAPI Users is included as a runtime dependency for identity foundation work
 
 #### Scenario: Application owns policy around library flows
-- **WHEN** FastAPI Users provides account lifecycle or authentication primitives
-- **THEN** application code still owns account creation policy, user-facing templates, email delivery, redirects, and project-specific error handling
+- **WHEN** FastAPI Users or `auth_ext` provides account lifecycle or
+  authentication primitives
+- **THEN** application code still owns account creation policy, email delivery,
+  redirects, layout, theme, product navigation, and project-specific error
+  handling around those flows
+
+#### Scenario: Auth extension owns reusable identity presentation defaults
+- **WHEN** local account lifecycle or authentication primitives need browser
+  pages such as login, signup, verification, password reset, account, logout,
+  or password change
+- **THEN** `auth_ext` owns the reusable route surfaces and default
+  `templates/identity` content for those pages
+
+#### Scenario: Auth extension owns identity data revisions
+- **WHEN** local identity tables need Alembic migration revisions
+- **THEN** `auth_ext` owns those revision files alongside its identity models
+  and the host migration command includes them only when `auth_ext` is
+  configured
 
 ### Requirement: Baseline authentication ceremony
 The system SHALL model login as an authentication ceremony that can include

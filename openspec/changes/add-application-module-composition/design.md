@@ -22,7 +22,7 @@ when it intentionally owns a root-level path such as `/login`.
 
 The composition source also needs to be useful outside the web runtime. Alembic,
 validation, a collectstatic-style exporter, and future project CLIs should be
-able to load the installed module list and resource configuration without
+able to load the configured module list and resource configuration without
 booting the FastAPI application or importing runtime-only settings.
 
 ## Goals / Non-Goals
@@ -30,18 +30,20 @@ booting the FastAPI application or importing runtime-only settings.
 **Goals:**
 
 - Introduce `app.toml` as the shared, file-backed composition configuration
-  whose ordered `installed_modules` list is the source of truth for enabled
-  application modules.
+  whose ordered `modules` list is the source of truth for enabled application
+  modules.
 - Support `APP_CONFIG` as the environment override for the composition
   configuration path.
 - Keep the composition configuration loader independent from FastAPI
   application construction, Jinja environment construction, application
   startup, and identity-specific runtime state so it can be reused by Alembic
   and future CLIs.
-- Introduce a top-level `web_ext` package as an application-independent,
+- Introduce a top-level `web_core` package as an application-independent,
   opinionated web composition layer over FastAPI.
-- Let installed modules optionally contribute model metadata, routes,
-  templates, static assets, and template-context providers.
+- Introduce a top-level `data_core` package for reusable SQLAlchemy data
+  modelling contracts and configured model metadata discovery.
+- Let configured modules optionally contribute model metadata, routes,
+  templates, static assets, template-context providers, and validation targets.
 - Make `auth_ext` optional from the application composition perspective: a
   public-only application can omit it and avoid loading identity web/data
   surfaces.
@@ -54,8 +56,13 @@ booting the FastAPI application or importing runtime-only settings.
   application and module static assets from the composition configuration.
 - Fail clearly on route conflicts, malformed module surfaces, missing required
   modules, and invalid context providers.
-- Keep application-level theme, layout chrome, branding, navigation, redirects,
-  delivery, and policy in the host application.
+- Keep application-specific branding, navigation, redirects, delivery, and
+  policy in the host application, while allowing `web_core` to provide reusable
+  default layout, theme, error, form, and static assets that host applications
+  can omit or override.
+- Move project command orchestration into a top-level `tools` package, with
+  validation targets discovered from configured module validation surfaces
+  rather than from a hard-coded application registry.
 - Create a clean extraction seam for a future reusable composition package
   without extracting it in this change.
 
@@ -64,7 +71,7 @@ booting the FastAPI application or importing runtime-only settings.
 - Do not scan installed distributions automatically.
 - Do not introduce a frontend build pipeline or new external runtime
   dependency.
-- Do not move application theme ownership into `auth_ext`.
+- Do not move reusable or application theme ownership into `auth_ext`.
 - Do not make templates or static assets the source of authorisation
   decisions.
 - Do not introduce Django-style model/table-name prefixing in this change.
@@ -87,15 +94,22 @@ default filename is `app.toml`. The parser should normalise this shape into
 typed composition options:
 
 ```toml
-[composition]
-installed_modules = [
+modules = [
   "uniquode",
   "public",
   "auth_ext",
 ]
 
-[composition.route_prefixes]
+[routes]
 auth_ext = "/"
+
+[templates]
+auto_reload = true
+cache_size = 0
+
+[static]
+url_path = "/static/"
+export_root = "static"
 ```
 
 The loader should read the default `app.toml` from the project/application root
@@ -125,6 +139,13 @@ composition loader and should not construct the application FastAPI instance,
 construct the Jinja environment, or import `auth_ext` just to learn which
 modules are installed.
 
+The mechanics of adapting envex values plus `app.toml` into a concrete settings
+object are also reusable. `web_core` should provide the generic settings loader
+that handles typed environment values, app configuration discovery, and settings
+factory invocation. The host application still owns the concrete `Settings`
+class, application defaults, deployment policy, CSRF policy, and identity
+options adapter.
+
 Alternative considered: keep separate settings such as `enabled_route_modules`
 and `enabled_model_packages`. That is simpler for the current implementation
 but causes drift as modules gain more surfaces. A single composition root better
@@ -136,43 +157,84 @@ CLIs to web-runtime state or duplicated defaults. A small shared file-backed
 configuration gives every process the same module graph while preserving a
 thin runtime settings adapter.
 
-### Add `web_ext` As The Application-Independent Core Layer
+### Add `web_core` As The Application-Independent Core Layer
 
 The amount of shared behaviour now justifies an internal core package rather
 than scattering composition code through the `uniquode` application package.
-Create it as a top-level `web_ext` module. `web_ext` is not intended to be
+Create it as a top-level `web_core` module. `web_core` is not intended to be
 engine-agnostic; it is an opinionated composition framework over FastAPI that
 uses FastAPI, Starlette, and Jinja2 where those tools already fit.
 
-`web_ext` should own:
+`web_core` should own:
 
 - file-backed composition configuration parsing and normalisation;
-- installed-module import and optional surface discovery;
+- reusable envex/app.toml settings-loading mechanics;
+- module import and optional surface discovery;
 - web route/resource/context contracts such as `HtmlView`,
   `HtmlRouteDefinition`, and `ModuleRoutes`;
+- the reusable HTML dispatcher, template renderer, CSRF/form security helpers,
+  route prefix contracts, and error handler foundation;
 - template and static source resolution;
 - context-provider registry contracts;
+- reusable default layout, error, theme, component, and stylesheet resources;
 - static export services.
 
-`web_ext` should not import product routes, product settings, `uniquode.app`,
+`web_core` should not import product routes, product settings, `uniquode.app`,
 `auth_ext`, this application's FastAPI startup, or deployment secrets. The
 current application, Alembic, validation, static export tooling, and future
-CLIs should all be consumers of `web_ext`. `auth_ext` may also depend on
-`web_ext` contracts to publish identity module surfaces, but `web_ext` must not
-depend on `auth_ext`. Extracting `web_ext` into a separately published package
+CLIs should all be consumers of `web_core`. `auth_ext` may also depend on
+`web_core` contracts to publish identity module surfaces, but `web_core` must not
+depend on `auth_ext`. Extracting `web_core` into a separately published package
 remains a future step; this change should create the boundary without adding
 packaging complexity before it is needed.
 
+### Add `data_core` For Reusable Data Infrastructure
+
+SQLAlchemy model metadata discovery and a shared declarative base are data
+infrastructure, not web infrastructure and not application product code. Create
+a top-level `data_core` package to own these reusable pieces. `data_core` should
+provide:
+
+- a shared SQLAlchemy `DeclarativeBase` and its `metadata`;
+- conventional `<module>.models` package discovery;
+- validation of exported SQLAlchemy `metadata` objects; and
+- deterministic conversion from configured module names to model packages.
+
+`web_core` may need to report configured web surfaces, but it should not import
+SQLAlchemy or own model metadata discovery. Application migration metadata
+loading should call `data_core` directly. Reusable data modules such as
+`auth_ext` should import their declarative base from `data_core` and continue
+to expose package-level `metadata` for host applications that include the
+module.
+
+Migrations are repository-owned schema history, not a live reflection of the
+database. The database records which revisions have been applied; the revision
+files describe how the repository expects the configured database schema to
+evolve. The migration graph is database-wide at runtime, but revision files do
+not need to live in one global application directory. `data_core` should own the
+Alembic runner, environment, script template, and discovery of configured
+module migration locations. Modules that own tables should own the revision
+files for those tables under a conventional migration directory. Cross-module
+schema dependencies should be represented in revision metadata rather than by
+moving all revisions back into the host application package.
+
+The current `uniquode.models` package does not define application-owned tables.
+Keeping it solely to publish an empty `Base.metadata` creates a false
+application ownership signal. Remove it until the host application has real
+application data models. The configured `uniquode` module can still contribute
+routes and validation targets without contributing a model surface.
+
 ### Discover Optional Module Surfaces By Convention
 
-Each installed module may expose conventional surfaces:
+Each configured module may expose conventional surfaces:
 
 ```text
 <module>.models      -> SQLAlchemy metadata, if present
 <module>.routes      -> module_routes, if present and web routes are needed
 <module>/templates   -> package template source, if present
 <module>/static      -> package static source, if present
-<provider import>    -> async context providers declared by module routes
+<module>.context     -> context provider registrations, if present
+<module>.validation  -> named validation targets, if present
 ```
 
 Missing optional surfaces are no-ops. Malformed present surfaces fail clearly.
@@ -181,9 +243,9 @@ module list without importing route modules. That keeps static collection and
 template validation usable by CLIs that do not need web route registration.
 
 The model convention builds on the existing `load_model_metadata()` shape:
-model packages expose top-level SQLAlchemy `metadata`. The initial
-implementation can adapt `installed_modules` into model package names such as
-`<module>.models` and load the metadata that exists.
+model packages expose top-level SQLAlchemy `metadata`. The implementation
+adapts `modules` into model package names by looking for `<module>.models` and
+loading the metadata that exists.
 
 Model/table naming collisions are a known future consideration. Django avoids
 many collisions with app-label prefixes; this project already uses explicit
@@ -226,35 +288,33 @@ validation differences.
 
 ### Use Logical Template And Static Namespaces
 
-Templates and static assets should both use logical resource paths. The
-application owns override roots:
+Templates and static assets should both use logical resource paths. Configured
+modules may ship package sources:
 
 ```text
-src/templates/
-src/static/
-```
-
-Installed modules may ship package defaults:
-
-```text
+src/web_core/templates/layouts/page.html
+src/web_core/static/styles/app.css
+src/public/templates/public/pages/home.html
 src/auth_ext/templates/identity/pages/login.html
 src/auth_ext/static/identity/login.css
 ```
 
 Lookup precedence should be:
 
-1. application override root;
-2. installed module package sources in reverse `installed_modules` order.
+1. configured module package sources in reverse `modules` order.
 
 Reverse module order gives later, more specific modules higher default
-precedence while still allowing the application root to override everything.
-Modules should avoid intentionally sharing logical paths unless they are
-designed as replacements. Validation should report duplicate module defaults so
-the precedence is visible.
+precedence. The application can still override another module by placing its
+resource-owning module later in `modules`. Modules should avoid intentionally
+sharing logical paths unless they are designed as replacements. Validation
+should report duplicate module defaults so the precedence is visible.
 
-For static assets, the initial implementation should keep the serving model
-simple: resolve and return the first matching logical asset. Fingerprinting,
-manifest generation, bundling, and CDN integration are out of scope.
+For static assets, runtime serving should resolve configured module package
+sources directly and return the first matching logical asset. It must not
+assume assets have already been collected into an export directory. Static
+collection is required only for deployment shapes where an external static
+server such as Nginx serves the assets. Fingerprinting, manifest generation,
+bundling, and CDN integration are out of scope.
 
 ### Add A Static Collection Boundary
 
@@ -264,45 +324,48 @@ namespace into a directory. The composition core should expose a
 collectstatic-style operation that:
 
 - loads composition configuration through the shared file-backed loader;
-- enumerates the application static root and installed module package static
-  sources in the same precedence order used by runtime serving;
+- enumerates configured module package static sources in the same precedence
+  order used by runtime serving;
 - copies only the winning asset for each logical path into a configured output
   directory;
-- reports duplicate module defaults and application overrides consistently with
-  validation.
+- reports duplicate module defaults consistently with validation.
 
-This operation belongs in `web_ext`, because it is a general web composition
+This operation belongs in `web_core`, because it is a general web composition
 concern rather than an identity concern. It should be a reusable service
 boundary first. A concrete CLI can be added later and can delegate to it
 without needing to import application FastAPI startup code, route modules, the
 Jinja environment, or identity-specific runtime state.
 
-### Keep Application Layout And Theme Above Module Templates
+### Keep Reusable Layout And Theme In `web_core`
 
 Module templates can provide page content, forms, fragments, and module-local
-components. The application owns the outer layout and theme. Identity templates
-should extend a stable logical base template such as `layouts/page.html`; the
-application provides that template.
+components. `web_core` provides a reusable outer layout, error templates,
+theme selector component, theme context provider, and baseline stylesheet as
+default module resources. Applications can opt out by omitting `web_core`, or
+override those defaults by providing the same logical template and static paths
+from a later configured module.
 
-Theme context should be contributed by an application-owned context provider.
-`auth_ext` should not inject or own product theme state.
+Identity templates should extend a stable logical base template such as
+`layouts/page.html`; the composed module namespace decides whether that base
+comes from `web_core` or an application override. `auth_ext` should not inject or
+own product theme state.
 
-### Resolve Context Providers From Configurable Import Strings
+### Resolve Context Providers From Module Registrations
 
-Modules publish context provider names as strings, not already-imported
-callables. The application can append, remove, replace, or reorder provider
-names before startup resolution.
+Configured modules may publish a `<module>.context` surface. Importing that
+surface lets the module call `add_to_context` to register static context
+dictionaries or request-time provider callables. There is no separate context
+section in `app.toml`; module inclusion and ordering are the composition
+source of truth.
 
-At startup, the application resolves each provider string once, validates that
-it is an async request callable, and stores callable providers for request-time
-execution.
+At startup, the application imports configured context surfaces once, validates
+registered providers, and stores callable providers for request-time execution.
 
 At request time, context is built in layers:
 
 1. internal reserved context such as `request`, `route_name`, and CSRF fields;
-2. module provider context dictionaries in configured order;
-3. application provider context dictionaries;
-4. view-local context.
+2. registered module provider context dictionaries in configured order;
+3. view-local context.
 
 Reserved key collisions should fail loudly. Non-reserved provider collisions
 should be forbidden by default. If replacement semantics are needed later, they
@@ -325,7 +388,7 @@ relationships, or reset/verification internals.
 
 `auth_ext` should still be a project dependency while the current product uses
 identity, but composition must not assume it is installed into every app
-instance. If `auth_ext` is omitted from `installed_modules`, the application
+instance. If `auth_ext` is omitted from `modules`, the application
 must not load auth models, auth routes, auth templates, auth static assets, auth
 context providers, or auth-specific startup wiring.
 
@@ -333,13 +396,47 @@ That does not mean every existing application setting becomes optional in the
 same edit. It does mean startup should move identity-specific setup behind the
 composition boundary as this change is implemented.
 
+### Keep Project Commands In `tools`
+
+Concrete project commands such as `validate` and `runserver` are tooling rather
+than application runtime. They should live in a top-level `tools` package so
+they are not owned by the `uniquode` host application package. These commands
+may still load the current project's settings adapter or target the current
+ASGI app, but command orchestration, project-root helpers, target discovery,
+shared validation result types, and output handling belong to `tools`.
+
+Validation targets should follow the same explicit module-composition rule as
+routes, templates, static assets, models, and context providers. A configured
+module may expose a conventional `<module>.validation` surface with a
+`validation_targets` mapping from target name to callable. The `validate`
+command iterates the configured `modules` list, imports present validation
+surfaces, validates the mapping shape, and runs the requested targets in
+discovered order. Missing validation surfaces are empty contributions; malformed
+surfaces fail clearly before checks are run.
+
+Reusable web validation belongs with the reusable web foundation. `web_core`
+should publish the `web` validation target from its validation surface and must
+not import the `uniquode` application package to build configured route,
+template, static, or context checks. Application-specific environment and
+persistence validation can remain under `uniquode.validation` as validation
+targets contributed by the configured `uniquode` module when they check this
+application's supported environment variable list, default database filename,
+or identity-table expectations. Generic route registration belongs in
+`web_core`; generic database URL parsing, URL redaction, and async SQLAlchemy
+engine/session helpers belong in `data_core`.
+
+This keeps the current `validate` executable behaviour while removing the
+application-owned registry. Future modules can add validation without modifying
+the command or the host application package; the host still decides whether a
+module's validation exists by including that module in `app.toml`.
+
 ## Risks / Trade-offs
 
 - [Risk] This broadens the change beyond web routes/templates. → Mitigation:
   keep the implementation incremental and preserve current behaviour through
-  default `installed_modules`.
+  default `modules`.
 - [Risk] Model metadata, Alembic configuration, and future CLIs may drift from
-  runtime settings. → Mitigation: make `app.toml` and the shared `web_ext`
+  runtime settings. → Mitigation: make `app.toml` and the shared `web_core`
   composition loader the source for runtime settings, migration metadata
   loading, validation, and static export.
 - [Risk] Routes can conflict once multiple modules contribute surfaces. →
@@ -348,35 +445,60 @@ composition boundary as this change is implemented.
   application root always wins; module default precedence is deterministic;
   validation reports duplicate module defaults.
 - [Risk] Static collection can accidentally couple to web startup. →
-  Mitigation: make static source discovery work from installed modules and
+  Mitigation: make static source discovery work from configured modules and
   package resources without importing route modules or application startup.
 - [Risk] Context providers can create surprising key collisions. → Mitigation:
   reserve internal keys and forbid provider collisions by default.
 - [Risk] Moving identity routes into `auth_ext` can introduce a reverse
   dependency on `uniquode`. → Mitigation: keep generic route/view contracts in
-  `web_ext` and continue import-boundary tests for `auth_ext`.
+  `web_core` and continue import-boundary tests for `auth_ext`.
+- [Risk] Validation target discovery can hide target availability behind module
+  configuration. → Mitigation: keep discovery deterministic from `modules`,
+  fail clearly on unknown requested targets, and cover dynamic surfaces in
+  tests.
+- [Risk] Shared ORM metadata can be contributed more than once when several
+  modules import the same `data_core` base. → Mitigation: model metadata
+  loading should preserve configured module order while de-duplicating identical
+  metadata objects by identity before handing them to Alembic.
+- [Risk] Module-owned migration revisions can create multiple Alembic heads or
+  cross-module ordering requirements. → Mitigation: keep the runtime migration
+  graph database-wide, discover version directories only from configured
+  modules, and use Alembic revision dependencies when one module's schema
+  depends on another module's tables.
 
 ## Migration Plan
 
-1. Add `web_ext`, composition contracts, the shared `app.toml` loader, and
+1. Add `web_core`, composition contracts, the shared `app.toml` loader, and
    module-surface loaders while keeping current behaviour intact.
-2. Add `installed_modules` defaults for the current application in `app.toml`
+2. Add `modules` defaults for the current application in `app.toml`
    and adapt runtime settings to consume it.
-3. Adapt model metadata loading and Alembic wiring to derive from installed
+3. Adapt model metadata loading and Alembic wiring to derive from configured
    modules through the same loader.
 4. Convert existing public and identity route registration to `module_routes`.
-5. Add template and static source composition with application-first
-   precedence.
+5. Add template and static source composition with module-order precedence.
 6. Add a collectstatic-style static export service over the composed static
    namespace.
-7. Add context-provider registration and move theme context out of identity
-   route helpers into an application provider.
+7. Add context-provider registration and move reusable theme context out of
+   identity route helpers into the `web_core` module provider.
 8. Move identity routes and default identity templates into `auth_ext`, keeping
    logical paths stable so application overrides continue to work.
-9. Move identity startup wiring behind installed-module composition.
-10. Update validation to inspect installed module surfaces and static export
+9. Move identity startup wiring behind module composition.
+10. Update validation to inspect configured module surfaces and static export
     inputs.
-11. Refresh ADR/spec wording that currently assumes identity templates are
+11. Move `validate` and `runserver` command orchestration into `tools` and
+    discover validation targets from configured module validation surfaces.
+12. Move reusable data modelling, model metadata discovery, migration command
+    orchestration, and Alembic environment support into `data_core`; move
+    module-specific revision history into the owning modules; and remove empty
+    `uniquode` data placeholders.
+13. Move remaining generic configured-route registration and database
+    URL/session helpers out of the host application package, keeping only
+    application-specific health, settings, startup, environment, and validation
+    policy there.
+14. Move reusable envex/app.toml settings-loading mechanics into `web_core`,
+    leaving the concrete application `Settings` class and policy in
+    `uniquode.settings`.
+15. Refresh ADR/spec wording that currently assumes identity templates are
     application-owned.
 
 Rollback is straightforward while route paths and template names remain stable:

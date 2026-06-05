@@ -3,8 +3,9 @@
 ### Requirement: FastAPI Users baseline integration
 The system SHALL use FastAPI Users for the baseline local account lifecycle and
 authentication primitives where they fit the project identity model, with
-reusable identity routes, default identity templates, static assets, and model
-metadata owned by `auth_ext` when that module is installed.
+reusable identity routes, default identity templates, static assets, model
+metadata, and identity migration revisions owned by `auth_ext` when that module
+is installed.
 
 #### Scenario: FastAPI Users dependency is present
 - **WHEN** a developer inspects project runtime dependencies
@@ -20,22 +21,23 @@ metadata owned by `auth_ext` when that module is installed.
 
 #### Scenario: Application includes identity surfaces intentionally
 - **WHEN** the application wants to expose identity pages or APIs
-- **THEN** it includes `auth_ext` in `installed_modules` or enables an
+- **THEN** it includes `auth_ext` in `modules` or enables an
   equivalent explicit integration rather than receiving routes through implicit
   package scanning
 
 #### Scenario: Public-only application can omit identity surfaces
-- **WHEN** the application omits `auth_ext` from `installed_modules`
+- **WHEN** the application omits `auth_ext` from `modules`
 - **THEN** identity routes, identity templates, identity static assets,
-  identity context providers, and identity model metadata are not loaded into
-  that application instance
+  identity context providers, identity model metadata, and identity migration
+  revisions are not loaded into that application instance
 
 #### Scenario: Application keeps product ownership around identity flows
 - **WHEN** FastAPI Users or `auth_ext` provides account lifecycle or
   authentication primitives
 - **THEN** application code still owns account creation policy configuration,
-  email delivery, redirects, layout, theme, product navigation, and
-  application-specific error handling around those flows
+  email delivery, redirects, product navigation, and application-specific error
+  handling around those flows, while layout and theme defaults come from the
+  composed web foundation or a host override
 
 #### Scenario: Application can override identity templates
 - **WHEN** the application supplies a template at the same logical path as an

@@ -3,22 +3,27 @@
 ### Requirement: Standalone addon package
 The system SHALL introduce `fastapi-users-auth-ext` as a standalone FastAPI
 Users addon that is independent of the `uniquode` application while allowing
-the addon to publish optional installed-module surfaces.
+the addon to publish optional configured-module surfaces.
 
 #### Scenario: Addon does not import application code
 - **WHEN** a developer inspects the addon package
 - **THEN** it does not import from `uniquode` or depend on application settings,
   models, route modules, templates, static assets, or product context providers
 
-#### Scenario: Addon may depend on `web_ext` contracts
-- **WHEN** the addon publishes installed-module surfaces
-- **THEN** it may depend on `web_ext` contracts rather than importing the
+#### Scenario: Addon may depend on `web_core` contracts
+- **WHEN** the addon publishes configured-module surfaces
+- **THEN** it may depend on `web_core` contracts rather than importing the
   `uniquode` application package
 
 #### Scenario: Addon can publish model metadata
 - **WHEN** the addon owns reusable identity persistence models
-- **THEN** those models are exposed through the installed-module model metadata
+- **THEN** those models are exposed through the configured-module model metadata
   convention rather than through an application-owned model list
+
+#### Scenario: Addon can publish migration revisions
+- **WHEN** the addon owns reusable identity persistence models
+- **THEN** migration revisions for those models are bundled alongside the addon
+  and included only when the addon module is configured
 
 #### Scenario: Addon can publish package templates
 - **WHEN** the addon owns reusable identity page or partial defaults
@@ -52,13 +57,13 @@ integration points.
 
 #### Scenario: Addon publishes identity route module
 - **WHEN** the addon provides reusable identity pages, partials, or APIs
-- **THEN** it exposes them through a host-installed module route surface rather
+- **THEN** it exposes them through a configured module route surface rather
   than by mutating the host application automatically
 
 #### Scenario: Addon can be omitted from composition
-- **WHEN** the host application omits `auth_ext` from `installed_modules`
-- **THEN** the addon contributes no models, routes, templates, static assets, or
-  context providers to that application instance
+- **WHEN** the host application omits `auth_ext` from `modules`
+- **THEN** the addon contributes no models, migration revisions, routes,
+  templates, static assets, or context providers to that application instance
 
 ### Requirement: UI-independent flows
 The addon SHALL avoid imposing product UI assumptions while allowing reusable
@@ -73,7 +78,7 @@ application.
 #### Scenario: Addon templates do not own product shell
 - **WHEN** the addon ships default identity templates
 - **THEN** those templates render identity content and forms without owning
-  application theme, branding, product navigation, or layout chrome
+  web foundation theme defaults, branding, product navigation, or layout chrome
 
 #### Scenario: Application can override addon templates
 - **WHEN** the application supplies a template at the same logical path as an
