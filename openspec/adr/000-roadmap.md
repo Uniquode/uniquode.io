@@ -29,9 +29,11 @@ The roadmap should stay aligned with accepted and provisional ADRs, OpenSpec cha
 - The current identity direction is local-account-first, using FastAPI Users for baseline local account lifecycle work and reserving linked external identities.
 - The current advanced-authentication direction is a standalone `fastapi-users-auth-ext` addon for TOTP, WebAuthn/passkeys, recovery codes, and MFA challenge flows.
 - The current access-control direction is group-, flag-, and scope-aware authorisation for pages, APIs, and admin surfaces.
-- The current internal OAuth2 provider direction is a deferred `auth_provider`
-  package boundary built as an Authlib integration layer, with RS256/JWKS for
-  JWT access and ID tokens and opaque server-stored refresh tokens by default.
+- The current internal OAuth2 provider direction is deferred until a concrete
+  API, federation, or delegated-access requirement exists. ADR 0007 reserves
+  `auth_provider` as the future package name and Authlib integration direction,
+  with RS256/JWKS for JWT access and ID tokens and opaque server-stored refresh
+  tokens by default.
 
 The next immediate implementation item is the identity foundation slice.
 
@@ -77,8 +79,9 @@ The next immediate implementation item is the identity foundation slice.
 ### 6. API and OAuth2
 
 - Establish API token support for machine access.
-- Implement the internal `auth_provider` package boundary as an Authlib
-  integration layer when local users and authorisation scopes are ready.
+- Reintroduce the internal `auth_provider` package boundary as an Authlib
+  integration layer only when local users, authorisation scopes, and a concrete
+  provider use case are ready.
 - Keep provider enablement and public mount path host-owned, with issuer,
   audience, clients, scopes, consent, grants, token storage, and signing keys
   supplied by configuration or host interfaces.
@@ -111,8 +114,8 @@ The next immediate implementation item is the identity foundation slice.
 - Whether user-defined flags should exist only on groups or also directly on users.
 - Which external provider should be implemented first.
 - Whether TOTP or WebAuthn/passkeys should be the first concrete feature in `fastapi-users-auth-ext`.
-- Which Authlib primitives are sufficient for the later internal
-  `auth_provider` implementation.
+- Which Authlib primitives are sufficient for a later internal `auth_provider`
+  implementation, if one is required.
 - Whether the first OAuth provider implementation should support OAuth2 only or
   include OIDC discovery and ID tokens immediately.
 - Whether public pages need content-management features early or can begin as static templates backed by application services.

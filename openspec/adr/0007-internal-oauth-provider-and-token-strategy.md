@@ -21,17 +21,18 @@ The provider must be reusable and FastAPI-oriented, but it must not depend on
 
 ## Decision
 
-Use `auth_provider` as the Python import package for the internal provider
-boundary. Use this name consistently when referring to the code and module
-boundary.
+Reserve `auth_provider` as the Python import package name for any future
+internal provider boundary. Do not keep a concrete package shell in the source
+tree until an API, federation, or delegated-access requirement needs runtime
+provider code.
 
 If prepared for publication, use `fastapi-oauth-provider` as the distribution
 name. This reflects the FastAPI routing/runtime target without implying a hard
 dependency on FastAPI Users or `auth_ext`.
 
-Keep `auth_provider` as a sibling package to `auth_ext`. The host application
-composes both packages and adapts identity/session state into provider
-interfaces where required.
+When implemented, keep `auth_provider` as a sibling package to `auth_ext`. The
+host application composes both packages and adapts identity/session state into
+provider interfaces where required.
 
 Make provider route exposure host-controlled. The host decides whether the
 provider is enabled and where it is mounted. The provider defines routes
@@ -78,8 +79,13 @@ quarantine the token family so callers cannot continue rotating stolen tokens.
 
 ## Consequences
 
-Keeping `auth_provider` separate avoids coupling delegated authorisation and
-token issuance to identity lifecycle and advanced-authentication concerns.
+Keeping any future `auth_provider` implementation separate avoids coupling
+delegated authorisation and token issuance to identity lifecycle and
+advanced-authentication concerns.
+
+Removing the unused package shell keeps the current codebase requirement-driven.
+The trade-off is that provider contracts must be recreated from this ADR and the
+then-current API requirements when provider work resumes.
 
 The provider can be reused by FastAPI applications that do not use FastAPI
 Users, while `uniquode` can still adapt `auth_ext` sessions into provider
@@ -122,7 +128,8 @@ operational safety margins.
 ## Follow-Up Work
 
 - Define `auth_provider` protocol/dataclass interfaces for subjects, clients,
-  grants, tokens, consent, scopes, audiences, and signing keys.
+  grants, tokens, consent, scopes, audiences, and signing keys when provider
+  runtime work resumes.
 - Define host settings for provider enablement, issuer, and mount path.
 - Define authorisation scope policy in the authorisation model.
 - Add Authlib when runtime OAuth2/OIDC endpoint implementation begins.
@@ -133,3 +140,7 @@ operational safety margins.
 
 - 2026-05-29: Clarified that future `auth_provider.models` follows the shared
   SQLAlchemy model-package and Alembic metadata export convention.
+- 2026-06-05: Removed the unused concrete `auth_provider` package shell under
+  YAGNI; the package name and token strategy remain reserved for future
+  provider work when a concrete API, federation, or delegated-access
+  requirement exists.

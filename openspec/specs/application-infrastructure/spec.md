@@ -107,13 +107,13 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
   configured modules and reads their exported `metadata` objects
 
 #### Scenario: Optional package models are explicit
-- **WHEN** optional packages such as `auth_ext` or future `auth_provider` provide SQLAlchemy models
+- **WHEN** optional reusable packages provide SQLAlchemy models
 - **THEN** their model metadata is included in migrations only when the host
   application explicitly enables that package module
 
 #### Scenario: Module migration revisions are explicit
-- **WHEN** optional packages such as `auth_ext` or future `auth_provider`
-  provide SQLAlchemy models and migration revisions
+- **WHEN** optional reusable packages provide SQLAlchemy models and migration
+  revisions
 - **THEN** their migration version locations are included only when the host
   application explicitly enables that package module
 

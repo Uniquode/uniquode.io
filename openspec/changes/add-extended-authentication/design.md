@@ -15,7 +15,7 @@ authentication features while keeping `auth_ext` reusable and host-controlled.
 
 Third-party OAuth in this change means OAuth/OIDC client login to external
 providers such as Google, Apple, GitHub, Facebook, and LinkedIn. It is separate
-from the future internal OAuth2/OIDC provider boundary recorded in ADR 0007.
+from any future internal OAuth2/OIDC provider work.
 
 ## Goals / Non-Goals
 

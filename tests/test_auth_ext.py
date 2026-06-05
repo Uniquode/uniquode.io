@@ -101,7 +101,7 @@ class MemoryChallengeStore:
 def test_auth_ext_package_is_independent_from_application_modules() -> None:
     source_root = Path(__file__).resolve().parents[1] / "src"
 
-    for package_name in ("auth_ext", "auth_provider"):
+    for package_name in ("auth_ext",):
         for path in (source_root / package_name).rglob("*.py"):
             tree = ast.parse(path.read_text(), filename=str(path))
             imported_modules = {
