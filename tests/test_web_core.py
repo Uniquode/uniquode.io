@@ -12,7 +12,7 @@ from envex import Env
 from fastapi import FastAPI, Request
 from fastapi.responses import Response
 from fastapi.routing import APIRouter
-from jinja2 import Environment
+from jinja2 import Environment, select_autoescape
 from jinja2.exceptions import TemplateNotFound
 
 from web_core.composition import (
@@ -674,7 +674,10 @@ def test_template_sources_from_modules_use_reverse_module_precedence(
     sources = template_sources_from_modules(
         ("base_template_app", "override_template_app")
     )
-    environment = Environment(loader=build_template_loader(template_sources=sources))
+    environment = Environment(
+        loader=build_template_loader(template_sources=sources),
+        autoescape=select_autoescape(("html", "xml")),
+    )
 
     assert sources == (
         PackageResourceSource(package="override_template_app", directory="templates"),
@@ -813,7 +816,10 @@ def test_composed_template_loader_uses_standard_missing_template_behaviour(
     importlib.invalidate_caches()
 
     sources = template_sources_from_modules(("template_missing_app",))
-    environment = Environment(loader=build_template_loader(template_sources=sources))
+    environment = Environment(
+        loader=build_template_loader(template_sources=sources),
+        autoescape=select_autoescape(("html", "xml")),
+    )
 
     with pytest.raises(TemplateNotFound, match="missing.html"):
         environment.get_template("missing.html")

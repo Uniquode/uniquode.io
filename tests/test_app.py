@@ -4216,6 +4216,65 @@ def test_theme_mode_route_redirects_without_htmx() -> None:
     assert "HttpOnly" in response.headers["set-cookie"]
 
 
+@pytest.mark.parametrize(
+    "return_to",
+    [
+        "https://evil.example/theme",
+        "//evil.example/theme",
+        "/\\evil.example/theme",
+    ],
+)
+def test_theme_mode_route_normalises_unsafe_redirect_return_to(
+    return_to: str,
+) -> None:
+    client = TestClient(create_app(), follow_redirects=False)
+    home_page = client.get("/")
+
+    response = client.post(
+        "/partials/theme-mode",
+        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
+    )
+
+    assert response.status_code == 303
+    assert response.headers["location"] == "/"
+    assert response.cookies["theme_mode"] == "dark"
+
+
+def test_theme_mode_route_normalises_unsafe_htmx_return_to() -> None:
+    client = TestClient(create_app())
+    home_page = client.get("/")
+    return_to = "https://evil.example/theme"
+
+    response = client.post(
+        "/partials/theme-mode",
+        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
+        headers={"HX-Request": "true"},
+    )
+
+    assert response.status_code == 200
+    assert return_to not in response.text
+    assert 'name="return_to" value="/"' in response.text
+    assert response.cookies["theme_mode"] == "dark"
+
+
+def test_theme_mode_route_handles_malformed_form_body_with_csrf_header() -> None:
+    client = TestClient(create_app(), raise_server_exceptions=False)
+    home_page = client.get("/")
+
+    response = client.post(
+        "/partials/theme-mode",
+        content=b"--broken\r\nnot-form-data",
+        headers={
+            "HX-Request": "true",
+            CSRF_HEADER_NAME: csrf_token_from(home_page),
+            "content-type": "multipart/form-data; boundary=broken",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.cookies["theme_mode"] == "auto"
+
+
 def test_theme_mode_route_requires_csrf() -> None:
     client = TestClient(create_app())
 
