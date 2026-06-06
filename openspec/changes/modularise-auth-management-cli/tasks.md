@@ -1,11 +1,11 @@
 ## 1. Package Boundary
 
-- [ ] 1.1 Inventory current direct imports from `auth_ext.identitymgr` in tests
+- [ ] 1.1 Inventory current direct imports from `wevra.auth.cli.identitymgr` in tests
   and project code.
-- [ ] 1.2 Create the `src/auth_ext/identitymgr/` package structure with
+- [ ] 1.2 Create the `src/wevra/auth/cli/identitymgr/` package structure with
   `__init__.py` exporting `main` and intentionally supported helper names.
 - [ ] 1.3 Move the current CLI module into the package without changing runtime
-  behaviour, keeping `identitymgr = "auth_ext.identitymgr:main"` working.
+  behaviour, keeping `identitymgr = "wevra.auth.cli.identitymgr:main"` working.
 - [ ] 1.4 Remove the old single-file module once package import compatibility is
   confirmed.
 
@@ -37,9 +37,9 @@
 
 ## 4. Behaviour Preservation Tests
 
-- [ ] 4.1 Add or update tests that confirm `auth_ext.identitymgr:main` remains
+- [ ] 4.1 Add or update tests that confirm `wevra.auth.cli.identitymgr:main` remains
   the project script entry point.
-- [ ] 4.2 Add or update tests that confirm `auth_ext.identitymgr` exports
+- [ ] 4.2 Add or update tests that confirm `wevra.auth.cli.identitymgr` exports
   `main` and required helper names after the package split.
 - [ ] 4.3 Add or update tests that confirm root, user, group, and scope command
   help output remains stable.

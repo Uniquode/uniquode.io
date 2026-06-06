@@ -145,7 +145,7 @@ The system SHALL provide an initial validation surface for the web foundation th
 
 #### Scenario: Web validation is contributed by web core
 - **WHEN** web-structure validation is discovered
-- **THEN** reusable web checks are contributed by `web_core.validation` rather
+- **THEN** reusable web checks are contributed by `wevra.web.validation` rather
   than by the host application package
 
 #### Scenario: Broken references fail validation

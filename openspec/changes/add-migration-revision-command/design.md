@@ -5,7 +5,7 @@ migration application already discovers configured module version locations and
 Alembic applies revisions according to the graph declared by `revision`,
 `down_revision`, and `depends_on`.
 
-The remaining gap is revision creation. `data_core.migrate` currently exposes
+The remaining gap is revision creation. `wevra.db.migrate` currently exposes
 `upgrade`, `downgrade`, `current`, and `history`, but not Alembic's revision
 generation operation. With multiple module-owned version locations, raw
 Alembic generation requires developers to remember the correct `version_path`
@@ -43,7 +43,7 @@ revision depends on another module's head.
 `migrate revision` should require an owning configured module:
 
 ```text
-uv run migrate revision --module auth_ext -m "add identity table"
+uv run migrate revision --module wevra.auth -m "add identity table"
 ```
 
 The command resolves the module's conventional version directory from the
@@ -61,7 +61,7 @@ files through this project command.
 Alternative considered: infer placement from the selected Alembic head. That
 matches one Alembic behaviour when multiple version locations exist, but it
 conflates graph order with schema ownership. A `uniquode` revision that depends
-on an `auth_ext` revision should still live under `uniquode` when it changes
+on an `wevra.auth` revision should still live under `uniquode` when it changes
 `uniquode` tables.
 
 ### Delegate Revision Generation To Alembic

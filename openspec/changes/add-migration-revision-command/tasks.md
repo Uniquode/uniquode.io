@@ -1,6 +1,6 @@
 ## 1. Revision Placement Helpers
 
-- [ ] 1.1 Add a `data_core` helper that resolves a configured module's
+- [ ] 1.1 Add a `wevra.db` helper that resolves a configured module's
   conventional `migrations/versions/` path from the module package location.
 - [ ] 1.2 Ensure the helper rejects missing or unconfigured modules clearly
   before revision generation attempts to write files.
@@ -9,7 +9,7 @@
 
 ## 2. Migration CLI
 
-- [ ] 2.1 Add `migrate revision` as a Click subcommand under `data_core.migrate`.
+- [ ] 2.1 Add `migrate revision` as a Click subcommand under `wevra.db.migrate`.
 - [ ] 2.2 Require `--module <module>` and `-m/--message` for revision creation.
 - [ ] 2.3 Pass `--autogenerate`, `--head`, `--splice`, `--branch-label`,
   `--depends-on`, and `--rev-id` through to Alembic revision generation.

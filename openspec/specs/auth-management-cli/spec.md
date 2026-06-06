@@ -7,7 +7,7 @@ inspection. The current project command is `identitymgr`; a future command
 rename to `authmgr` requires a separate behaviour change.
 ## Requirements
 ### Requirement: Auth management command
-The system SHALL provide an `auth_ext`-owned CLI script named `identitymgr` for
+The system SHALL provide an `wevra.auth`-owned CLI script named `identitymgr` for
 administrative local identity management, including users, groups, scopes,
 memberships, and effective-scope inspection.
 
@@ -83,7 +83,7 @@ The `identitymgr` command SHALL create local users through a controlled administ
 - **THEN** the command reads one password value from stdin and does not prompt for confirmation
 
 ### Requirement: Password policy
-Local-user password writes SHALL use an injectable `auth_ext` password policy boundary.
+Local-user password writes SHALL use an injectable `wevra.auth` password policy boundary.
 
 #### Scenario: Password strength is available
 - **WHEN** a caller evaluates a password through the configured password policy
@@ -319,7 +319,7 @@ The system SHALL defer API-backed `identitymgr` operation until administrative A
 
 #### Scenario: Initial implementation uses local service mode
 - **WHEN** the first `identitymgr` implementation is delivered
-- **THEN** it operates through `auth_ext` configured services and database access rather than requiring an admin API token or host-specific settings object
+- **THEN** it operates through `wevra.auth` configured services and database access rather than requiring an admin API token or host-specific settings object
 
 #### Scenario: Future API mode requires admin scope
 - **WHEN** a future API-backed mode is introduced

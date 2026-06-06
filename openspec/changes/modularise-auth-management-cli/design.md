@@ -8,7 +8,7 @@ one file of roughly 1,920 lines, which makes future extended-authentication
 commands harder to add without coupling unrelated concerns.
 
 The accepted identity architecture places local identity administration tools
-inside `auth_ext` when they operate on the reusable identity model. The refactor
+inside `wevra.auth` when they operate on the reusable identity model. The refactor
 must preserve that package boundary and the current operator-facing CLI
 contract.
 
@@ -16,8 +16,8 @@ contract.
 
 **Goals:**
 
-- Convert `auth_ext.identitymgr` into a package while preserving
-  `auth_ext.identitymgr:main` as the project-script entry point.
+- Convert `wevra.auth.cli.identitymgr` into a package while preserving
+  `wevra.auth.cli.identitymgr:main` as the project-script entry point.
 - Split root CLI construction, user commands, group commands, scope commands,
   schema checks, output formatting, password-source handling, timestamp parsing,
   and command arguments into focused modules.
@@ -35,13 +35,13 @@ contract.
 - Change operator-facing command syntax, service behaviour, persistence logic,
   schema requirements, output contracts, or password-source semantics.
 - Introduce new extended-authentication commands in this refactor.
-- Extract `auth_ext` into a standalone distribution.
+- Extract `wevra.auth` into a standalone distribution.
 
 ## Decisions
 
-- Turn `src/auth_ext/identitymgr.py` into a package directory named
-  `src/auth_ext/identitymgr/`.
-  - Rationale: Python import resolution supports `auth_ext.identitymgr:main`
+- Turn `src/wevra/auth/cli/identitymgr.py` into a package directory named
+  `src/wevra/auth/cli/identitymgr/`.
+  - Rationale: Python import resolution supports `wevra.auth.cli.identitymgr:main`
     from a package `__init__.py`, so the project script can remain stable while
     implementation modules are split.
   - Alternative considered: keep a shim module next to a differently named
@@ -49,11 +49,11 @@ contract.
     same import target cleanly in one package, and a differently named package
     would make the public boundary less obvious.
 
-- Export `main` from `auth_ext.identitymgr.__init__`.
+- Export `main` from `wevra.auth.cli.identitymgr.__init__`.
   - Rationale: the project script and any direct imports can keep using
-    `auth_ext.identitymgr:main`.
+    `wevra.auth.cli.identitymgr:main`.
   - Alternative considered: update `pyproject.toml` to point at
-    `auth_ext.identitymgr.cli:main`. That is workable but creates unnecessary
+    `wevra.auth.cli.identitymgr.cli:main`. That is workable but creates unnecessary
     project-script churn when the stable entry point can remain unchanged.
 
 - Use explicit `register_*_commands(root_command)` functions for command
@@ -82,7 +82,7 @@ contract.
 
 ## Risks / Trade-offs
 
-- Import compatibility risk -> Preserve `auth_ext.identitymgr:main`, export
+- Import compatibility risk -> Preserve `wevra.auth.cli.identitymgr:main`, export
   helpers intentionally where tests or supported code import them, and run the
   full test suite.
 - Circular import risk -> Keep shared dataclasses and helper APIs in low-level
@@ -96,11 +96,11 @@ contract.
 
 ## Migration Plan
 
-1. Create the `auth_ext.identitymgr` package structure and move the current
+1. Create the `wevra.auth.cli.identitymgr` package structure and move the current
    module contents into focused modules.
 2. Export `main` and supported test-facing helpers from `__init__.py`.
 3. Keep `pyproject.toml` unchanged unless implementation proves a stable
-   `auth_ext.identitymgr:main` export is not viable.
+   `wevra.auth.cli.identitymgr:main` export is not viable.
 4. Run focused auth-management CLI tests during each split step.
 5. Run linting, formatting, type checking, the full test suite, and strict
    OpenSpec validation before handoff.

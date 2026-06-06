@@ -7,15 +7,15 @@ modules.
 
 #### Scenario: Project script remains stable
 - **WHEN** a developer inspects project scripts after the refactor
-- **THEN** `identitymgr` resolves to `auth_ext.identitymgr:main`
+- **THEN** `identitymgr` resolves to `wevra.auth.cli.identitymgr:main`
 
 #### Scenario: Package exports main
-- **WHEN** code imports `auth_ext.identitymgr`
+- **WHEN** code imports `wevra.auth.cli.identitymgr`
 - **THEN** the package exposes a callable `main` entry point equivalent to the
   current CLI entry point
 
 #### Scenario: Existing imports continue to resolve
-- **WHEN** tests or project code import `auth_ext.identitymgr` for CLI helpers
+- **WHEN** tests or project code import `wevra.auth.cli.identitymgr` for CLI helpers
 - **THEN** existing public helper imports used by the test suite continue to
   resolve or are updated through explicit package exports without changing CLI
   behaviour
@@ -52,7 +52,7 @@ The system SHALL split auth-management CLI responsibilities into focused
 modules without adding new runtime dependencies.
 
 #### Scenario: Resource commands are separated
-- **WHEN** a developer inspects the `auth_ext.identitymgr` package
+- **WHEN** a developer inspects the `wevra.auth.cli.identitymgr` package
 - **THEN** user, group, and scope command registration live in separate modules
   or subpackages from the root CLI construction
 
@@ -69,5 +69,5 @@ modules without adding new runtime dependencies.
 
 #### Scenario: Host application boundary is preserved
 - **WHEN** the package split is complete
-- **THEN** `auth_ext.identitymgr` modules continue to avoid imports from
+- **THEN** `wevra.auth.cli.identitymgr` modules continue to avoid imports from
   `uniquode` application code

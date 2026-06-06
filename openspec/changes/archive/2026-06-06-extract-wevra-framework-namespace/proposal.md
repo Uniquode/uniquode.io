@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-217](https://linear.app/uniquode/issue/UT-217/extract-wevra-framework-namespace)
+
 Reusable web, data, settings, tooling, and auth infrastructure has been split
 out of `uniquode`, but it still lives in temporary top-level packages. Before
 the project exposes much application-specific behaviour, we should capture the
@@ -7,8 +9,7 @@ planned move into the named `wevra` framework namespace.
 
 ## What Changes
 
-- **BREAKING** Replace reusable top-level packages such as `web_core`,
-  `data_core`, `tools`, and reusable auth infrastructure with explicit
+- **BREAKING** Replace the temporary reusable top-level packages with explicit
   `wevra.*` packages after the current boundary separation is reviewed.
 - Keep `uniquode` focused on the concrete application and its policy, settings,
   health route, and application-specific validation.

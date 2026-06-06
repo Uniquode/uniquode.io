@@ -7,11 +7,11 @@ already states that password success is not necessarily final login completion:
 TOTP, WebAuthn/passkeys, recovery codes, and external providers can all be
 steps in the ceremony before a browser session is issued.
 
-The current `auth_ext` package also contains placeholder modules and protocols
+The current `wevra.auth` package also contains placeholder modules and protocols
 for challenges, TOTP credentials, WebAuthn credentials, and recovery codes.
 Those are not yet concrete product capabilities. This change defines the
 sub-specs needed to turn those reserved extension points into implementable
-authentication features while keeping `auth_ext` reusable and host-controlled.
+authentication features while keeping `wevra.auth` reusable and host-controlled.
 
 Third-party OAuth in this change means OAuth/OIDC client login to external
 providers such as Google, Apple, GitHub, Facebook, and LinkedIn. It is separate
@@ -29,7 +29,7 @@ from any future internal OAuth2/OIDC provider work.
   issuance boundary.
 - Keep `is_active` and effective expiry checks as global eligibility gates for
   extended authentication.
-- Define storage and service contracts in `auth_ext`, with optional adapters
+- Define storage and service contracts in `wevra.auth`, with optional adapters
   behind the existing model-package and migration conventions.
 - Keep host applications in control of feature enablement, product policy,
   templates, delivery, provider configuration, and route inclusion.
@@ -85,7 +85,7 @@ Google and GitHub without enabling Facebook or LinkedIn.
 
 ### Use Package-Owned Stores With Optional ORM Adapters
 
-`auth_ext` should define stores for:
+`wevra.auth` should define stores for:
 
 - challenge state;
 - TOTP credentials;
@@ -95,9 +95,9 @@ Google and GitHub without enabling Facebook or LinkedIn.
 
 The core services should depend on these protocols rather than direct
 SQLAlchemy sessions where practical. SQLAlchemy ORM models can be supplied by
-`auth_ext.models` under the existing model-package metadata convention.
+`wevra.auth.models` under the existing model-package metadata convention.
 
-This keeps `auth_ext` reusable while still allowing this application to use the
+This keeps `wevra.auth` reusable while still allowing this application to use the
 default SQLAlchemy adapter.
 
 ### Store Sensitive Credential Material Safely
@@ -166,7 +166,7 @@ for audit or account-protection policy.
 
 Dependency decision: add a WebAuthn library only when this capability is
 implemented. The design assumes a maintained library will perform protocol
-verification; `auth_ext` should not hand-roll WebAuthn cryptography.
+verification; `wevra.auth` should not hand-roll WebAuthn cryptography.
 
 ### Third-Party OAuth Is Client Login, Not Internal Provider Work
 
@@ -197,13 +197,13 @@ applicable, and provider-specific claim mapping.
 Dependency decision: Authlib is the likely OAuth/OIDC client implementation,
 but it should be added only when concrete provider runtime code uses it.
 FastAPI Users OAuth integrations can be reused where they fit, but the local
-ceremony, linking policy, and canonical-user semantics remain `auth_ext`
+ceremony, linking policy, and canonical-user semantics remain `wevra.auth`
 responsibilities.
 
 ### Route And Template Ownership Follows Module Web Composition
 
 Extended authentication routes and default identity templates belong to
-`auth_ext`, but the application decides which route modules are enabled and can
+`wevra.auth`, but the application decides which route modules are enabled and can
 override templates by logical path. This depends on the module route/context/
 template handling change and should avoid building host-owned identity pages
 for these flows.
