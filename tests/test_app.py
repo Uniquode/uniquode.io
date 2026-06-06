@@ -56,6 +56,9 @@ from wevra.auth.models import (
 from wevra.auth.models import (
     metadata as wevra_auth_metadata,
 )
+from wevra.auth.options import (
+    DEFAULT_SESSION_COOKIE_NAME as WEVRA_DEFAULT_SESSION_COOKIE_NAME,
+)
 from wevra.auth.options import IdentityOptions
 from wevra.auth.sessions import (
     create_authentication_backend,
@@ -1297,6 +1300,42 @@ def test_settings_include_identity_options() -> None:
     assert options.token_secrets_configured is False
     assert options.integration_enabled("oauth-account-linking") is False
     assert options.integration_enabled("advanced-authentication") is False
+
+
+def test_settings_default_identity_session_cookie_name_is_app_specific() -> None:
+    settings = Settings()
+
+    assert IdentityOptions().session_cookie_name == WEVRA_DEFAULT_SESSION_COOKIE_NAME
+    assert settings.identity_options.session_cookie_name == "uniquode_session"
+    assert (
+        settings.identity_options.session_cookie_name
+        != WEVRA_DEFAULT_SESSION_COOKIE_NAME
+    )
+
+
+def test_settings_preserves_explicit_identity_session_cookie_name() -> None:
+    settings = Settings(
+        identity_options=IdentityOptions(session_cookie_name="custom_session"),
+    )
+
+    assert settings.identity_options.session_cookie_name == "custom_session"
+
+
+def test_load_settings_uses_app_identity_session_cookie_default_with_identity_env(
+    tmp_path,
+) -> None:
+    settings = load_settings(
+        environ={ENV_SESSION_LIFETIME: "3600"},
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.identity_options.session_lifetime_seconds == 3600
+    assert settings.identity_options.session_cookie_name == "uniquode_session"
+    assert (
+        settings.identity_options.session_cookie_name
+        != WEVRA_DEFAULT_SESSION_COOKIE_NAME
+    )
 
 
 def test_identity_options_accept_public_signup_policy() -> None:
