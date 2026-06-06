@@ -18,7 +18,7 @@ dependencies = [
     "fastapi-users[sqlalchemy]>=15.0.5",
     "jinja2>=3.1.6",
     "sqlalchemy[asyncio]>=2.0.50",
-    "uvicorn>=0.48.0",
+    "uvicorn>=0.49.0",
 ]
 
 [project.scripts]
@@ -47,8 +47,8 @@ dev = [
     "httpx>=0.28.1",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
-    "ruff>=0.15.15",
-    "ty>=0.0.42",
+    "ruff>=0.15.16",
+    "ty>=0.0.44",
 ]
 
 [tool.ruff]
