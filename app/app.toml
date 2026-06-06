@@ -1,0 +1,16 @@
+modules = [
+  "app",
+  "wevra.web",
+  "wevra.auth",
+]
+
+[routes]
+"wevra.auth" = "/"
+
+[templates]
+auto_reload = true
+cache_size = 0
+
+[static]
+url_path = "/static/"
+export_root = "static"

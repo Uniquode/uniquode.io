@@ -22,19 +22,26 @@ repos:
 
   - repo: local
     hooks:
-      - id: ty
-        name: ty type checker
-        entry: uv run ty check src/
+      - id: ty-app
+        name: ty type checker app
+        entry: uv --directory app run ty check src/
         language: system
         pass_filenames: false
         types: [python]
 
-      - id: pytest
-        name: pytest
-        entry: uv run pytest
+      - id: pytest-app
+        name: pytest app
+        entry: uv --directory app run pytest -q
         language: system
         pass_filenames: false
         types: [python]
+
+      - id: validate-app
+        name: validate app
+        entry: uv --directory app run validate
+        language: system
+        pass_filenames: false
+        always_run: true
 
   - repo: https://github.com/deeprave/osvcheck
     rev: v1.2.2
@@ -50,11 +57,11 @@ repos:
     rev: "1.9.4"
     hooks:
       - id: bandit
-        args: ["-ll", "-r", "src/"]
-        exclude: ^tests/
+        args: ["-ll", "-r", "app/src/"]
+        exclude: ^app/tests/
 
   - repo: https://github.com/jendrikseipp/vulture
     rev: v2.16
     hooks:
       - id: vulture
-        args: ["src", "vulture_whitelist.py"]
+        args: ["app/src", "app/vulture_whitelist.py"]

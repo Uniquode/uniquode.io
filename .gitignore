@@ -1,8 +1,12 @@
+# Local workflow/tool state
 .todo
 .claude
 .codex
 .kiro
 .qwen
+.guide.yaml
+.openspec-*.*
+.idea
 
 # Python
 __pycache__/
@@ -27,7 +31,5 @@ build/
 *.sqlite3
 *.db
 
-
-.guide.yaml
-.openspec-*.*
-.idea
+# Manually managed member checkouts
+/wevra/

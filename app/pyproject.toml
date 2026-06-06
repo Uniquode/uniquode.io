@@ -1,0 +1,56 @@
+[project]
+name = "app"
+version = "0.1.0"
+description = "FastAPI based website for app.io"
+authors = [
+    { name = "David Nugent", email = "davidn@app.io" }
+]
+requires-python = ">=3.13"
+dependencies = [
+    "envex>=5.0.0",
+    "fastapi>=0.136.3",
+    "starlette>=0.50.0",
+    "wevra",
+]
+
+[project.scripts]
+migrate = "wevra.tools.migrate:main"
+runserver = "wevra.tools.runserver:main"
+identitymgr = "wevra.auth.cli.identitymgr:main"
+validate = "wevra.tools.validate:main"
+
+[build-system]
+requires = ["uv_build>=0.11.18,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = ["app"]
+
+[tool.wevra]
+settings_loader = "app.settings:load_settings"
+configuration_error = "app.configuration:ConfigurationError"
+environment_loader = "app.environment:load_environment"
+database_url_env = "DATABASE_URL"
+runserver_reload_env = "APP_RELOAD"
+runserver_app = "app.asgi:app"
+
+[dependency-groups]
+dev = [
+    "httpx>=0.28.1",
+    "pre-commit>=4.6.0",
+    "pytest>=9.0.3",
+    "ruff>=0.15.15",
+    "ty>=0.0.42",
+]
+
+[tool.ruff]
+line-length = 88
+src = ["src", "tests"]
+target-version = "py313"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]

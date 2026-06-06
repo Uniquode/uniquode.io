@@ -15,19 +15,3 @@ updates:
         applies-to: "security-updates"
         patterns:
           - "*"
-
-  - package-ecosystem: "uv"
-    directory: "/"
-    schedule:
-      interval: "daily"
-    groups:
-      python-minor-and-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
-      python-security:
-        applies-to: "security-updates"
-        patterns:
-          - "*"

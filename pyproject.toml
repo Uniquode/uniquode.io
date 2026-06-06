@@ -1,46 +1,12 @@
 [project]
 name = "uniquode"
 version = "0.1.0"
-description = "FastAPI based website for uniquode.io"
-authors = [
-    { name = "David Nugent", email = "davidn@uniquode.io" }
-]
+description = "Local uv workspace for coordinated Uniquode and Wevra development"
 requires-python = ">=3.13"
 dependencies = [
-    "aiosqlite>=0.22.1",
-    "alembic>=1.18.4",
-    "asyncpg>=0.31.0",
-    "click>=8.4.1",
-    "dateparser>=1.4.0",
-    "dbscripts",
-    "envex>=5.0.0",
-    "fastapi>=0.136.3",
-    "fastapi-users[sqlalchemy]>=15.0.5",
-    "jinja2>=3.1.6",
-    "sqlalchemy[asyncio]>=2.0.50",
-    "uvicorn>=0.48.0",
+    "app",
+    "wevra",
 ]
-
-[project.scripts]
-migrate = "wevra.tools.migrate:main"
-runserver = "wevra.tools.runserver:main"
-identitymgr = "wevra.auth.cli.identitymgr:main"
-validate = "wevra.tools.validate:main"
-
-[build-system]
-requires = ["uv_build>=0.11.18,<0.12.0"]
-build-backend = "uv_build"
-
-[tool.uv.build-backend]
-module-name = ["uniquode", "wevra"]
-
-[tool.wevra]
-settings_loader = "uniquode.settings:load_settings"
-configuration_error = "uniquode.configuration:ConfigurationError"
-environment_loader = "uniquode.environment:load_environment"
-database_url_env = "DATABASE_URL"
-runserver_reload_env = "APP_RELOAD"
-runserver_app = "uniquode.asgi:app"
 
 [dependency-groups]
 dev = [
@@ -51,17 +17,26 @@ dev = [
     "ty>=0.0.42",
 ]
 
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+app = { workspace = true }
+wevra = { workspace = true }
+
+[tool.uv.workspace]
+members = [
+    "app",
+    "wevra",
+]
+
 [tool.ruff]
 line-length = 88
-src = ["src", "tests"]
+src = [
+    "app/src",
+    "app/tests",
+]
 target-version = "py313"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B"]
-
-[tool.pytest.ini_options]
-testpaths = ["tests"]
-pythonpath = ["src"]
-
-[tool.uv.sources]
-dbscripts = { git = "https://github.com/deeprave/dbscripts" }

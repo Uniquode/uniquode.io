@@ -76,4 +76,3 @@ behaviour.
 - **WHEN** a developer runs `uv run migrate upgrade --database-url <url>`
 - **THEN** the supplied database URL is used for that migration command instead
   of the configured default
-
