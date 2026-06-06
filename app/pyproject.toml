@@ -1,9 +1,9 @@
 [project]
 name = "app"
 version = "0.1.0"
-description = "FastAPI based website for app.io"
+description = "FastAPI based website for uniquode.io"
 authors = [
-    { name = "David Nugent", email = "davidn@app.io" }
+    { name = "David Nugent", email = "davidn@uniquode.io" }
 ]
 requires-python = ">=3.13"
 dependencies = [
