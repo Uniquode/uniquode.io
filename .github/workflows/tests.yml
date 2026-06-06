@@ -13,6 +13,12 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
+      - name: Check out temporary Wevra dependency source
+        uses: actions/checkout@v6
+        with:
+          repository: Uniquode/wevra
+          path: wevra
+
       - name: Install uv
         uses: astral-sh/setup-uv@v8.1.0
         with:
@@ -24,16 +30,16 @@ jobs:
           python-version-file: pyproject.toml
 
       - name: Install dependencies
-        run: uv sync --locked --dev
+        run: uv sync --locked --package app --group dev
 
       - name: Check formatting
-        run: uv run ruff format --check
+        run: uv run ruff format --check app/src app/tests
 
       - name: Lint
-        run: uv run ruff check
+        run: uv run ruff check app/src app/tests
 
       - name: Type check
-        run: uv run ty check src/
+        run: uv --directory app run ty check src/
 
       - name: Test
-        run: uv run pytest
+        run: uv --directory app run pytest -q
