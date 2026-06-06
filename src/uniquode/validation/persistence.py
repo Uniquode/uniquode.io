@@ -1,24 +1,24 @@
-from data_core.database_urls import parse_sqlite_database_url, redact_database_url
-from data_core.persistence import (
-    is_memory_database_url,
-    is_supported_database_url,
-)
-from data_core.surfaces import (
-    DataCompositionError,
-    migration_version_locations_from_modules,
-    model_packages_from_modules,
-)
-from tools.validation.core import (
-    ValidationCheck,
-    ValidationResult,
-    read_text_for_validation,
-    record_check,
-)
 from uniquode.settings import (
     DEFAULT_DATABASE_FILE,
     DEFAULT_DATABASE_URL,
     SQLITE_MEMORY_DATABASE_URL,
     Settings,
+)
+from wevra.db.persistence import (
+    is_memory_database_url,
+    is_supported_database_url,
+)
+from wevra.db.surfaces import (
+    DataCompositionError,
+    migration_version_locations_from_modules,
+    model_packages_from_modules,
+)
+from wevra.db.urls import parse_sqlite_database_url, redact_database_url
+from wevra.tools.validation.core import (
+    ValidationCheck,
+    ValidationResult,
+    read_text_for_validation,
+    record_check,
 )
 
 
@@ -158,7 +158,7 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                 description="Alembic migration revision exists",
                 error="At least one Alembic migration revision is required.",
             )
-            if has_revision_files and "auth_ext" in settings.modules:
+            if has_revision_files and "wevra.auth" in settings.modules:
                 revision_contents = [
                     content
                     for path in revision_files

@@ -8,8 +8,8 @@ from typing import Final, cast
 from envex import Env
 
 from uniquode.configuration import ConfigurationError
-from web_core.composition import APP_CONFIG_ENV
-from web_core.settings import EnvironmentSetting
+from wevra.core.composition import APP_CONFIG_ENV
+from wevra.core.settings import EnvironmentSetting
 
 ENV_ACCOUNT_CREATION_POLICY: Final = "ACCOUNT_CREATION_POLICY"
 ENV_ADVANCED_AUTH: Final = "ADVANCED_AUTH"

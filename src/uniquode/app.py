@@ -6,29 +6,29 @@ from fastapi.responses import Response
 from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp
 
-from data_core.persistence import close_database, create_database
 from uniquode.routes import register_routes
 from uniquode.settings import Settings, load_settings
-from web_core.context import (
+from wevra.core.resources import PackageResourceSource
+from wevra.db.persistence import close_database, create_database
+from wevra.web.context import (
     resolve_context_providers,
     set_request_context,
     validate_context_providers,
 )
-from web_core.csrf import CsrfProtector
-from web_core.dispatcher import HtmlDispatcher
-from web_core.errors import ErrorHandlerOptions, register_error_handlers
-from web_core.renderer import (
+from wevra.web.errors import ErrorHandlerOptions, register_error_handlers
+from wevra.web.forms.csrf import CsrfProtector
+from wevra.web.rendering import (
     RESERVED_TEMPLATE_CONTEXT_KEYS,
     TemplateRenderer,
 )
-from web_core.resources import PackageResourceSource
-from web_core.route_contract import API_PATH_PREFIX
-from web_core.static import ComposedStaticFiles, NoStaticFiles
-from web_core.surfaces import (
+from wevra.web.routes.contracts import API_PATH_PREFIX
+from wevra.web.routes.discovery import (
     context_providers_from_modules,
     static_sources_from_modules,
     template_sources_from_modules,
 )
+from wevra.web.routes.dispatcher import HtmlDispatcher
+from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
 
 
 @asynccontextmanager
@@ -110,8 +110,8 @@ def _identity_enabled(settings: Settings) -> bool:
 
 
 def _configure_identity(app: FastAPI, settings: Settings) -> None:
-    from auth_ext.delivery import NullIdentityDelivery
-    from auth_ext.sessions import create_fastapi_users
+    from wevra.auth.delivery import NullIdentityDelivery
+    from wevra.auth.sessions import create_fastapi_users
 
     app.state.identity_options = settings.identity_options
     app.state.identity_delivery = NullIdentityDelivery()
