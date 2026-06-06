@@ -58,7 +58,7 @@
 ## 5. Update Paths, Docs, And OpenSpec
 
 - [x] 5.1 Update README and local development documentation to explain the
-  adjacent `src` and `wevra` checkout shape inside `uniquode`.
+  adjacent `app` and `wevra` checkout shape inside `uniquode`.
 - [x] 5.2 Keep OpenSpec artifacts in `uniquode` and update live references that
   describe `wevra` as application-local source.
 - [x] 5.3 Update validation/test path assumptions that point at
