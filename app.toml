@@ -1,12 +1,11 @@
 modules = [
-  "web_core",
-  "public",
   "uniquode",
-  "auth_ext",
+  "wevra.web",
+  "wevra.auth",
 ]
 
 [routes]
-auth_ext = "/"
+"wevra.auth" = "/"
 
 [templates]
 auto_reload = true

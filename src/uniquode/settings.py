@@ -7,32 +7,32 @@ from typing import Final, Literal, cast, get_args
 
 from envex import Env
 
-import data_core
-import web_core
-from auth_ext.options import (
-    IdentityOptions,
-    is_generate_local_identity_secret,
-)
-from data_core.database_urls import (
-    SQLITE_ASYNC_DATABASE_URL_PREFIX,
-    SQLITE_MEMORY_DATABASE_URL,
-    resolve_database_url,
-)
+import wevra.db
+import wevra.web
 from uniquode.configuration import ConfigurationError
 from uniquode.environment import (
     IDENTITY_ENV_SETTINGS,
     SETTINGS_ENV_SETTINGS,
     load_environment,
 )
-from web_core.composition import (
+from wevra.auth.options import (
+    IdentityOptions,
+    is_generate_local_identity_secret,
+)
+from wevra.core.composition import (
     AppConfig,
 )
-from web_core.diagnostics import wrapped_error
-from web_core.settings import (
+from wevra.core.diagnostics import wrapped_error
+from wevra.core.settings import (
     SettingsLoadError,
     env_setting_is_set,
     load_composed_settings,
     values_from_env_settings,
+)
+from wevra.db.urls import (
+    SQLITE_ASYNC_DATABASE_URL_PREFIX,
+    SQLITE_MEMORY_DATABASE_URL,
+    resolve_database_url,
 )
 
 __all__ = (
@@ -64,8 +64,8 @@ DEPLOYMENT_ENVIRONMENT_ERROR: Final = (
     + "."
 )
 
-_DATA_CORE_PACKAGE_ROOT = Path(data_core.__file__).resolve().parent
-_WEB_CORE_PACKAGE_ROOT = Path(web_core.__file__).resolve().parent
+_DATA_CORE_PACKAGE_ROOT = Path(wevra.db.__file__).resolve().parent
+_WEB_CORE_PACKAGE_ROOT = Path(wevra.web.__file__).resolve().parent
 DEFAULT_TEMPLATE_ROOT = _WEB_CORE_PACKAGE_ROOT / "templates"
 DEFAULT_STATIC_ROOT = _WEB_CORE_PACKAGE_ROOT / "static"
 DEFAULT_MIGRATIONS_ROOT = _DATA_CORE_PACKAGE_ROOT / "migrations"
@@ -74,7 +74,7 @@ DEFAULT_DATABASE_FILE = Path("uniquode.sqlite3")
 DEFAULT_DATABASE_URL = (
     f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}{DEFAULT_DATABASE_FILE.as_posix()}"
 )
-DEFAULT_MODULES: Final = ("web_core", "public", "uniquode", "auth_ext")
+DEFAULT_MODULES: Final = ("uniquode", "wevra.web", "wevra.auth")
 CSRF_TOKEN_SECRET_BYTES = 32
 _GENERATE_LOCAL_CSRF_SECRET = "__generate-local-csrf-secret__"
 
@@ -311,7 +311,7 @@ class Settings:
 
     @property
     def identity_enabled(self) -> bool:
-        return "auth_ext" in self.modules
+        return "wevra.auth" in self.modules
 
 
 def load_settings(

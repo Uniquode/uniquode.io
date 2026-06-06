@@ -37,7 +37,7 @@ cross-module graph dependencies correctly.
 
 ## Impact
 
-- Affected code includes `data_core.migrate`, Alembic configuration assembly,
+- Affected code includes `wevra.db.migrate`, Alembic configuration assembly,
   migration command tests, README migration documentation, and validation or
   helper tests for module-owned version locations.
 - No new runtime dependency is expected; the implementation should continue

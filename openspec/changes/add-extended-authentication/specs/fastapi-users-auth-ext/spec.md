@@ -19,7 +19,7 @@ ORM or database.
 #### Scenario: SQLAlchemy adapter follows model package convention
 - **WHEN** the addon ships SQLAlchemy ORM models for extended authentication
   credentials or linked provider identities
-- **THEN** those models live under `auth_ext.models` and expose Alembic-ready
+- **THEN** those models live under `wevra.auth.models` and expose Alembic-ready
   metadata for explicit host inclusion
 
 ### Requirement: MFA challenge flow

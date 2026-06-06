@@ -1,3 +1,3 @@
-from auth_ext.configuration import ConfigurationError
+from wevra.auth.configuration import ConfigurationError
 
 __all__ = ("ConfigurationError",)

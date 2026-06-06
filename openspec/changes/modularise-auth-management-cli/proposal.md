@@ -1,6 +1,6 @@
 ## Why
 
-`src/auth_ext/identitymgr.py` is now large enough that command registration,
+`src/wevra/auth/cli/identitymgr.py` is now large enough that command registration,
 dispatch, schema checks, output formatting, and resource-specific command
 definitions are difficult to evolve together. Splitting the CLI into explicit
 components will make future extended-authentication operations easier to add
@@ -8,8 +8,8 @@ without changing the operator-facing command contract.
 
 ## What Changes
 
-- Convert `auth_ext.identitymgr` from a single module into a package while
-  preserving the public project-script entry point `auth_ext.identitymgr:main`.
+- Convert `wevra.auth.cli.identitymgr` from a single module into a package while
+  preserving the public project-script entry point `wevra.auth.cli.identitymgr:main`.
 - Split root CLI construction, user commands, group commands, scope commands,
   schema checks, command arguments, and output formatting into focused modules.
 - Add an explicit registration boundary where each command component registers
@@ -34,9 +34,9 @@ None.
 
 ## Impact
 
-- Affects `src/auth_ext/identitymgr.py`, the `auth_ext.identitymgr` import
+- Affects `src/wevra/auth/cli/identitymgr.py`, the `wevra.auth.cli.identitymgr` import
   boundary, CLI command registration, and auth-management CLI tests.
-- The project script remains `identitymgr = "auth_ext.identitymgr:main"`.
+- The project script remains `identitymgr = "wevra.auth.cli.identitymgr:main"`.
 - No database, persistence, identity-service, or operator-facing CLI behaviour
   changes are intended.
 - No automatic plugin discovery is introduced; future extension mechanisms can

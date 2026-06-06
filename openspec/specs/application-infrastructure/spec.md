@@ -63,6 +63,37 @@ under `src/`.
 - **WHEN** a later capability introduces a feature module such as `site`, `auth`, `api`, or `integrations`
 - **THEN** the module may live alongside `src/uniquode` and integrate through the application's route and infrastructure boundaries
 
+### Requirement: Wevra framework namespace
+The system SHALL move reusable framework infrastructure into an explicit
+`wevra` package namespace while keeping `uniquode` as the concrete host
+application package.
+
+#### Scenario: Reusable infrastructure uses the framework namespace
+- **WHEN** the reusable web, data, settings, tooling, and auth infrastructure is
+  inspected after the namespace refactor
+- **THEN** those reusable packages are imported through `wevra.*` package paths
+  rather than temporary top-level infrastructure package names or the
+  `uniquode` application package
+
+#### Scenario: Host application remains separate
+- **WHEN** a developer inspects the `uniquode` package after the namespace
+  refactor
+- **THEN** it contains application policy, settings adapters, startup wiring,
+  health routes, and application-specific validation rather than reusable
+  framework infrastructure
+
+#### Scenario: Behaviour is preserved through the namespace refactor
+- **WHEN** the namespace refactor is applied
+- **THEN** runtime startup, route composition, template rendering, static asset
+  serving, validation, migration commands, and migration graph behaviour remain
+  equivalent apart from documented import path, package data, and configured
+  module name changes
+
+#### Scenario: Compatibility shims are explicit
+- **WHEN** the namespace refactor design is completed
+- **THEN** any temporary compatibility shim is justified by a concrete consumer
+  requirement rather than being introduced by default
+
 ### Requirement: ASGI application shell
 The system SHALL provide a FastAPI/Starlette ASGI application shell with an application factory and stable ASGI app import path.
 
@@ -103,7 +134,7 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 
 #### Scenario: Migration metadata is discovered from configured modules
 - **WHEN** Alembic migration metadata is built
-- **THEN** `data_core` derives conventional `<module>.models` packages from
+- **THEN** `wevra.db` derives conventional `<module>.models` packages from
   configured modules and reads their exported `metadata` objects
 
 #### Scenario: Optional package models are explicit
@@ -129,13 +160,13 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 - **WHEN** application startup, migration tooling, validation, or tests need
   database URL parsing, database URL resolution, async engine creation, session
   factory creation, or session scope helpers
-- **THEN** those helpers are provided by `data_core` rather than by the
+- **THEN** those helpers are provided by `wevra.db` rather than by the
   `uniquode` application package
 
 #### Scenario: Migration command settings are injected
 - **WHEN** generic migration command infrastructure needs application settings,
   default modules, or the default database URL
-- **THEN** a host adapter supplies those values instead of `data_core` importing
+- **THEN** a host adapter supplies those values instead of `wevra.db` importing
   the `uniquode` application package
 
 #### Scenario: Module surface conventions are centralised
@@ -160,9 +191,9 @@ product-specific UI before requirements need it.
   such as `src/<module>/static/`
 
 #### Scenario: Omitted web core static defaults are not served
-- **WHEN** `web_core` is not included in the configured module list and no
+- **WHEN** `wevra.web` is not included in the configured module list and no
   explicit filesystem static root is configured
-- **THEN** application static serving does not fall back to `web_core` package
+- **THEN** application static serving does not fall back to `wevra.web` package
   assets
 
 #### Scenario: Empty static mount preserves URL generation
@@ -283,7 +314,7 @@ The system SHALL provide a project runtime command named `runserver` for local e
 
 #### Scenario: Runtime command implementation is tool-owned
 - **WHEN** a developer inspects the `runserver` project script entry point
-- **THEN** the command wrapper is provided by the top-level `tools` package
+- **THEN** the command wrapper is provided by `wevra.tools`
   while still targeting the documented ASGI application
 
 #### Scenario: Runtime command is invoked through uv
@@ -363,5 +394,5 @@ this change while preserving their documented command interfaces.
 
 #### Scenario: Validation command implementation is tool-owned
 - **WHEN** a developer inspects the `validate` project script entry point
-- **THEN** the command wrapper is provided by the top-level `tools` package and
+- **THEN** the command wrapper is provided by `wevra.tools` and
   discovers validation targets from configured modules

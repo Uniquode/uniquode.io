@@ -6,7 +6,7 @@ Identity flows currently create verification and password-reset tokens through
 application-owned delivery hooks, but the application has no concrete email
 backend or operator configuration for sending those messages. This change adds
 an async email delivery capability so identity flows can send actionable emails
-without coupling `auth_ext` to a specific provider.
+without coupling `wevra.auth` to a specific provider.
 
 ## What Changes
 
@@ -45,7 +45,7 @@ without coupling `auth_ext` to a specific provider.
 ## Impact
 
 - Adds `aiosmtplib` as a runtime dependency through `uv`.
-- Affects `auth_ext.delivery`, identity routes/templates, application settings,
+- Affects `wevra.auth.delivery`, identity routes/templates, application settings,
   validation, and app startup wiring.
 - Adds email configuration to operator documentation and example configuration.
 - Introduces provider-neutral SMTP support that can be used with Fastmail or

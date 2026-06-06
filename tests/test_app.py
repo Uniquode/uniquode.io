@@ -27,72 +27,12 @@ from sqlalchemy import inspect as sqlalchemy_inspect
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 
-import auth_ext.sessions as identity_users
-import data_core.migrate as data_migrate_module
-import tools.migrate as migrate_module
-import tools.runserver as runserver_module
 import uniquode.asgi as asgi_module
 import uniquode.environment as environment_module
-from auth_ext import (
-    ERROR_ALREADY_EXISTS,
-    ERROR_IDENTITY_CHANGED,
-    ERROR_INACTIVE_USER,
-    ERROR_INVALID_EMAIL,
-    ERROR_INVALID_PASSWORD,
-    ERROR_INVALID_TOKEN,
-    ERROR_PASSWORD_TOO_SHORT,
-    ERROR_PASSWORD_TOO_WEAK,
-    PasswordStrength,
-    Result,
-)
-from auth_ext.bootstrap import (
-    InitialAdminCredentials,
-    bootstrap_initial_admin,
-)
-from auth_ext.models import (
-    AccessToken,
-    Base,
-    InitialAdminBootstrap,
-    OAuthAccount,
-    User,
-)
-from auth_ext.models import (
-    metadata as auth_ext_metadata,
-)
-from auth_ext.options import IdentityOptions
-from auth_ext.schemas import UserCreate
-from auth_ext.sessions import (
-    create_authentication_backend,
-    create_database_strategy,
-    create_user_manager,
-    require_anonymous_user,
-    require_current_user,
-    session_cookie_secure_for_request,
-)
-from data_core.migration_metadata import (
-    MigrationConfigError,
-    load_model_metadata,
-    model_packages_from_modules,
-)
-from data_core.persistence import (
-    Database,
-    close_database,
-    create_database,
-    create_database_engine,
-    create_session_factory,
-    is_supported_database_url,
-    session_scope,
-    sqlite_database_path,
-)
-from data_core.surfaces import DataCompositionError
-from tools.project import runtime_project_root
-from tools.runserver import (
-    DEFAULT_HOST,
-    DEFAULT_PORT,
-    DEFAULT_RELOAD,
-    RELOAD_ENV_VAR,
-    env_requests_reload,
-)
+import wevra.auth.sessions as identity_users
+import wevra.db.migrate as data_migrate_module
+import wevra.tools.migrate as migrate_module
+import wevra.tools.runserver as runserver_module
 from uniquode.app import create_app
 from uniquode.asgi import app
 from uniquode.configuration import ConfigurationError
@@ -128,24 +68,89 @@ from uniquode.settings import (
     Settings,
     load_settings,
 )
-from web_core.composition import (
+from wevra.auth import (
+    ERROR_ALREADY_EXISTS,
+    ERROR_IDENTITY_CHANGED,
+    ERROR_INACTIVE_USER,
+    ERROR_INVALID_EMAIL,
+    ERROR_INVALID_PASSWORD,
+    ERROR_INVALID_TOKEN,
+    ERROR_PASSWORD_TOO_SHORT,
+    ERROR_PASSWORD_TOO_WEAK,
+    PasswordStrength,
+    Result,
+)
+from wevra.auth.accounts.bootstrap import (
+    InitialAdminCredentials,
+    bootstrap_initial_admin,
+)
+from wevra.auth.accounts.schemas import UserCreate
+from wevra.auth.models import (
+    AccessToken,
+    Base,
+    InitialAdminBootstrap,
+    OAuthAccount,
+    User,
+)
+from wevra.auth.models import (
+    metadata as wevra_auth_metadata,
+)
+from wevra.auth.options import IdentityOptions
+from wevra.auth.sessions import (
+    create_authentication_backend,
+    create_database_strategy,
+    create_user_manager,
+    require_anonymous_user,
+    require_current_user,
+    session_cookie_secure_for_request,
+)
+from wevra.core.composition import (
     AppConfig,
     CompositionError,
     RouteOptions,
     StaticOptions,
     TemplateOptions,
 )
-from web_core.context import get_request_context
-from web_core.csrf import (
+from wevra.db.migration_metadata import (
+    MigrationConfigError,
+    load_model_metadata,
+    model_packages_from_modules,
+)
+from wevra.db.persistence import (
+    Database,
+    close_database,
+    create_database,
+    create_database_engine,
+    create_session_factory,
+    is_supported_database_url,
+    session_scope,
+    sqlite_database_path,
+)
+from wevra.db.surfaces import DataCompositionError
+from wevra.tools.project import (
+    ProjectToolConfigurationError,
+    import_from_string,
+    runtime_project_root,
+)
+from wevra.tools.runserver import (
+    APP_TARGET_OPTION,
+    DEFAULT_HOST,
+    DEFAULT_PORT,
+    DEFAULT_RELOAD,
+    RELOAD_ENV_VAR_OPTION,
+    env_requests_reload,
+)
+from wevra.web.context import get_request_context
+from wevra.web.errors import EmptyBodyResponseException
+from wevra.web.forms.csrf import (
     CSRF_COOKIE_NAME,
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
     CsrfProtector,
 )
-from web_core.errors import EmptyBodyResponseException
-from web_core.renderer import TemplateRenderer
-from web_core.route_contract import _normalise_path_prefix
-from web_core.static import ComposedStaticFiles, NoStaticFiles
+from wevra.web.rendering import TemplateRenderer
+from wevra.web.routes.contracts import _normalise_path_prefix
+from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
 
 CSRF_INPUT_PATTERN = re.compile(
     rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
@@ -156,10 +161,26 @@ def sqlite_file_url(path: Path) -> str:
     return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
 
 
+def write_wevra_tool_config(path: Path) -> Path:
+    path.write_text(
+        """
+        [tool.wevra]
+        settings_loader = "uniquode.settings:load_settings"
+        configuration_error = "uniquode.configuration:ConfigurationError"
+        environment_loader = "uniquode.environment:load_environment"
+        database_url_env = "DATABASE_URL"
+        runserver_reload_env = "APP_RELOAD"
+        runserver_app = "uniquode.asgi:app"
+        """,
+        encoding="utf-8",
+    )
+    return path
+
+
 def write_app_config(
     path: Path,
     *,
-    modules: tuple[str, ...] = ("uniquode", "public", "auth_ext"),
+    modules: tuple[str, ...] = ("uniquode", "wevra.web", "wevra.auth"),
     static_url_path: str = "/static/",
     static_export_root: str = "static",
 ) -> Path:
@@ -246,12 +267,12 @@ def test_runserver_project_script_is_defined() -> None:
     with pyproject.open("rb") as handle:
         data = tomllib.load(handle)
 
-    assert data["project"]["scripts"]["runserver"] == "tools.runserver:main"
-    assert data["project"]["scripts"]["validate"] == "tools.validate:main"
-    assert data["project"]["scripts"]["migrate"] == "tools.migrate:main"
+    assert data["project"]["scripts"]["runserver"] == "wevra.tools.runserver:main"
+    assert data["project"]["scripts"]["validate"] == "wevra.tools.validate:main"
+    assert data["project"]["scripts"]["migrate"] == "wevra.tools.migrate:main"
 
 
-def test_data_core_migrate_requires_injected_settings_loader(capsys) -> None:
+def test_wevra_db_migrate_requires_injected_settings_loader(capsys) -> None:
     exit_code = data_migrate_module.main(["current"])
 
     captured = capsys.readouterr()
@@ -260,6 +281,14 @@ def test_data_core_migrate_requires_injected_settings_loader(capsys) -> None:
     assert captured.out == ""
     assert "configuration: failed" in captured.err
     assert "Migration settings loader is not configured." in captured.err
+
+
+def test_project_tool_import_spec_requires_string() -> None:
+    with pytest.raises(
+        ProjectToolConfigurationError,
+        match="Import spec must be configured as a string, got 'int'\\.",
+    ):
+        import_from_string(123)  # type: ignore[arg-type]
 
 
 @pytest.mark.parametrize(
@@ -326,6 +355,7 @@ def test_migrate_upgrade_uses_settings_database_url(
         )
 
     monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(["upgrade"])
@@ -350,6 +380,7 @@ def test_migrate_database_url_override_takes_precedence(
         calls.append(("current", config.get_main_option("sqlalchemy.url")))
 
     monkeypatch.setattr(migrate_module.command, "current", record_current)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(
@@ -389,6 +420,7 @@ def test_migrate_database_url_override_preempts_blank_environment_value(
         calls.append(("current", config.get_main_option("sqlalchemy.url")))
 
     monkeypatch.setattr(migrate_module.command, "current", record_current)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
     monkeypatch.setenv(ENV_DATABASE_URL, "")
 
@@ -419,6 +451,7 @@ def test_migrate_database_url_override_can_follow_subcommand(
         calls.append((revision, config.get_main_option("sqlalchemy.url")))
 
     monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(
@@ -480,6 +513,7 @@ def test_migrate_reports_operation_errors_cleanly(
         raise exception
 
     monkeypatch.setattr(migrate_module.command, "current", fail_current)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(["current"])
@@ -500,6 +534,7 @@ def test_migrate_reports_metadata_configuration_errors_cleanly(
         raise MigrationConfigError("bad module metadata")
 
     monkeypatch.setattr(migrate_module.command, "current", fail_current)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(["current"])
@@ -538,6 +573,7 @@ def test_migrate_dispatches_supported_commands(
         )
 
     monkeypatch.setattr(migrate_module.command, command_name, record_command)
+    write_wevra_tool_config(tmp_path / "pyproject.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(argv)
@@ -612,7 +648,8 @@ def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
         "--port",
         str(DEFAULT_PORT),
     ]
-    assert RELOAD_ENV_VAR == "APP_RELOAD"
+    assert RELOAD_ENV_VAR_OPTION == "runserver_reload_env"
+    assert APP_TARGET_OPTION == "runserver_app"
 
 
 def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
@@ -732,7 +769,10 @@ def test_runserver_rejects_extra_uvicorn_app_target(monkeypatch) -> None:
 
 
 def test_runserver_allows_explicit_default_uvicorn_app_target() -> None:
-    runserver_module._reject_extra_app_target([runserver_module.APP_TARGET])
+    runserver_module._reject_extra_app_target(
+        ["uniquode.asgi:app"],
+        app_target="uniquode.asgi:app",
+    )
 
 
 @pytest.mark.parametrize(
@@ -746,7 +786,10 @@ def test_runserver_allows_explicit_default_uvicorn_app_target() -> None:
 def test_runserver_target_detection_does_not_reject_option_values(
     option_value: str,
 ) -> None:
-    runserver_module._reject_extra_app_target([option_value])
+    runserver_module._reject_extra_app_target(
+        [option_value],
+        app_target="uniquode.asgi:app",
+    )
 
 
 def test_load_environment_reads_dotenv_without_mutating_process_environment(
@@ -814,14 +857,14 @@ def test_create_app_serves_static_files_from_configured_modules() -> None:
     assert "--web-core-colour-page-bg" in response.text
 
 
-def test_create_app_omitting_web_core_mounts_empty_static_route(
+def test_create_app_omitting_wevra_web_mounts_empty_static_route(
     tmp_path: Path,
 ) -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
-            app_config=build_test_app_config(tmp_path, modules=("public",)),
+            app_config=build_test_app_config(tmp_path, modules=("uniquode",)),
         )
     )
 
@@ -856,7 +899,7 @@ def test_create_app_applies_configured_route_prefixes(
         dedent(
             """
             from fastapi.responses import Response
-            from web_core.routing import HtmlRouteDefinition, ModuleRoutes
+            from wevra.web.routes import HtmlRouteDefinition, ModuleRoutes
 
             class View:
                 async def render(self, request, renderer):
@@ -906,7 +949,7 @@ def test_create_app_registers_routes_only_from_configured_modules(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
-            app_config=build_test_app_config(tmp_path, modules=("public",)),
+            app_config=build_test_app_config(tmp_path, modules=("uniquode",)),
         )
     )
 
@@ -919,7 +962,7 @@ def test_create_app_registers_routes_only_from_configured_modules(
 
         assert "public:home" in route_names
         assert "identity:login" not in route_names
-        assert "health" not in route_names
+        assert "health" in route_names
         assert not hasattr(web_app.state, "identity_options")
         assert not hasattr(web_app.state, "identity_delivery")
         assert not hasattr(web_app.state, "fastapi_users")
@@ -943,7 +986,7 @@ def test_create_app_honours_explicit_template_root_with_module_templates(
             template_root=template_root,
             app_config=build_test_app_config(
                 tmp_path,
-                modules=("web_core", "public"),
+                modules=("uniquode", "wevra.web"),
             ),
         )
     )
@@ -972,7 +1015,7 @@ def test_settings_resolve_default_roots_from_project_root(tmp_path) -> None:
     settings = Settings(project_root=tmp_path)
 
     assert settings.app_config is None
-    assert settings.modules == ("web_core", "public", "uniquode", "auth_ext")
+    assert settings.modules == ("uniquode", "wevra.web", "wevra.auth")
     assert settings.database_url == (
         f"sqlite+aiosqlite:///{(tmp_path / 'uniquode.sqlite3').resolve().as_posix()}"
     )
@@ -1054,13 +1097,13 @@ def test_load_settings_allows_missing_default_app_toml(tmp_path) -> None:
     settings = load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
 
     assert settings.app_config is None
-    assert settings.modules == ("web_core", "public", "uniquode", "auth_ext")
+    assert settings.modules == ("uniquode", "wevra.web", "wevra.auth")
 
 
 def test_load_settings_reads_default_app_toml(tmp_path) -> None:
     config_path = write_app_config(
         tmp_path / "app.toml",
-        modules=("public", "auth_ext"),
+        modules=("uniquode", "wevra.auth"),
         static_url_path="/assets/",
     )
 
@@ -1068,7 +1111,7 @@ def test_load_settings_reads_default_app_toml(tmp_path) -> None:
 
     assert settings.app_config is not None
     assert settings.app_config.config_path == config_path.resolve()
-    assert settings.modules == ("public", "auth_ext")
+    assert settings.modules == ("uniquode", "wevra.auth")
     assert settings.template_auto_reload is True
     assert settings.template_cache_size == 0
     assert settings.template_root == DEFAULT_TEMPLATE_ROOT.resolve()
@@ -1079,7 +1122,7 @@ def test_load_settings_reads_default_app_toml(tmp_path) -> None:
 def test_load_settings_uses_app_config_environment_override(tmp_path) -> None:
     config_path = write_app_config(
         tmp_path / "config" / "application.toml",
-        modules=("public",),
+        modules=("uniquode",),
         static_url_path="/public-static/",
     )
 
@@ -1091,7 +1134,7 @@ def test_load_settings_uses_app_config_environment_override(tmp_path) -> None:
 
     assert settings.app_config is not None
     assert settings.app_config.config_path == config_path.resolve()
-    assert settings.modules == ("public",)
+    assert settings.modules == ("uniquode",)
     assert settings.template_root == DEFAULT_TEMPLATE_ROOT.resolve()
     assert settings.static_root == DEFAULT_STATIC_ROOT.resolve()
     assert settings.static_mount_path == "/public-static"
@@ -1379,7 +1422,7 @@ def test_non_local_settings_require_configured_identity_token_secrets() -> None:
     assert settings.csrf_cookie_secure is True
 
 
-def test_non_local_settings_skip_identity_policy_when_auth_ext_is_omitted(
+def test_non_local_settings_skip_identity_policy_when_wevra_auth_is_omitted(
     tmp_path: Path,
 ) -> None:
     settings = Settings(
@@ -1387,12 +1430,12 @@ def test_non_local_settings_skip_identity_policy_when_auth_ext_is_omitted(
         csrf_token_secret="production-csrf-secret",
         app_config=build_test_app_config(
             tmp_path,
-            modules=("web_core", "public", "uniquode"),
+            modules=("uniquode", "wevra.web"),
         ),
     )
 
     assert settings.identity_enabled is False
-    assert settings.modules == ("web_core", "public", "uniquode")
+    assert settings.modules == ("uniquode", "wevra.web")
     assert settings.csrf_cookie_secure is True
 
 
@@ -1471,7 +1514,7 @@ def test_session_cookie_security_warns_once_for_forwarded_https_on_http_scheme(
         }
     )
 
-    with caplog.at_level(logging.WARNING, logger="auth_ext.sessions"):
+    with caplog.at_level(logging.WARNING, logger="wevra.auth.sessions"):
         assert session_cookie_secure_for_request(request) is False
         assert session_cookie_secure_for_request(request) is False
 
@@ -1690,13 +1733,13 @@ def test_sqlalchemy_metadata_creates_identity_tables() -> None:
         asyncio.run(close_database(engine))
 
 
-def test_auth_ext_models_export_migration_metadata() -> None:
-    assert auth_ext_metadata is Base.metadata
+def test_wevra_auth_models_export_migration_metadata() -> None:
+    assert wevra_auth_metadata is Base.metadata
 
 
 def test_model_packages_are_derived_from_modules() -> None:
-    assert model_packages_from_modules(("uniquode", "public", "auth_ext")) == (
-        "auth_ext.models",
+    assert model_packages_from_modules(("uniquode", "wevra.auth")) == (
+        "wevra.auth.models",
     )
 
 
@@ -1705,13 +1748,13 @@ def test_configured_model_packages_load_migration_metadata_in_order() -> None:
 
     assert len(metadata_values) == 1
     assert all(isinstance(value, MetaData) for value in metadata_values)
-    assert metadata_values == (auth_ext_metadata,)
+    assert metadata_values == (wevra_auth_metadata,)
 
 
 def test_model_metadata_loader_deduplicates_shared_metadata_objects() -> None:
-    metadata_values = load_model_metadata(("data_core.models", "auth_ext.models"))
+    metadata_values = load_model_metadata(("wevra.db.models", "wevra.auth.models"))
 
-    assert metadata_values == (auth_ext_metadata,)
+    assert metadata_values == (wevra_auth_metadata,)
 
 
 def test_model_metadata_loader_reads_modules_from_app_toml(
@@ -1719,12 +1762,12 @@ def test_model_metadata_loader_reads_modules_from_app_toml(
 ) -> None:
     write_app_config(
         tmp_path / "app.toml",
-        modules=("auth_ext", "public", "uniquode"),
+        modules=("wevra.auth", "uniquode"),
     )
 
     metadata_values = load_model_metadata(project_root=tmp_path)
 
-    assert metadata_values == (auth_ext_metadata,)
+    assert metadata_values == (wevra_auth_metadata,)
 
 
 def test_model_metadata_loader_uses_default_modules_when_app_toml_is_absent(
@@ -1732,10 +1775,10 @@ def test_model_metadata_loader_uses_default_modules_when_app_toml_is_absent(
 ) -> None:
     metadata_values = load_model_metadata(
         project_root=tmp_path,
-        default_modules=("web_core", "public", "uniquode", "auth_ext"),
+        default_modules=("uniquode", "wevra.web", "wevra.auth"),
     )
 
-    assert metadata_values == (auth_ext_metadata,)
+    assert metadata_values == (wevra_auth_metadata,)
 
 
 def test_model_metadata_loader_preserves_composition_error_cause(
@@ -1751,7 +1794,7 @@ def test_model_metadata_loader_preserves_composition_error_cause(
 
 
 def test_model_metadata_loader_skips_modules_without_models() -> None:
-    assert load_model_metadata(modules=("public",)) == ()
+    assert load_model_metadata(modules=("uniquode",)) == ()
 
 
 def test_model_metadata_loader_reports_missing_module() -> None:
@@ -1789,16 +1832,16 @@ import json
 import sys
 from pathlib import Path
 
-from data_core.migration_metadata import load_model_metadata
+from wevra.db.migration_metadata import load_model_metadata
 
 metadata_values = load_model_metadata(project_root=Path.cwd())
 forbidden_modules = (
-    "auth_ext.sessions",
+    "wevra.auth.sessions",
     "jinja2",
     "uniquode.app",
     "uniquode.asgi",
     "uniquode.routes",
-    "web_core.renderer",
+    "wevra.web.rendering",
 )
 print(
     json.dumps(
@@ -1830,7 +1873,7 @@ def test_migrate_alembic_config_carries_app_config_path(tmp_path) -> None:
 
     assert config.get_main_option("app_config") == config_path.resolve().as_posix()
     assert config.get_main_option("version_locations").endswith(
-        "auth_ext/migrations/versions"
+        "wevra/auth/migrations/versions"
     )
 
 
@@ -4341,7 +4384,8 @@ def test_home_page_renders_reusable_theme_selector_component() -> None:
 
 def test_base_layout_updates_root_theme_from_htmx_event() -> None:
     layout_template = (
-        Path(__file__).resolve().parents[1] / "src/web_core/templates/layouts/page.html"
+        Path(__file__).resolve().parents[1]
+        / "src/wevra/web/templates/layouts/page.html"
     ).read_text()
 
     assert 'addEventListener("theme-mode-changed"' in layout_template
@@ -4352,9 +4396,9 @@ def test_base_layout_updates_root_theme_from_htmx_event() -> None:
     )
 
 
-def test_auth_ext_owns_default_identity_templates() -> None:
+def test_wevra_auth_owns_default_identity_templates() -> None:
     source_root = Path(__file__).resolve().parents[1] / "src"
-    auth_template = source_root / "auth_ext/templates/identity/pages/login.html"
+    auth_template = source_root / "wevra/auth/templates/identity/pages/login.html"
     application_template = source_root / "uniquode/templates/identity/pages/login.html"
 
     assert auth_template.is_file()
@@ -4362,8 +4406,10 @@ def test_auth_ext_owns_default_identity_templates() -> None:
     assert '{% extends "layouts/page.html" %}' in auth_template.read_text()
 
 
-def test_auth_ext_routes_do_not_import_application_package() -> None:
-    route_module = Path(__file__).resolve().parents[1] / "src/auth_ext/routes.py"
+def test_wevra_auth_routes_do_not_import_application_package() -> None:
+    route_module = (
+        Path(__file__).resolve().parents[1] / "src/wevra/auth/routes/pages.py"
+    )
     tree = ast.parse(
         route_module.read_text(encoding="utf-8"), filename=str(route_module)
     )
@@ -4384,8 +4430,8 @@ def test_auth_ext_routes_do_not_import_application_package() -> None:
     )
 
 
-def test_auth_ext_publishes_identity_module_routes() -> None:
-    from auth_ext.routes import module_routes
+def test_wevra_auth_publishes_identity_module_routes() -> None:
+    from wevra.auth.routes import module_routes
 
     route_names = {route.name for route in module_routes.page_routes}
     api_route_names = {
@@ -4398,7 +4444,7 @@ def test_auth_ext_publishes_identity_module_routes() -> None:
     assert "identity:api:current-user" in api_route_names
 
 
-def test_later_application_module_can_override_auth_ext_identity_template(
+def test_earlier_application_module_can_override_wevra_auth_identity_template(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -4423,7 +4469,11 @@ def test_later_application_module_can_override_auth_ext_identity_template(
             project_root=tmp_path,
             app_config=build_test_app_config(
                 tmp_path,
-                modules=("web_core", "auth_ext", "uniquode", "identity_override_app"),
+                modules=(
+                    "identity_override_app",
+                    "wevra.web",
+                    "wevra.auth",
+                ),
             ),
         )
     )
@@ -4440,7 +4490,7 @@ def test_later_application_module_can_override_auth_ext_identity_template(
 
 def test_template_renderer_falls_back_when_route_name_is_missing() -> None:
     renderer = TemplateRenderer(
-        Path(__file__).resolve().parents[1] / "src/web_core/templates"
+        Path(__file__).resolve().parents[1] / "src/wevra/web/templates"
     )
     request = Request({"type": "http", "headers": [], "method": "GET", "path": "/"})
 
@@ -4471,7 +4521,7 @@ def test_create_app_applies_configured_template_cache_options() -> None:
 
 def test_template_renderer_accepts_cached_template_configuration() -> None:
     renderer = TemplateRenderer(
-        Path(__file__).resolve().parents[1] / "src/web_core/templates",
+        Path(__file__).resolve().parents[1] / "src/wevra/web/templates",
         auto_reload=False,
         cache_size=50,
     )
@@ -4482,7 +4532,7 @@ def test_template_renderer_accepts_cached_template_configuration() -> None:
 
 def test_template_renderer_rejects_internal_context_overrides() -> None:
     renderer = TemplateRenderer(
-        Path(__file__).resolve().parents[1] / "src/web_core/templates",
+        Path(__file__).resolve().parents[1] / "src/wevra/web/templates",
         csrf=CsrfProtector("test-secret"),
     )
     request = Request({"type": "http", "headers": [], "method": "GET", "path": "/"})
@@ -4505,7 +4555,7 @@ def test_template_renderer_rejects_internal_context_overrides() -> None:
 
 def test_project_stylesheet_defines_semantic_theme_tokens() -> None:
     stylesheet = (
-        Path(__file__).resolve().parents[1] / "src/web_core/static/styles/app.css"
+        Path(__file__).resolve().parents[1] / "src/wevra/web/static/styles/app.css"
     ).read_text()
 
     assert "--web-core-colour-page-bg" in stylesheet
@@ -4519,7 +4569,8 @@ def test_project_stylesheet_defines_semantic_theme_tokens() -> None:
 
 def test_base_layout_uses_theme_tokens_without_template_colour_branching() -> None:
     layout_template = (
-        Path(__file__).resolve().parents[1] / "src/web_core/templates/layouts/page.html"
+        Path(__file__).resolve().parents[1]
+        / "src/wevra/web/templates/layouts/page.html"
     ).read_text()
 
     assert "{% if theme_attribute %} data-theme=" in layout_template

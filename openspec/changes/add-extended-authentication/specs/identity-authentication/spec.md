@@ -79,7 +79,7 @@ human-user login mechanism after an authentication ceremony is complete.
 ### Requirement: Advanced authentication extension points
 The system SHALL support concrete TOTP, WebAuthn/passkey, recovery-code, and
 linked external-provider authentication capabilities through the reusable
-`auth_ext` boundary without requiring every deployment to enable every method.
+`wevra.auth` boundary without requiring every deployment to enable every method.
 
 #### Scenario: Baseline login can be extended by second factor
 - **WHEN** policy requires a second factor for a user

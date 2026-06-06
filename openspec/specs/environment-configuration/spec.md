@@ -29,7 +29,7 @@ variables through the `envex` module.
 #### Scenario: Settings loading mechanics are reusable
 - **WHEN** an application uses the shared envex and app composition pattern
 - **THEN** reusable typed environment parsing, app configuration loading, and
-  settings factory invocation are provided by `web_core`, while concrete
+  settings factory invocation are provided by `wevra.core`, while concrete
   settings fields and deployment policy remain application-owned
 
 ### Requirement: `.env` support

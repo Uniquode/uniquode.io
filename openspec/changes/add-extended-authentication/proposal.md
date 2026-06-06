@@ -3,7 +3,7 @@
 Linear: [UT-173](https://linear.app/uniquode/issue/UT-173/federation-and-advanced-authentication)
 
 The identity foundation now has stable local users, browser sessions, reusable
-`auth_ext` ownership, and an authentication ceremony boundary. The next step is
+`wevra.auth` ownership, and an authentication ceremony boundary. The next step is
 to define the concrete extended authentication sub-specs that will turn the
 reserved TOTP, recovery-code, WebAuthn/passkey, and external-provider hooks into
 real package capabilities.
@@ -22,9 +22,9 @@ real package capabilities.
   LinkedIn.
 - Align all extended authentication capabilities with the canonical local user
   identity model, active-account eligibility checks, and package-owned
-  `auth_ext` storage/service boundaries.
+  `wevra.auth` storage/service boundaries.
 - Keep concrete provider UI, product copy, and deployment policy host-owned
-  while `auth_ext` owns reusable flow contracts, state transitions, route
+  while `wevra.auth` owns reusable flow contracts, state transitions, route
   surfaces, and storage abstractions.
 - Preserve host-controlled feature exposure: each authenticator type must be
   enabled explicitly before routes, setup flows, or login choices are exposed.
@@ -53,7 +53,7 @@ real package capabilities.
 
 ## Impact
 
-- Affected areas include `auth_ext` challenge/state protocols, identity
+- Affected areas include `wevra.auth` challenge/state protocols, identity
   ceremony services, storage abstractions and future ORM models, package route
   surfaces, identity templates, and host configuration.
 - Existing password login, session resolution, reset-password, verification,

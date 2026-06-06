@@ -20,8 +20,8 @@ the addon to publish optional configured-module surfaces.
 
 #### Scenario: Addon may depend on core contracts
 - **WHEN** the addon publishes configured-module surfaces
-- **THEN** it may depend on `web_core` contracts for web surfaces and
-  `data_core` contracts for model metadata rather than importing the
+- **THEN** it may depend on `wevra.web` contracts for web surfaces and
+  `wevra.db` contracts for model metadata rather than importing the
   `uniquode` application package
 
 #### Scenario: Addon can publish model metadata
@@ -46,7 +46,7 @@ the addon to publish optional configured-module surfaces.
 
 #### Scenario: Python package name is importable
 - **WHEN** addon code is imported from Python
-- **THEN** the import package uses the valid Python package name `auth_ext`
+- **THEN** the import package uses the valid Python package name `wevra.auth`
 
 ### Requirement: FastAPI Users extension boundary
 The addon SHALL extend FastAPI Users through public route, dependency,
@@ -69,7 +69,7 @@ integration points.
   by mutating the host application automatically
 
 #### Scenario: Addon can be omitted from composition
-- **WHEN** the host application omits `auth_ext` from `modules`
+- **WHEN** the host application omits `wevra.auth` from `modules`
 - **THEN** the addon contributes no models, migration revisions, routes,
   templates, static assets, or context providers to that application instance
 

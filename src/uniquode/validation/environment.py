@@ -3,14 +3,14 @@ from typing import Final
 
 from envex import Env
 
-from data_core.database_urls import redact_database_url
-from tools.validation.core import ValidationCheck, ValidationResult, record_check
 from uniquode.configuration import ConfigurationError
 from uniquode.environment import (
     SUPPORTED_ENV_VARS,
     load_environment,
 )
 from uniquode.settings import Settings
+from wevra.db.urls import redact_database_url
+from wevra.tools.validation.core import ValidationCheck, ValidationResult, record_check
 
 ENV_VAR_NAME_PATTERN: Final = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
