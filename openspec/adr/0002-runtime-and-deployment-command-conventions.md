@@ -27,7 +27,10 @@ app.asgi:app
 
 Wevra-owned operator commands should be exposed through prefixed package
 scripts to avoid collisions with host application or environment-specific
-commands. The local development server command is:
+commands. The authoritative command list is the Wevra package script metadata
+in `wevra/pyproject.toml`; application docs and specs should describe usage
+without re-declaring those scripts from the host app package. The local
+development server command is:
 
 ```text
 wevra-runserver
