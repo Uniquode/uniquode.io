@@ -6,6 +6,12 @@ commands resolve the configured host app and load `APP_CONFIG` / `app.toml`.
 This creates a split-brain configuration model where the web app and auth
 operator CLI can silently use different configuration sources.
 
+This proposal is intended to supersede the current ADR 0005 guidance that
+auth operator tooling should use generic `auth.toml` configuration without
+depending on a host project root. If this change is accepted, ADR 0005 must be
+updated to make application config the canonical auth configuration boundary
+for Wevra-hosted apps.
+
 The broader project command model is also too permissive when no application
 configuration file is resolved. Application runtime commands can fall back to
 class defaults, which makes a wrongly invoked command look successful instead

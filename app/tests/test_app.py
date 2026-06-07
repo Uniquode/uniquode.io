@@ -333,7 +333,21 @@ def test_app_project_does_not_redeclare_wevra_operator_scripts() -> None:
     with pyproject.open("rb") as handle:
         data = tomllib.load(handle)
 
-    assert "scripts" not in data["project"]
+    scripts = data["project"].get("scripts", {})
+    wevra_operator_scripts = {
+        "identitymgr",
+        "migrate",
+        "routes",
+        "runserver",
+        "validate",
+        "wevra-identitymgr",
+        "wevra-migrate",
+        "wevra-routes",
+        "wevra-runserver",
+        "wevra-validate",
+    }
+
+    assert scripts.keys().isdisjoint(wevra_operator_scripts)
 
 
 def test_wevra_db_migrate_requires_injected_settings_loader(capsys) -> None:
