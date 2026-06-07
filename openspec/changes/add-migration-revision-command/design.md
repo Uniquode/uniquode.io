@@ -16,8 +16,8 @@ revision depends on another module's head.
 
 **Goals:**
 
-- Add a project-supported `migrate revision` command that creates new Alembic
-  revision files in the owning configured module.
+- Add a project-supported `wevra-migrate revision` command that creates new
+  Alembic revision files in the owning configured module.
 - Keep module ownership explicit by requiring a module name for revision
   creation.
 - Preserve Alembic's graph model: ordering is expressed with `down_revision`
@@ -40,10 +40,10 @@ revision depends on another module's head.
 
 ### Require `--module` For Revision Placement
 
-`migrate revision` should require an owning configured module:
+`wevra-migrate revision` should require an owning configured module:
 
 ```text
-uv run migrate revision --module wevra.auth -m "add identity table"
+uv run wevra-migrate revision --module wevra.auth -m "add identity table"
 ```
 
 The command resolves the module's conventional version directory from the
@@ -107,10 +107,10 @@ The `revision` command help should state the usual safe sequence:
 
 1. Ensure the working database is upgraded to the current head.
 2. Update the owning module's models.
-3. Run `migrate revision --module <module> --autogenerate -m "..."`
+3. Run `wevra-migrate revision --module <module> --autogenerate -m "..."`
    or create an empty revision when hand-authored changes are needed.
 4. Review generated operations plus `down_revision` / `depends_on`.
-5. Run `migrate upgrade`.
+5. Run `wevra-migrate upgrade`.
 6. Run validation.
 
 This belongs in command help because it is a developer workflow concern that

@@ -16,7 +16,7 @@ The roadmap should stay aligned with accepted and provisional ADRs, OpenSpec cha
 
 - ADR 0001 establishes the implementation platform.
 - ADR 0002 establishes the runtime and deployment command conventions.
-- The `runserver` command baseline is implemented.
+- The `wevra-runserver` command baseline is implemented.
 - The initial HTML-first web foundation is implemented, including:
   - configurable template and static roots
   - Pico CSS and `htmx` delivery
@@ -41,7 +41,8 @@ The next immediate implementation item is the identity foundation slice.
 
 ### 1. Runtime Baseline
 
-- Keep the `runserver` command and startup smoke coverage aligned with runtime changes.
+- Keep the `wevra-runserver` command and startup smoke coverage aligned with
+  runtime changes.
 - Extend runtime checks only when new operational requirements appear.
 
 ### 2. Web Foundation

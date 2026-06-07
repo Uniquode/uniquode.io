@@ -1,30 +1,4 @@
-## MODIFIED Requirements
-
-### Requirement: HTML route surfaces are explicit
-The system SHALL keep page routes, partial routes, and API routes distinguishable
-for rendering, validation, CSRF, and exception-response selection while using
-FastAPI routers as the route declaration mechanism.
-
-#### Scenario: Page route renders a full template
-- **WHEN** a browser requests a page route
-- **THEN** the handler returns a full HTML page response rendered from the
-  template system or another valid page response
-
-#### Scenario: Partial route renders a fragment
-- **WHEN** a browser requests a partial route intended for `htmx`
-- **THEN** the handler returns an HTML fragment response rather than a full page
-  shell
-
-#### Scenario: API route stays machine-oriented
-- **WHEN** a client requests an API route
-- **THEN** the handler returns a machine-oriented response rather than a
-  template-rendered HTML page
-
-#### Scenario: Route surface uses FastAPI-compatible metadata
-- **WHEN** a module declares routes
-- **THEN** page, partial, and API surface information is represented through
-  FastAPI-compatible router, route, dependency, tag, or endpoint metadata rather
-  than a custom dispatcher-only route table
+## ADDED Requirements
 
 ### Requirement: Module routes use FastAPI routers
 The system SHALL compose module-owned FastAPI routers from explicitly
@@ -81,50 +55,6 @@ configured application modules.
 - **THEN** they use the FastAPI/Starlette route name declared on the route
   decorator rather than a Wevra-generated route name
 
-### Requirement: Error handling is explicit across route surfaces
-The system SHALL provide explicit error-handling behaviour for page, partial,
-and API route surfaces using FastAPI/Starlette exception-handler mechanisms and
-Wevra response helpers.
-
-#### Scenario: FastAPI route exceptions are handled
-- **WHEN** a module route handler raises an exception
-- **THEN** the application passes the exception through configured
-  FastAPI/Starlette exception handlers before returning a response
-
-#### Scenario: Page route `404` renders an HTML error page
-- **WHEN** a browser requests a missing page route or a page route raises a
-  not-found exception
-- **THEN** the application returns an HTML `404` response rendered through the
-  shared error-template foundation
-
-#### Scenario: Page route `500` renders an HTML error page
-- **WHEN** an unhandled server error occurs while serving a page route
-- **THEN** the application returns an HTML `500` response rendered through the
-  shared error-template foundation
-
-#### Scenario: API route errors remain machine-oriented regardless of `Accept`
-- **WHEN** a client requests an API route and the request fails
-- **THEN** the application returns a machine-oriented error response rather than
-  a template-rendered HTML page, even if the caller sends `Accept: text/html`
-  or other browser-like headers
-
-#### Scenario: Partial-route errors remain fragment-compatible
-- **WHEN** a request intended for a partial or `htmx` fragment fails
-- **THEN** the application returns an HTML error response that remains
-  compatible with fragment-oriented clients rather than replacing the
-  interaction with an unrelated full page
-
-#### Scenario: Unsupported methods return `405`
-- **WHEN** a route handler does not support the request method
-- **THEN** FastAPI/Starlette returns `405 Method Not Allowed` and the `Allow`
-  header lists the supported methods
-
-#### Scenario: Exception handlers are extensible without host imports
-- **WHEN** a framework module or host application needs specialised exception
-  mapping
-- **THEN** it can register exception handlers without `wevra.web` importing the
-  host application package
-
 ### Requirement: HTML form protection remains enforced
 The system SHALL preserve CSRF protection for unsafe HTML form submissions after
 moving route declaration to FastAPI routers.
@@ -169,3 +99,85 @@ headers for browser isolation and popup-oriented flows.
 - **THEN** it can express that override through FastAPI/Starlette-compatible
   middleware, endpoint metadata, route metadata, dependency, or helper
   mechanisms rather than through a custom dispatcher
+
+## MODIFIED Requirements
+
+### Requirement: HTML route surfaces are explicit
+The system SHALL keep page routes, partial routes, and API routes distinguishable
+for rendering, validation, CSRF, and exception-response selection while using
+FastAPI routers as the route declaration mechanism.
+
+#### Scenario: Page route renders a full template
+- **WHEN** a browser requests a page route
+- **THEN** the handler returns a full HTML page response rendered from the
+  template system or another valid page response
+
+#### Scenario: Partial route renders a fragment
+- **WHEN** a browser requests a partial route intended for `htmx`
+- **THEN** the handler returns an HTML fragment response rather than a full page
+  shell
+
+#### Scenario: API route stays machine-oriented
+- **WHEN** a client requests an API route
+- **THEN** the handler returns a machine-oriented response rather than a
+  template-rendered HTML page
+
+#### Scenario: Route surface uses FastAPI-compatible metadata
+- **WHEN** a module declares routes
+- **THEN** page, partial, and API surface information is represented through
+  FastAPI-compatible router, route, dependency, tag, or endpoint metadata rather
+  than a custom dispatcher-only route table
+
+### Requirement: Error handling is explicit across route surfaces
+The system SHALL provide explicit error-handling behaviour for page, partial,
+and API route surfaces using FastAPI/Starlette exception-handler mechanisms and
+Wevra response helpers.
+
+#### Scenario: FastAPI route exceptions are handled
+- **WHEN** a module route handler raises an exception
+- **THEN** the application passes the exception through configured
+  FastAPI/Starlette exception handlers before returning a response
+
+#### Scenario: Page route `404` renders an HTML error page
+- **WHEN** a browser requests a missing page route or a page route raises a
+  not-found exception
+- **THEN** the application returns an HTML `404` response rendered through the
+  shared error-template foundation
+
+#### Scenario: Page route `500` renders an HTML error page
+- **WHEN** an unhandled server error occurs while serving a page route
+- **THEN** the application returns an HTML `500` response rendered through the
+  shared error-template foundation
+
+#### Scenario: API route errors remain machine-oriented regardless of `Accept`
+- **WHEN** a client requests an API route and the request fails
+- **THEN** the application returns a machine-oriented error response rather than
+  a template-rendered HTML page, even if the caller sends `Accept: text/html`
+  or other browser-like headers
+
+#### Scenario: Partial-route errors remain fragment-compatible
+- **WHEN** a request intended for a partial or `htmx` fragment fails
+- **THEN** the application returns an HTML error response that remains
+  compatible with fragment-oriented clients rather than replacing the
+  interaction with an unrelated full page
+
+#### Scenario: Unsupported methods return `405`
+- **WHEN** a route handler does not support the request method
+- **THEN** FastAPI/Starlette returns `405 Method Not Allowed` and the `Allow`
+  header lists the supported methods
+
+#### Scenario: Exception handlers are extensible without host imports
+- **WHEN** a framework module or host application needs specialised exception
+  mapping
+- **THEN** it can register exception handlers without `wevra.web` importing the
+  host application package
+
+## REMOVED Requirements
+
+### Requirement: HTML requests use a dispatcher protocol
+**Reason**: Route declaration and request dispatch now use FastAPI routers and
+FastAPI/Starlette handler dispatch directly.
+
+**Migration**: Modules expose labelled `module_routers` from `<module>.routes`;
+handlers register with FastAPI decorators, and route-surface information is
+represented through FastAPI-compatible metadata.

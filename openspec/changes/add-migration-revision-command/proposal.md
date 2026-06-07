@@ -8,8 +8,8 @@ cross-module graph dependencies correctly.
 
 ## What Changes
 
-- Add a `migrate revision` command for creating Alembic revision files through
-  the project migration wrapper.
+- Add a `wevra-migrate revision` command for creating Alembic revision files
+  through the project migration wrapper.
 - Require the owning configured module to be selected explicitly when creating
   a revision, so the generated file lands in that module's conventional
   `migrations/versions/` directory.

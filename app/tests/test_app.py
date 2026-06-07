@@ -17,6 +17,7 @@ import pytest
 import wevra.auth.sessions as identity_users
 import wevra.db.migrate as data_migrate_module
 import wevra.tools.migrate as migrate_module
+import wevra.tools.routes as routes_module
 import wevra.tools.runserver as runserver_module
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.routing import APIRoute
@@ -326,15 +327,27 @@ def test_baseline_route_handlers_are_async() -> None:
     assert inspect.iscoroutinefunction(health)
 
 
-def test_runserver_project_script_is_defined() -> None:
+def test_app_project_does_not_redeclare_wevra_operator_scripts() -> None:
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
     with pyproject.open("rb") as handle:
         data = tomllib.load(handle)
 
-    assert data["project"]["scripts"]["runserver"] == "wevra.tools.runserver:main"
-    assert data["project"]["scripts"]["validate"] == "wevra.tools.validate:main"
-    assert data["project"]["scripts"]["migrate"] == "wevra.tools.migrate:main"
+    scripts = data["project"].get("scripts", {})
+    wevra_operator_scripts = {
+        "identitymgr",
+        "migrate",
+        "routes",
+        "runserver",
+        "validate",
+        "wevra-identitymgr",
+        "wevra-migrate",
+        "wevra-routes",
+        "wevra-runserver",
+        "wevra-validate",
+    }
+
+    assert scripts.keys().isdisjoint(wevra_operator_scripts)
 
 
 def test_wevra_db_migrate_requires_injected_settings_loader(capsys) -> None:
@@ -360,6 +373,7 @@ def test_project_tool_import_spec_requires_string() -> None:
     ("entrypoint", "argv", "help_text"),
     [
         (runserver_module.main, ["--help"], "Start the local Uvicorn"),
+        (routes_module.main, ["--help"], "Inspect the configured application's"),
         (migrate_module.main, ["--help"], "Run application schema migrations"),
     ],
 )
