@@ -1,54 +1,31 @@
-from __future__ import annotations
-
-from dataclasses import dataclass
-
-from fastapi import APIRouter, FastAPI
-from wevra.web.routes import (
-    HtmlRouteDefinition,
-    ModuleRoutes,
-    register_configured_module_routes,
-)
+from fastapi import APIRouter, FastAPI, Request
+from wevra.web.rendering import render_page
+from wevra.web.routes import register_configured_module_routes
 
 from app.routes.health import router as health_router
-from app.views import HomePageView
+from app.views import build_home_context
+
+router = APIRouter()
 
 
-@dataclass(frozen=True, slots=True)
-class PublicRouteSet:
-    """Stable route names are the URL-generation contract for the public UI."""
-
-    page_routes: tuple[HtmlRouteDefinition, ...]
-    api_routers: tuple[APIRouter, ...] = ()
-
-
-def build_public_route_set() -> PublicRouteSet:
-    return PublicRouteSet(
-        page_routes=(
-            HtmlRouteDefinition(
-                path="/",
-                name="public:home",
-                methods=("GET",),
-                surface="page",
-                view=HomePageView(),
-            ),
-        ),
+@router.get("/", include_in_schema=False, name="public:home")
+async def home(request: Request):
+    return render_page(
+        request,
+        "public/pages/home.html",
+        build_home_context(request),
     )
 
 
-def build_uniquode_module_routes() -> ModuleRoutes:
-    route_set = build_public_route_set()
-    return ModuleRoutes(
-        page_routes=route_set.page_routes,
-        api_routers=(health_router, *route_set.api_routers),
-    )
+router.include_router(health_router)
 
-
-module_routes = build_uniquode_module_routes()
+module_routers = {
+    "default": router,
+}
 
 
 def register_routes(app: FastAPI) -> None:
     register_configured_module_routes(
         app,
         app.state.settings,
-        app.state.html_dispatcher,
     )

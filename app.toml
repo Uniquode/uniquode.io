@@ -4,8 +4,16 @@ modules = [
   "wevra.auth",
 ]
 
-[routes]
-"wevra.auth" = "/"
+[routes."app"]
+default = ""
+
+[routes."wevra.web"]
+partials = ""
+api = ""
+
+[routes."wevra.auth"]
+account = "/account"
+api = ""
 
 [templates]
 auto_reload = true

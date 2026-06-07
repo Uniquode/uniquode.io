@@ -24,7 +24,7 @@ from wevra.web.routes.discovery import (
     static_sources_from_modules,
     template_sources_from_modules,
 )
-from wevra.web.routes.dispatcher import HtmlDispatcher
+from wevra.web.security import SecurityHeaderOptions, register_security_headers
 from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
 
 from app.routes import register_routes
@@ -89,7 +89,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         context_providers_from_modules(app_settings.modules)
     )
     app.middleware("http")(template_context_middleware)
-    app.state.html_dispatcher = HtmlDispatcher(app.state.renderer, app.state.csrf)
+    register_security_headers(
+        app,
+        options=SecurityHeaderOptions(
+            cross_origin_opener_policy=app_settings.cross_origin_opener_policy,
+        ),
+    )
     register_error_handlers(
         app,
         options=ErrorHandlerOptions(static_mount_path=app_settings.static_mount_path),

@@ -66,8 +66,10 @@ project `migrate` entry point is a `wevra.tools.migrate` adapter that loads the
 configured host settings adapter from `[tool.wevra]` and passes those settings
 into the generic `wevra.db` migration command factory.
 Page, partial, and API routes are discovered and registered through `wevra.web`
-from `<module>.routes` through a `module_routes` export, and template context
-providers are registered from `<module>.context` with `add_to_context`.
+from `<module>.routes` through a `module_routers` export, and template context
+providers are registered from `<module>.context` with `add_to_context`. Route
+prefixes are configured per module router label so the application can mount,
+for example, the `wevra.auth` account router at `/account`.
 Validation targets are discovered from
 `<module>.validation` through a `validation_targets` mapping. Runtime template
 and static serving resolve configured module package sources directly, so an
@@ -85,8 +87,16 @@ modules = [
   "wevra.auth",
 ]
 
-[routes]
-"wevra.auth" = "/"
+[routes."app"]
+default = ""
+
+[routes."wevra.web"]
+partials = ""
+api = ""
+
+[routes."wevra.auth"]
+account = "/account"
+api = ""
 
 [templates]
 auto_reload = true
