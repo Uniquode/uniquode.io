@@ -21,7 +21,7 @@ from wevra.web.validation import _contains_post_form, validate_web
 
 import app.validation.environment as environment_validation
 from app.configuration import ConfigurationError
-from app.settings import Settings
+from app.settings import DEFAULT_ROUTE_PREFIXES, Settings
 from app.validation.persistence import validate_persistence
 
 
@@ -44,7 +44,13 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
         config_path=tmp_path / "app.toml",
         project_root=tmp_path,
         modules=modules,
-        routes=RouteOptions(prefixes={}),
+        routes=RouteOptions(
+            prefixes={
+                module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
+                for module_name in modules
+                if module_name in DEFAULT_ROUTE_PREFIXES
+            }
+        ),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         static=StaticOptions(url_path="/static/", export_root=Path("static")),
     )
@@ -126,13 +132,9 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
         in captured.out
     )
     assert "ok: template context providers validate" in captured.out
-    assert "ok: module routes compose" in captured.out
-    assert "ok: route template exists: public:home -> public/pages/home.html" in (
-        captured.out
-    )
-    assert "ok: route template exists: identity:login -> identity/pages/login.html" in (
-        captured.out
-    )
+    assert "ok: module routers compose:" in captured.out
+    assert "ok: template exists: public/pages/home.html" in captured.out
+    assert "ok: template exists: identity/pages/login.html" in captured.out
     assert "ok: POST form CSRF field exists: identity/pages/login.html" in (
         captured.out
     )

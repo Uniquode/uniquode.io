@@ -1,242 +1,312 @@
 ## Context
 
-`wevra.web` currently composes route contributions from configured modules, but
-the declaration model still exposes too much low-level routing detail to each
-module. Auth pages are the clearest example: mounting `wevra.auth` at
-`/account` should move relative auth routes to `/account/...`, but the current
-auth routes are declared as absolute paths such as `/login`, `/signup`, and
-`/logout`. Changing the mount requires edits in route declarations, app
-configuration, and sometimes templates/tests.
+Before this change, `wevra.web` wrapped FastAPI routing in a custom route
+declaration model with separate page, partial, and API route buckets, and HTML
+requests flowed through a framework dispatcher.
 
-The intended model is:
+That layering is doing too much. FastAPI already provides:
 
-- modules declare logical routes;
-- the application chooses module mount points;
-- relative routes mount under the application-selected prefix;
-- absolute routes intentionally bypass that prefix;
-- reverse URL names are generated from module namespace and route key;
-- views own HTTP method behaviour;
-- the dispatcher owns handler invocation, method failure responses, and
-  top-level exception mapping.
+- `APIRouter` for module-owned route groups;
+- `@router.get`, `@router.post`, and `@router.api_route(..., methods=[...])`
+  decorators;
+- include-time router prefixes through `app.include_router(router,
+  prefix="/...")`;
+- function signature parsing for request, path, query, body, form, and
+  dependency values;
+- method handling and `405` responses;
+- exception-handler registration.
+
+The Wevra-specific value is composition across configured modules, not route
+dispatch itself. The revised design uses FastAPI routing directly and keeps
+Wevra focused on module discovery, router-prefix configuration, validation,
+HTML helper conventions, CSRF integration, and error rendering.
 
 ## Goals
 
-- Make route declarations concise and declarative for ordinary module routes.
-- Keep module route paths portable across application mount points.
-- Support both class-based views and plain function handlers.
-- Avoid constructing view classes until a route is actually dispatched.
-- Make route names predictable and reversible without duplicating route keys.
-- Centralise method handling primitives so class and function views behave
-  consistently.
-- Centralise dispatcher-level exception handling for valid page, partial, and
-  API responses.
+- Make configured module route composition a thin layer over FastAPI routers.
+- Let applications configure where module routers mount.
+- Support multiple routers per configured module without baking URL prefixes
+  into the reusable module.
+- Keep route handlers as ordinary FastAPI-decorated functions.
+- Preserve FastAPI path, query, body, form, dependency, and response semantics.
+- Avoid a custom Wevra route DSL and avoid Django-style dispatch unless a
+  handler deliberately chooses to branch on `request.method`.
+- Keep reverse URL names as normal FastAPI/Starlette route names.
+- Preserve shared Wevra HTML rendering, CSRF, static/template, validation, and
+  exception-handling conventions.
+- Provide framework-owned security-header support for
+  `Cross-Origin-Opener-Policy` so popup-oriented integrations can be handled
+  deliberately.
 
 ## Non-Goals
 
 - Do not add a new runtime dependency.
 - Do not introduce automatic installed-package route discovery.
-- Do not force every route into HTML rendering; a handler may return any valid
-  response shape supported by the web dispatch contract.
-- Do not remove explicit absolute routes; they remain an escape hatch.
-- Do not solve future OpenAPI generation or schema declaration beyond preserving
-  enough metadata for current routing and validation.
+- Do not build a replacement for FastAPI routing, dependency injection,
+  parameter parsing, or OpenAPI metadata.
+- Do not support absolute route paths that bypass an included router prefix.
+  Prefix bypass is represented by a separate router mounted with an empty
+  prefix.
+- Do not require all handlers to receive `Request`; handlers ask FastAPI for
+  `Request` only when they need it.
 
-## Route Declaration Model
+## Module Route Surface
 
-Module route surfaces should expose one route table:
+Each configured module may expose routers from `<module>.routes`:
 
 ```python
-module_routes = ModuleRoutes(
-    namespace="auth",
-    routes={
-        "login": Route(LoginView),
-        "signup": Route(SignupView),
-        "logout": Route(LogoutView),
-        "account": Route(AccountView, path=""),
-        "password/reset": Route(PasswordResetView),
-    },
-)
+from fastapi import APIRouter
+
+account_router = APIRouter()
+callback_router = APIRouter()
+
+module_routers = {
+    "account": account_router,
+    "callbacks": callback_router,
+}
 ```
 
-The route key is the default source for both:
+Router labels are stable module-local identifiers. They are not URL prefixes.
+The host application decides the prefix for each label.
 
-- the relative path, for example `login` -> `login`;
-- the reverse-route name segment, for example `login` -> `auth:login`.
+A module with one router should still use an explicit label:
 
-For nested route keys, the default path keeps the slash while the default route
-name uses a deterministic, URL-safe name segment. For example,
-`password/reset` can resolve to path `password/reset` and route name
-`auth:password-reset`.
+```python
+router = APIRouter()
 
-`Route(path=...)` is an escape hatch:
+module_routers = {
+    "default": router,
+}
+```
 
-- `path=None` means derive the relative path from the route key;
-- `path=""` means mount at the module root, such as `/account`;
-- `path="/callback"` means absolute path and bypasses the module mount point.
+`wevra.web` discovers only the route surface. It does not import host
+application modules directly, and it does not know auth/application URL policy.
 
-`Route(name=...)` is also an escape hatch. Ordinary routes should not repeat
-their key in a name field.
+## Route Prefix Configuration
 
-## Module Mounting
-
-Application composition continues to declare module mounts in `app.toml`:
+Application composition config maps module names to router labels and FastAPI
+include prefixes:
 
 ```toml
-[routes]
-"wevra.auth" = "/account"
+[routes."app"]
+default = ""
+
+[routes."wevra.auth"]
+account = "/account"
+callbacks = ""
 ```
 
-Composition applies that mount only to relative route paths. With the route
-table above:
-
-```text
-auth:account        -> /account
-auth:login          -> /account/login
-auth:signup         -> /account/signup
-auth:logout         -> /account/logout
-auth:password-reset -> /account/password/reset
-```
-
-Absolute route paths bypass the mount point and should be used only for special
-cases that are intentionally global.
-
-## View And Handler Model
-
-`Route(...)` accepts a route target. Supported targets should include:
-
-- a `View` class;
-- a view instance;
-- a view factory;
-- a plain sync or async function whose first required argument is `request`.
-
-Route declaration stores the target but does not construct class or factory
-targets during import. The dispatcher resolves or constructs the target lazily.
-The default can be a first-use singleton for stateless views, with a factory
-escape hatch for per-dispatch construction if a later requirement needs it.
-
-Class-based views should follow a Django-style dispatch model:
+This parses conceptually as:
 
 ```python
-class LoginView(TemplateView):
-    http_method_names = (HttpMethod.GET, HttpMethod.HEAD, HttpMethod.POST)
-
-    async def get(self, request: Request) -> Response:
-        ...
-
-    async def post(self, request: Request) -> Response:
-        ...
+{
+    "app": {"default": ""},
+    "wevra.auth": {"account": "/account", "callbacks": ""},
+}
 ```
 
-The base view dispatch operation should:
-
-1. normalise the request method;
-2. verify it is in `http_method_names`;
-3. locate the corresponding lower-case handler method;
-4. return a method-not-allowed response when unsupported;
-5. call the handler and normalise its result into a valid response.
-
-Plain function handlers receive the same request and can use the same helpers:
+Composition then includes routers:
 
 ```python
-async def login(request: Request) -> Response:
-    if method := can_handle(request, (HttpMethod.GET, HttpMethod.HEAD)):
-        return await render_login(request)
-    if method := can_handle(request, (HttpMethod.POST,)):
-        return await submit_login(request)
+for module_name in settings.modules:
+    routes_module = import_module(f"{module_name}.routes")
+    route_prefixes = configured_route_prefixes_for(module_name)
 
-    return invalid_method(
-        request,
-        (HttpMethod.GET, HttpMethod.HEAD, HttpMethod.POST),
-    )
+    for label, router in routes_module.module_routers.items():
+        prefix = route_prefixes[label]
+        app.include_router(router, prefix=prefix)
 ```
 
-The route layer may optionally use explicit route metadata for FastAPI method
-registration, but method validation remains owned by the handler/view contract.
+Prefix validation should match FastAPI include-prefix rules:
 
-## Method Helpers
+- `""` means app root;
+- non-empty prefixes must start with `/`;
+- non-empty prefixes must not end with `/`.
 
-`wevra.web` should expose reusable method primitives:
+Missing route configuration for an exposed router label should fail validation
+unless a deliberate module/default-prefix mechanism is later introduced. The
+safe default is to avoid accidental root exposure when a module adds a new
+router.
 
-- `HttpMethod`, a constrained HTTP method representation;
-- `can_handle(request, methods) -> HttpMethod | None`;
-- `invalid_method(request, methods) -> Response`.
+## Handler Declaration
 
-The helpers should be usable by both class-based views and plain functions. The
-`Allow` header produced by method-not-allowed responses must reflect the
-declared allowed methods.
+Handlers use FastAPI decorators on module routers:
 
-## Reverse URL Contract
+```python
+@account_router.get("/login", name="auth:login")
+async def login_page(request: Request):
+    ...
 
-Templates and handlers should use generated route names rather than hard-coded
-paths. For auth, this change should move toward route names such as:
 
-```text
-auth:login
-auth:signup
-auth:logout
-auth:account
-auth:password-reset
-auth:verify
+@account_router.post("/login", name="auth:login")
+async def login_submit(request: Request):
+    ...
 ```
 
-Separate submit route names should disappear when GET and POST are method
-handlers on the same logical route.
+When one logical endpoint should handle multiple methods, use FastAPI's
+multi-method decorator:
 
-## Route Surfaces
+```python
+@account_router.api_route(
+    "/login",
+    methods=["GET", "POST"],
+    name="auth:login",
+)
+async def login(request: Request):
+    if request.method == "GET":
+        ...
 
-The current page/partial/API distinction remains useful for validation and
-error response selection, but it should not be represented as separate route
-tables. A route may carry surface metadata, or a handler/view may expose it.
+    ...
+```
 
-The dispatcher and validation should still be able to distinguish:
+Path parameters are declared in the FastAPI path and typed in the handler
+signature:
 
-- full page responses;
-- partial or htmx fragment responses;
-- machine-oriented API responses.
+```python
+@account_router.get("/users/{user_id}", name="auth:user")
+async def user_detail(user_id: int, tab: str | None = None):
+    ...
+```
 
-## Exception Handling
+`Request` remains optional. Handlers include it only when they need raw request
+state, application state, sessions, renderer access, CSRF helpers, or method
+branching.
 
-`wevra.web` should provide a dispatcher-level exception handling boundary,
-similar in role to Spring global exception handling. Exceptions raised by
-class-based views or function handlers should flow through a global dispatcher
-exception registry before a response is returned.
+## Handler Import And Decorator Registration
 
-The exception handling boundary should:
+FastAPI decorators register handlers at import time. If decorated handlers live
+outside `routes.py`, those handler modules must be imported before Wevra
+includes the routers.
 
-- map known exceptions to responses by exception type and route surface;
+Small modules may colocate routers and handlers in `routes.py`.
+
+For larger modules, there are two acceptable patterns:
+
+1. `routes.py` defines routers, then explicitly loads handler modules after the
+   routers exist. Handler modules import the routers from their local
+   `routes.py` module and decorate functions.
+2. A private router-definition module, such as `_routers.py`, defines routers.
+   Handler modules import routers from `_routers.py`. `routes.py` imports the
+   handler modules for registration and exposes `module_routers`.
+
+The second pattern avoids circular imports most cleanly. The first pattern is
+acceptable if `routes.py` defines router objects before importing handler
+modules and handler modules import only those router objects rather than
+`module_routers`.
+
+`wevra.web` should import only `<module>.routes`; the route module is
+responsible for ensuring all decorator registration side effects have occurred.
+
+## Router Inclusion And Conflict Detection
+
+Wevra composition should include FastAPI routers directly. It may still inspect
+the resulting route graph before or after inclusion to validate:
+
+- configured module route surfaces are well-formed;
+- `module_routers` is a mapping from non-blank string labels to `APIRouter`
+  instances;
+- each router label has a configured prefix;
+- route prefixes obey FastAPI include-prefix rules;
+- route names are unique where reverse URL generation requires uniqueness;
+- method/path combinations do not accidentally conflict after prefixes are
+  applied.
+
+The implementation should prefer FastAPI's own route objects and metadata over
+duplicating route declarations.
+
+## HTML Helpers, CSRF, And Forms
+
+Removing the dispatcher also removes the current central CSRF check that runs
+before HTML view rendering. The refactor must replace that behaviour with
+FastAPI-native integration.
+
+Likely options are:
+
+- route or router dependencies that validate CSRF for unsafe methods;
+- a Wevra-provided dependency/helper that modules attach to HTML form routes;
+- a router factory that returns an `APIRouter` with standard Wevra HTML
+  dependencies.
+
+The first implementation should keep the mechanism explicit and testable. It
+must preserve the existing requirement that unsafe form submissions are checked
+when CSRF protection is configured.
+
+Rendering helpers can remain reusable functions/classes. They should be called
+from ordinary FastAPI handlers rather than requiring a dispatcher-owned
+view-render protocol.
+
+## Error Handling
+
+The previous proposal introduced a dispatcher-level exception boundary. With
+FastAPI-native routing, exception handling should instead use FastAPI/Starlette
+exception handlers and Wevra-provided response helpers.
+
+The error-handling layer should:
+
+- register framework default handlers on the FastAPI application;
+- allow host applications or modules to register specialised handlers;
 - preserve HTTP status codes for HTTP exceptions;
-- produce valid full-page error responses for page routes;
-- produce fragment-compatible error responses for partial routes;
-- produce machine-oriented responses for API routes;
-- produce 405 responses with an `Allow` header for unsupported methods;
-- allow host applications or framework modules to register specialised
-  handlers without importing the host application from `wevra.web`.
+- return full-page HTML error responses for page routes;
+- return fragment-compatible responses for partial routes;
+- return machine-oriented responses for API routes;
+- leave raw FastAPI route behaviour available where a route opts into it.
 
-FastAPI or Starlette app-level exception handlers may remain as a fallback for
-raw FastAPI routers and non-dispatcher errors, but routes declared through
-`ModuleRoutes` should receive top-level dispatcher exception handling.
+Route surface detection may use router-level metadata, route tags,
+dependencies, endpoint attributes, or another FastAPI-compatible convention.
+The implementation should not require a custom dispatcher.
+
+## Cross-Origin Opener Policy
+
+`Cross-Origin-Opener-Policy` is a response security header, not a CORS or CSRF
+setting. It controls opener/window isolation and matters for popup-oriented
+flows such as OAuth or payment handling.
+
+Wevra should provide a small security-header mechanism that can:
+
+- set an application default, likely `same-origin`;
+- disable the header when explicitly configured as `None`;
+- allow specific routes or routers to override the default with values such as
+  `same-origin-allow-popups`;
+- avoid overwriting a response that already deliberately set the header.
+
+The implementation should use FastAPI/Starlette-compatible middleware,
+dependencies, endpoint metadata, or route metadata rather than a dispatcher.
+
+The likely shape is:
+
+- app setup registers middleware that applies the default COOP value;
+- a route/router helper or decorator marks endpoint metadata for a specific
+  policy override;
+- middleware consults the resolved endpoint or route metadata and applies the
+  effective value after the handler returns.
+
+For payment or OAuth popup forms, the route that initiates or coordinates the
+popup can opt into `same-origin-allow-popups` while the rest of the application
+keeps the stricter default.
 
 ## Migration Strategy
 
-1. Introduce the new route/view primitives in `wevra.web` beside the current
-   implementation.
-2. Add tests for declarative route maps, method dispatch, function handlers,
-   lazy view construction, relative/absolute path composition, root route
-   mounting, reverse URL names, and dispatcher exception mapping.
-3. Convert `wevra.web` built-in routes to the new route map.
-4. Convert `wevra.auth` pages from split `identity:*` page/submit routes to
-   method-dispatching `auth:*` logical routes.
-5. Convert `uniquode` public and health routes where appropriate.
-6. Update validation so route-map declarations are checked before startup.
-7. Remove or deprecate the old `HtmlRouteDefinition` and split route-bucket
-   API once all live modules have moved.
+1. Introduce FastAPI-router discovery and prefix configuration beside the
+   current custom route-bucket implementation.
+2. Add validation tests for `module_routers`, configured prefixes, missing
+   router labels, duplicate route names, and post-prefix method/path conflicts.
+3. Add or adapt CSRF and error-handler tests for FastAPI-native routes.
+4. Add COOP default and route/handler override tests.
+5. Convert `wevra.web` built-in routes to module-owned `APIRouter` objects.
+6. Convert `wevra.auth` pages from custom route declarations to decorated
+   FastAPI handlers.
+7. Convert application public and health routing to the new router surface
+   where appropriate.
+8. Remove or deprecate the custom route declarations, route buckets, and
+   dispatcher once all live modules have moved.
 
 ## Open Questions
 
-- Should a route target function without explicit method metadata register a
-  broad method set by default, or should it default to `GET` and require
-  metadata for broader handling?
-- Should lazy class-based views be cached as singletons by default, or should
-  `Route(...)` make singleton/per-request construction explicit?
-- Should route surface default to `page`, be inferred from path prefixes such
-  as `/api` and `/partials`, or be mandatory for non-page routes?
+- Should Wevra provide a router factory for common page/partial/API defaults,
+  or should modules use plain `APIRouter` plus explicit dependencies?
+- Should duplicate route names be rejected globally, or should validation allow
+  FastAPI's existing behaviour when multiple methods share one URL name?
+- What is the least intrusive FastAPI-compatible way to mark route surface for
+  error-response selection?
+- Should COOP overrides share the same endpoint metadata mechanism as route
+  surface metadata, or use a separate helper/decorator for clarity?

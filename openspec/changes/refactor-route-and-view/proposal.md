@@ -1,35 +1,53 @@
 ## Why
 
-The current route/view model is too coupled: module routes can be prefixed by
-application configuration, but feature modules still hard-code most route paths
-as absolute paths and often split one logical endpoint into separate page and
-submit route declarations. This makes module mounting, reverse URL naming, view
-method handling, and error handling harder to reason about than they should be
-while the `wevra.web` API is still being shaped.
+The current route/view model is too coupled and too custom. `wevra.web`
+composes module route contributions, but feature modules still hard-code route
+paths as absolute paths and declare routes through a Wevra-specific
+route-definition layer that partially duplicates FastAPI and Starlette routing.
+
+After separating Wevra into its own project, the cleaner boundary is to let
+FastAPI remain the route declaration and dispatch mechanism. Wevra should own
+module discovery, router inclusion, validation, rendering helpers, CSRF
+integration, and exception handling conventions rather than inventing a
+parallel routing framework.
 
 ## What Changes
 
-- **BREAKING**: Replace the current `ModuleRoutes(page_routes=..., partial_routes=..., api_routers=...)`
-  declaration style with a declarative route map owned by `wevra.web`.
-- Introduce `ModuleRoutes(namespace=..., routes={...})`, where route keys define
-  default logical names and relative paths.
-- Let application configuration choose a module mount point once, such as
-  `[routes] "wevra.auth" = "/account"`, and have module-relative routes mount
-  beneath that prefix.
-- Preserve absolute route paths as explicit bypasses for special cases.
-- Add a Django-style class-based `View` dispatch model where a view declares the
-  HTTP methods it supports and implements `get`, `post`, `put`, `delete`,
-  `patch`, or other method handlers as needed.
-- Support `Route(function)` for plain function handlers where the request is the
-  first required argument and the function may decide method handling from the
-  request.
-- Add reusable method helpers such as `can_handle(request, methods)` and
-  `invalid_method(request, methods)` for both class views and function views.
-- Instantiate view classes or factories lazily rather than at module import or
-  route declaration time.
-- Add top-level dispatcher exception handling so exceptions raised by route
-  handlers are converted into valid page, partial, or API responses through a
-  global `wevra.web` exception-handling boundary.
+- **BREAKING**: Replace the current Wevra-specific HTML route-definition API
+  with module-owned FastAPI `APIRouter` objects.
+- Modules expose route surfaces from `<module>.routes` through a
+  `module_routers` mapping of stable router labels to `APIRouter` instances.
+- Application configuration maps configured module router labels to FastAPI
+  include prefixes, for example:
+
+  ```toml
+  [routes."wevra.auth"]
+  account = "/account"
+  callbacks = ""
+  ```
+
+- Wevra composition imports each configured module's route surface and includes
+  each declared router with the configured prefix by calling
+  `app.include_router(router, prefix=prefix)`.
+- Route handlers use FastAPI decorators directly, such as `@router.get(...)`,
+  `@router.post(...)`, and `@router.api_route(..., methods=[...])`.
+- Route paths inside routers remain normal FastAPI paths beginning with `/`;
+  global routes use a router mounted with an empty prefix rather than an
+  absolute-path bypass rule.
+- Reverse URL names are normal FastAPI/Starlette route names supplied by the
+  route decorators.
+- View/helper code may live outside `routes.py`, but route modules are
+  responsible for importing handler modules so decorator registration has
+  happened before Wevra includes the routers.
+- Replace dispatcher-owned method handling with FastAPI route method handling
+  and handler-level branching where `@router.api_route(..., methods=[...])` is
+  used.
+- Replace dispatcher-level exception handling with FastAPI/Starlette exception
+  handlers plus Wevra-provided rendering and response helpers for page,
+  partial, and API surfaces.
+- Add reusable `Cross-Origin-Opener-Policy` handling so applications can set a
+  secure default and opt specific popup-oriented routes into values such as
+  `same-origin-allow-popups`.
 
 ## Capabilities
 
@@ -39,17 +57,19 @@ None.
 
 ### Modified Capabilities
 
-- `html-ui-foundation`: Refactor route declaration, view dispatch, method
-  handling, module mount semantics, reverse route naming, and dispatcher-level
-  exception handling in `wevra.web`.
+- `html-ui-foundation`: Refactor module route declaration and composition to
+  use FastAPI `APIRouter` objects, configured router prefixes, FastAPI route
+  decorators, FastAPI method dispatch, and FastAPI/Starlette exception handling
+  conventions.
 
 ## Impact
 
-- Affected code includes `wevra.web.routes`, `wevra.web.views`,
-  `wevra.web.errors`, `wevra.web.validation`, `wevra.auth.routes`,
-  `uniquode.routes`, route templates that call `request.url_for(...)`, and
-  tests around route composition, web validation, error rendering, and auth
-  pages.
-- Existing internal route names such as `identity:login-submit` may be replaced
-  by method-dispatching logical route names such as `auth:login`.
+- Affected code includes `wevra.web.routes`, `wevra.web.validation`,
+  `wevra.web.errors`, `wevra.web.forms`, `wevra.auth.routes`, application
+  routes, templates that call `request.url_for(...)`, and tests around route
+  composition, configured prefixes, validation, CSRF, error rendering, and auth
+  pages, and security-header behaviour.
+- Existing submit-specific route names may be replaced or consolidated where a
+  single FastAPI route handles multiple methods with
+  `@router.api_route(...)`.
 - No new runtime dependency is expected.

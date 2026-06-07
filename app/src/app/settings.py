@@ -28,6 +28,7 @@ from wevra.db.urls import (
     SQLITE_MEMORY_DATABASE_URL,
     resolve_database_url,
 )
+from wevra.web.security import CrossOriginOpenerPolicy
 
 from app.configuration import ConfigurationError
 from app.environment import (
@@ -41,6 +42,7 @@ __all__ = (
     "DEFAULT_DATABASE_FILE",
     "DEFAULT_DATABASE_URL",
     "DEFAULT_MODULES",
+    "DEFAULT_ROUTE_PREFIXES",
     "ALLOWED_DEPLOYMENT_ENVIRONMENTS",
     "ConfigurationError",
     "DEPLOYMENT_ENVIRONMENT_ERROR",
@@ -63,11 +65,17 @@ DEPLOYMENT_ENVIRONMENT_ERROR: Final = (
 )
 
 DEFAULT_ALEMBIC_CONFIG = Path("alembic.ini")
+DEFAULT_PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATABASE_FILE = Path("app.sqlite3")
 DEFAULT_DATABASE_URL = (
     f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}{DEFAULT_DATABASE_FILE.as_posix()}"
 )
 DEFAULT_MODULES: Final = ("app", "wevra.web", "wevra.auth")
+DEFAULT_ROUTE_PREFIXES: Final[dict[str, dict[str, str]]] = {
+    "app": {"default": ""},
+    "wevra.web": {"partials": "", "api": ""},
+    "wevra.auth": {"account": "/account", "api": ""},
+}
 DEFAULT_SESSION_COOKIE_NAME: Final = "uniquode_session"
 CSRF_TOKEN_SECRET_BYTES = 32
 _GENERATE_LOCAL_CSRF_SECRET = "__generate-local-csrf-secret__"
@@ -84,7 +92,7 @@ class Settings:
     app_name: str = "uniquode"
     deployment_environment: DeploymentEnvironment = "local"
     database_url: str = DEFAULT_DATABASE_URL
-    project_root: Path = field(default_factory=Path.cwd)
+    project_root: Path = field(default=DEFAULT_PROJECT_ROOT)
     template_root: Path | None = None
     static_root: Path | None = None
     migrations_root: Path | None = None
@@ -95,6 +103,7 @@ class Settings:
     static_url_path: str = "/static/"
     template_auto_reload: bool | None = None
     template_cache_size: int = 400
+    cross_origin_opener_policy: CrossOriginOpenerPolicy | None = "same-origin"
     app_config: AppConfig | None = None
     csrf_token_secret_configured: bool = field(init=False, repr=False)
 
@@ -318,6 +327,22 @@ class Settings:
         return self.app_config.modules
 
     @property
+    def route_prefixes(self) -> dict[str, dict[str, str]]:
+        prefixes = {
+            module: dict(DEFAULT_ROUTE_PREFIXES[module])
+            for module in self.modules
+            if module in DEFAULT_ROUTE_PREFIXES
+        }
+        if self.app_config is not None:
+            for module, configured_prefixes in self.app_config.routes.prefixes.items():
+                prefixes[module] = {
+                    **prefixes.get(module, {}),
+                    **configured_prefixes,
+                }
+
+        return prefixes
+
+    @property
     def identity_enabled(self) -> bool:
         return "wevra.auth" in self.modules
 
@@ -338,6 +363,7 @@ def load_settings(
     not mutate `os.environ`. `project_root` is used as the dotenv search root and
     as the base for resolving relative configured paths and SQLite database URLs.
     """
+    resolved_project_root = (project_root or DEFAULT_PROJECT_ROOT).resolve()
     try:
         return load_composed_settings(
             Settings,
@@ -345,7 +371,7 @@ def load_settings(
             env_settings=SETTINGS_ENV_SETTINGS,
             extra_value_loaders=(_identity_options_kwargs_from_environment,),
             environ=environ,
-            project_root=project_root,
+            project_root=resolved_project_root,
             read_dotenv=read_dotenv,
         )
     except SettingsLoadError as exc:

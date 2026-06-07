@@ -14,6 +14,13 @@ The workspace members are:
 The Wevra framework source repository is
 <https://github.com/Uniquode/wevra>.
 
+While `wevra/` is an ignored editable checkout, changes may intentionally span
+this repository and a matching `Uniquode/wevra` branch. When reviewing an
+application branch that imports new Wevra APIs, treat the matching Wevra branch
+as part of the change and merge or pin it before merging the application
+branch. A clean checkout that resolves Wevra from `main` can otherwise fail
+until the framework side has landed.
+
 Use the workspace root for shared dependency resolution while `wevra/` is a
 local workspace member:
 
