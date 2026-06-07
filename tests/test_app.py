@@ -111,7 +111,6 @@ from wevra.web.forms.csrf import (
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
 )
-from wevra.web.routes import RouteCompositionError
 from wevra.web.routes.contracts import _normalise_path_prefix
 from wevra.web.security import COOP_HEADER_NAME
 from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
@@ -1002,30 +1001,29 @@ def test_create_app_applies_configured_route_prefixes(
         asyncio.run(close_database(web_app.state.database))
 
 
-def test_create_app_rejects_missing_configured_route_prefixes(
+def test_settings_route_prefixes_preserve_default_labels_when_config_omits_module(
     tmp_path: Path,
 ) -> None:
-    with pytest.raises(
-        RouteCompositionError,
-        match="Route config for configured module 'app' is missing",
-    ):
-        create_app(
-            Settings(
-                database_url=SQLITE_MEMORY_DATABASE_URL,
-                project_root=tmp_path,
-                app_config=AppConfig(
-                    config_path=tmp_path / "app.toml",
-                    project_root=tmp_path,
-                    modules=("app",),
-                    routes=RouteOptions(prefixes={}),
-                    templates=TemplateOptions(auto_reload=True, cache_size=0),
-                    static=StaticOptions(
-                        url_path="/static/",
-                        export_root=Path("static"),
-                    ),
-                ),
-            )
-        )
+    settings = Settings(
+        database_url=SQLITE_MEMORY_DATABASE_URL,
+        project_root=tmp_path,
+        app_config=AppConfig(
+            config_path=tmp_path / "app.toml",
+            project_root=tmp_path,
+            modules=("app", "wevra.auth"),
+            routes=RouteOptions(prefixes={}),
+            templates=TemplateOptions(auto_reload=True, cache_size=0),
+            static=StaticOptions(
+                url_path="/static/",
+                export_root=Path("static"),
+            ),
+        ),
+    )
+
+    assert settings.route_prefixes == {
+        "app": {"default": ""},
+        "wevra.auth": {"account": "/account", "api": ""},
+    }
 
 
 def test_create_app_registers_routes_only_from_configured_modules(
