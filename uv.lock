@@ -99,8 +99,8 @@ dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pre-commit", specifier = ">=4.6.0" },
     { name = "pytest", specifier = ">=9.0.3" },
-    { name = "ruff", specifier = ">=0.15.15" },
-    { name = "ty", specifier = ">=0.0.42" },
+    { name = "ruff", specifier = ">=0.15.16" },
+    { name = "ty", specifier = ">=0.0.44" },
 ]
 
 [[package]]
@@ -1469,8 +1469,8 @@ dev = [
     { name = "httpx", specifier = ">=0.28.1" },
     { name = "pre-commit", specifier = ">=4.6.0" },
     { name = "pytest", specifier = ">=9.0.3" },
-    { name = "ruff", specifier = ">=0.15.15" },
-    { name = "ty", specifier = ">=0.0.42" },
+    { name = "ruff", specifier = ">=0.15.16" },
+    { name = "ty", specifier = ">=0.0.44" },
 ]
 
 [[package]]
