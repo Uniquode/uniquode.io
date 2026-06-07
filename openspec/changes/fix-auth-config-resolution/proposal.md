@@ -6,11 +6,10 @@ commands resolve the configured host app and load `APP_CONFIG` / `app.toml`.
 This creates a split-brain configuration model where the web app and auth
 operator CLI can silently use different configuration sources.
 
-This proposal is intended to supersede the current ADR 0005 guidance that
-auth operator tooling should use generic `auth.toml` configuration without
-depending on a host project root. If this change is accepted, ADR 0005 must be
-updated to make application config the canonical auth configuration boundary
-for Wevra-hosted apps.
+This change supersedes the current ADR 0005 guidance that auth operator
+tooling should use generic `auth.toml` configuration without depending on a
+host project root. It includes updating ADR 0005 so application config becomes
+the canonical auth configuration boundary for Wevra-hosted apps.
 
 The broader project command model is also too permissive when no application
 configuration file is resolved. Application runtime commands can fall back to
@@ -44,6 +43,8 @@ behaviour.
   directory.
 - Update application defaults and documentation so runtime app settings and
   `wevra-identitymgr` consume the same `[auth]` configuration.
+- Update ADR 0005 so its accepted architecture guidance reflects application
+  config as the canonical auth configuration boundary for Wevra-hosted apps.
 - Preserve explicit settings construction for tests and specialised callers;
   the fail-fast rule applies to environment/project config loading used by
   commands and default app startup.
@@ -70,7 +71,7 @@ None.
 
 - Affected code is expected to include Wevra auth settings loading,
   `wevra-identitymgr` command setup, application settings loading, committed
-  configuration files, tests, and documentation.
+  configuration files, tests, documentation, and ADR 0005.
 - `auth.toml`, `AUTH_CONFIG`, and normal `--config`-based operation are removed
   rather than retained as legacy compatibility because there are no released
   users to preserve.
