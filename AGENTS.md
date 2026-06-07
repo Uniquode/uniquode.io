@@ -44,6 +44,23 @@ Treat GitHub metadata as the automation trigger and Linear issue links as visibl
 - Do not add GitHub pull requests or branches as Linear comments.
 - Do not rely on manually added Linear resource links to trigger Linear status automation.
 
+## Cross-Repository Wevra/App Changes
+
+While `uniquode.io` consumes Wevra through the temporary workspace checkout, its
+CI checks out `Uniquode/wevra` `main` into `wevra/`. For changes that span both
+repositories, complete and merge the Wevra side before opening the
+`uniquode.io` pull request:
+
+1. Commit, push, and open the Wevra branch/PR.
+2. Address Wevra review feedback and merge it to `wevra:main`.
+3. Update the local `wevra/` checkout to `main`.
+4. Verify the `uniquode.io` changes against the updated Wevra checkout.
+5. Commit, push, and open the `uniquode.io` branch/PR.
+
+Do not rely on a `uniquode.io` PR to pass CI against an unmerged Wevra feature
+branch unless the workflow is deliberately changed to pin that branch for the
+PR.
+
 # Stitch
 
 The repository Stitch project is `uniquode.io` with project resource name `projects/5961352154368593199`.
