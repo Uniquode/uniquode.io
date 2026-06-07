@@ -328,12 +328,19 @@ class Settings:
 
     @property
     def route_prefixes(self) -> dict[str, dict[str, str]]:
-        source = (
-            DEFAULT_ROUTE_PREFIXES
-            if self.app_config is None
-            else self.app_config.routes.prefixes
-        )
-        return {module: dict(prefixes) for module, prefixes in source.items()}
+        prefixes = {
+            module: dict(DEFAULT_ROUTE_PREFIXES[module])
+            for module in self.modules
+            if module in DEFAULT_ROUTE_PREFIXES
+        }
+        if self.app_config is not None:
+            for module, configured_prefixes in self.app_config.routes.prefixes.items():
+                prefixes[module] = {
+                    **prefixes.get(module, {}),
+                    **configured_prefixes,
+                }
+
+        return prefixes
 
     @property
     def identity_enabled(self) -> bool:
