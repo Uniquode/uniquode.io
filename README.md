@@ -27,18 +27,18 @@ identity support.
 Run the development server:
 
 ```sh
-uv run runserver
-uv run runserver --host 127.0.0.1 --port 8000
-uv run runserver --reload
-uv run runserver --no-reload
-APP_RELOAD=1 uv run runserver
+uv run wevra-runserver
+uv run wevra-runserver --host 127.0.0.1 --port 8000
+uv run wevra-runserver --reload
+uv run wevra-runserver --no-reload
+APP_RELOAD=1 uv run wevra-runserver
 ```
 
 Additional Uvicorn arguments can be passed after `--`, for example to trust
 forwarded headers from a local TLS-terminating proxy:
 
 ```sh
-uv run runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
+uv run wevra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
 See [WEB-SECURITY.md](WEB-SECURITY.md) for reverse-proxy HTTPS setup and secure
@@ -62,9 +62,9 @@ validation, and future project tooling. `wevra.db` discovers model metadata
 from `<module>.models` and Alembic version locations from
 `<module>/migrations/versions/` when those surfaces exist; it also owns the
 reusable database URL parsing and async SQLAlchemy engine/session helpers. The
-project `migrate` entry point is a `wevra.tools.migrate` adapter that loads the
-configured host settings adapter from `[tool.wevra]` and passes those settings
-into the generic `wevra.db` migration command factory.
+project `wevra-migrate` command is a `wevra.tools.migrate` adapter that loads
+the configured host settings adapter from `[tool.wevra]` and passes those
+settings into the generic `wevra.db` migration command factory.
 Page, partial, and API routes are discovered and registered through `wevra.web`
 from `<module>.routes` through a `module_routers` export, and template context
 providers are registered from `<module>.context` with `add_to_context`. Route
@@ -144,19 +144,20 @@ added with `uv add`; development dependencies should be added with `uv add
 Run project validation:
 
 ```sh
-uv run validate
-uv run validate --verbose
-uv run validate --verbose environment web persistence
+uv run wevra-validate
+uv run wevra-validate --verbose
+uv run wevra-validate --verbose environment web persistence
 ```
 
 Verbose validation lists the concrete checks performed for each target. Database
 URLs printed by validation are redacted when credentials are embedded, for
 example `postgresql+asyncpg://***:***@host.example/app`.
 
-Project command wrappers such as `runserver` and `validate` live in
-`wevra.tools`. The current application remains the configured command target
-where appropriate, for example `runserver` starts `app.asgi:app` through
-the `[tool.wevra]` adapter metadata.
+Project command wrappers such as `wevra-runserver`, `wevra-routes`, and
+`wevra-validate` are published by the `wevra` package. The current application
+remains the configured command target where appropriate, for example
+`wevra-runserver` starts `app.asgi:app` through the `[tool.wevra]` adapter
+metadata.
 
 From the workspace root, run the main checks:
 
@@ -170,13 +171,13 @@ uv --directory app run pytest -q
 Initialise or update the local SQLite development database:
 
 ```sh
-uv run migrate upgrade
+uv run wevra-migrate upgrade
 ```
 
 Use `--database-url` to target an explicit database for one migration command:
 
 ```sh
-uv run migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 upgrade
+uv run wevra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 upgrade
 ```
 
 PostgreSQL environments must provide the database, users, roles, and privileges
@@ -185,47 +186,47 @@ before application startup. Alembic handles application schema migrations only.
 Manage local identity users with the operator CLI:
 
 ```sh
-uv run identitymgr user create person@example.com
-uv run identitymgr user create admin@example.com --admin
-uv run identitymgr user create reader@example.com --group readers
-uv run identitymgr user update reader@example.com --add-group editors
-uv run identitymgr user update reader@example.com --rm-group readers
-uv run identitymgr user update reader@example.com --set-group operators
-uv run identitymgr user list
-uv run identitymgr user list --json
-uv run identitymgr user password person@example.com
-uv run identitymgr user delete person@example.com --force
+uv run wevra-identitymgr user create person@example.com
+uv run wevra-identitymgr user create admin@example.com --admin
+uv run wevra-identitymgr user create reader@example.com --group readers
+uv run wevra-identitymgr user update reader@example.com --add-group editors
+uv run wevra-identitymgr user update reader@example.com --rm-group readers
+uv run wevra-identitymgr user update reader@example.com --set-group operators
+uv run wevra-identitymgr user list
+uv run wevra-identitymgr user list --json
+uv run wevra-identitymgr user password person@example.com
+uv run wevra-identitymgr user delete person@example.com --force
 ```
 
 Manage local authorisation scopes and groups with the same CLI:
 
 ```sh
-uv run identitymgr scope create document:read --description "Read documents"
-uv run identitymgr scope update document:read --description "Read published documents"
-uv run identitymgr scope list --json
-uv run identitymgr scope delete document:read
+uv run wevra-identitymgr scope create document:read --description "Read documents"
+uv run wevra-identitymgr scope update document:read --description "Read published documents"
+uv run wevra-identitymgr scope list --json
+uv run wevra-identitymgr scope delete document:read
 
-uv run identitymgr group create readers --description "Readers" --scope document:read
-uv run identitymgr group readers update --scope document:write --rm-scope document:read
-uv run identitymgr group readers add-user person@example.com
-uv run identitymgr group readers add-group staff
-uv run identitymgr group readers show --json
-uv run identitymgr group effective-scopes person@example.com --json
-uv run identitymgr group readers remove-user person@example.com
-uv run identitymgr group readers remove-group staff
-uv run identitymgr group readers delete --force
+uv run wevra-identitymgr group create readers --description "Readers" --scope document:read
+uv run wevra-identitymgr group readers update --scope document:write --rm-scope document:read
+uv run wevra-identitymgr group readers add-user person@example.com
+uv run wevra-identitymgr group readers add-group staff
+uv run wevra-identitymgr group readers show --json
+uv run wevra-identitymgr group effective-scopes person@example.com --json
+uv run wevra-identitymgr group readers remove-user person@example.com
+uv run wevra-identitymgr group readers remove-group staff
+uv run wevra-identitymgr group readers delete --force
 ```
 
-`identitymgr` timestamp arguments accept Unix seconds directly, such as
+`wevra-identitymgr` timestamp arguments accept Unix seconds directly, such as
 `--expires-at 4102444800`, or supported date/time strings parsed by
 `dateparser`. Numeric input is interpreted first as Unix seconds, so use a
 separated form such as `2025-01-01` for calendar dates.
 
-`identitymgr` is owned by the reusable authentication package and loads generic
-auth configuration from `--config`, `AUTH_CONFIG`, or `./auth.toml` when
-present. The file uses an `[auth]` table. The `uniquode` web application still
-loads its runtime settings from envex environment configuration; a host may
-choose to share `auth.toml`, but only if it explicitly loads that source.
+`wevra-identitymgr` is owned by the reusable authentication package and loads
+generic auth configuration from `--config`, `AUTH_CONFIG`, or `./auth.toml`
+when present. The file uses an `[auth]` table. The `uniquode` web application
+still loads its runtime settings from envex environment configuration; a host
+may choose to share `auth.toml`, but only if it explicitly loads that source.
 
 ```toml
 [auth]
@@ -259,8 +260,8 @@ This lets reusable `wevra.auth` tooling share a host application's database
 environment without requiring a host-specific wrapper, while still allowing an
 auth-specific override for automation.
 
-`identitymgr` talks to the configured identity database directly. It is not an
-API-backed remote administration client; that mode is deferred until
+`wevra-identitymgr` talks to the configured identity database directly. It is
+not an API-backed remote administration client; that mode is deferred until
 administrative API tokens and scopes exist. Passwords are entered through hidden
 prompts by default, or read from stdin with `--password -` for operator
 automation. Password changes revoke existing sessions unless `--no-revoke` is
