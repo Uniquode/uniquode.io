@@ -33,7 +33,7 @@ of the existing validation command.
   do not parse handler source code to discover templates.
 - Keep the existing validation command focused on broad project structure.
   Route-tree checks may share lower-level route-inspection helpers, but they
-  are exposed through a separate command or utility surface.
+  are exposed through the prefixed `wevra-routes` command or utility surface.
 - Do not add a runtime dependency.
 
 ## Capabilities
@@ -45,14 +45,17 @@ of the existing validation command.
 
 ### Modified Capabilities
 
-None.
+- `application-infrastructure`: Move reusable Wevra operator commands to
+  prefixed package-owned console scripts so host applications do not need to
+  re-declare bare command names.
 
 ## Impact
 
 - Affected code is expected to include Wevra route composition metadata,
   route-inspection helpers, output renderers, a CLI entry point or tool command,
-  tests around route-tree output/check behaviour, and documentation for using
-  the utility in review or local smoke-test workflows.
+  prefixed Wevra package script wiring, tests around route-tree output/check
+  behaviour, and documentation for using the utility in review or local
+  smoke-test workflows.
 - The utility may be consumed from the `uniquode.io` workspace while its
   implementation belongs primarily in the reusable Wevra package.
 - Existing application runtime behaviour should not change.

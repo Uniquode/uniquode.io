@@ -175,15 +175,15 @@ not create false collisions unless they are installed as explicit routes.
 The existing validation command may share lower-level route-inspection helpers
 later, but it should not run the route-tree smoke test as part of its default
 web validation target. A developer or CI job that wants route smoke testing
-should invoke the new utility explicitly, for example through a project script
-such as `routes --check`.
+should invoke the new utility explicitly, for example through the prefixed
+Wevra package script `wevra-routes --check`.
 
 ## Risks / Trade-offs
 
 - Importing the ASGI app can run application startup wiring or import-time side
-  effects. Mitigation: load the same target used by `runserver`, document that
-  the utility imports but does not serve the app, and keep tests around app
-  construction.
+  effects. Mitigation: load the same target used by `wevra-runserver`,
+  document that the utility imports but does not serve the app, and keep tests
+  around app construction.
 - FastAPI internals used for body/form/dependency shape can change. Mitigation:
   isolate FastAPI-specific inspection behind small helper functions and treat
   unavailable metadata as unknown rather than fatal.
@@ -204,9 +204,10 @@ such as `routes --check`.
 
 1. Add route-inspection helpers and tests without changing runtime dispatch.
 2. Record optional Wevra route-origin metadata during router registration.
-3. Add the CLI/tool command, output renderers, and host project script wiring.
+3. Add the CLI/tool command, output renderers, and prefixed Wevra package
+   script wiring.
 4. Document local review and CI smoke-test usage.
-5. Roll back by removing the project script and inspector helpers; application
+5. Roll back by removing the package script and inspector helpers; application
    runtime behaviour is not part of the change.
 
 ## Open Questions

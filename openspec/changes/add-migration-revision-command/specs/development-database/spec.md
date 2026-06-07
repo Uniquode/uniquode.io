@@ -5,8 +5,9 @@ The system SHALL provide a project migration command for generating Alembic
 revision files in configured module-owned migration locations.
 
 #### Scenario: Revision command places file in owning module
-- **WHEN** a developer runs `uv run migrate revision --module <module> -m <message>`
-  for a configured importable module
+- **WHEN** a developer runs
+  `uv run wevra-migrate revision --module <module> -m <message>` for a
+  configured importable module
 - **THEN** the command invokes Alembic revision generation with `version_path`
   set to that module's conventional `<module>/migrations/versions/` location
 
@@ -39,14 +40,15 @@ revision files in configured module-owned migration locations.
   while still placing the generated file in the selected owning module
 
 #### Scenario: Roll-forward order is visible in help
-- **WHEN** a developer views `uv run migrate revision --help`
+- **WHEN** a developer views `uv run wevra-migrate revision --help`
 - **THEN** the command help explains the usual roll-forward order of upgrading
   to the previous head, updating models, generating the owning module revision,
   reviewing generated operations and graph pointers, running upgrade, and
   running validation
 
 #### Scenario: Existing migration commands remain unchanged
-- **WHEN** a developer runs `uv run migrate upgrade`, `uv run migrate downgrade`,
-  `uv run migrate current`, or `uv run migrate history`
+- **WHEN** a developer runs `uv run wevra-migrate upgrade`,
+  `uv run wevra-migrate downgrade`, `uv run wevra-migrate current`, or
+  `uv run wevra-migrate history`
 - **THEN** those commands retain their existing arguments, database URL
   override behaviour, and Alembic operation mapping

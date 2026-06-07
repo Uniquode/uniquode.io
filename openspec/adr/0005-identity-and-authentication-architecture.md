@@ -90,11 +90,11 @@ the identity data.
 
 Treat local identity administration tooling as part of the `auth_ext` boundary
 when it operates on the reusable `auth_ext` identity model. Package-owned tools
-such as `identitymgr` must use generic auth configuration, for example `auth.toml`
-with `[auth]` sections, rather than importing host application settings or
-depending on a host project root. A host application may share the same auth
-configuration source, but it should not have to wrap or own the package CLI for
-the CLI to be publishable with `fastapi-users-auth-ext`.
+such as `wevra-identitymgr` must use generic auth configuration, for example
+`auth.toml` with `[auth]` sections, rather than importing host application
+settings or depending on a host project root. A host application may share the
+same auth configuration source, but it should not have to wrap or own the
+package CLI for the CLI to be publishable with `fastapi-users-auth-ext`.
 
 If `auth_ext` ships SQLAlchemy ORM models, they should live in an
 `auth_ext.models` package that follows the platform `models` convention:
@@ -214,6 +214,6 @@ API token support allows machine access without forcing browser-facing workflows
   while host applications consume the model and own presentation/policy
   integration.
 - 2026-05-30: Clarified that local identity administration tools such as
-  `identitymgr` also belong to `auth_ext` when they operate on the reusable
-  identity model, and should use generic `[auth]` configuration rather than
-  host-specific settings.
+  `wevra-identitymgr` also belong to `auth_ext` when they operate on the
+  reusable identity model, and should use generic `[auth]` configuration rather
+  than host-specific settings.

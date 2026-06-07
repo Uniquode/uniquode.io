@@ -14,6 +14,13 @@ tree.
 - **AND** the utility reports routes, mounts, and traversable sub-application
   routes from the installed application route graph
 
+#### Scenario: Prefixed package command is provided
+
+- **WHEN** Wevra package console scripts are installed
+- **THEN** the route-inspection utility is exposed as `wevra-routes`
+- **AND** host applications are not required to publish a bare `routes` console
+  script to use route inspection
+
 #### Scenario: Wevra origin metadata is included when available
 
 - **WHEN** an installed route was included from a configured Wevra module router
@@ -50,9 +57,15 @@ JSON representations of the installed route tree.
 
 - **WHEN** a developer requests the expanded graph-like route-tree
   representation
-- **THEN** the output shows the installed route tree as a path hierarchy
+- **THEN** the output shows the installed route tree as a visually connected
+  path hierarchy
 - **AND** route leaves include method sets, route names, endpoint identifiers,
   origin metadata when available, and endpoint shape
+- **AND** unknown endpoint shape is omitted from graph labels to keep the tree
+  compact
+- **AND** repeated module-router origin metadata is represented once at the
+  nearest route-tree group and omitted from descendants while the inherited
+  origin remains unchanged
 
 #### Scenario: Mermaid route tree output is displayed
 
@@ -67,6 +80,14 @@ JSON representations of the installed route tree.
 - **WHEN** a developer requests the JSON route-tree representation
 - **THEN** the utility emits structured route tree nodes, flattened route
   records, warnings, and detected problems for machine consumption
+
+#### Scenario: Output format shortcuts are displayed
+
+- **WHEN** a developer requests a route-tree representation through a direct
+  output flag
+- **THEN** `--succinct`, `--graph`, `--mermaid`, and `--json` select the
+  corresponding output representation
+- **AND** conflicting output format selectors fail with a clear usage error
 
 #### Scenario: Large route sets remain deterministic
 
@@ -113,6 +134,13 @@ route tree contains route-surface problems.
 
 - **WHEN** the installed route tree contains no detected route-surface problems
 - **THEN** the route smoke-check mode exits successfully
+
+#### Scenario: Quiet route check emits no route tree output
+
+- **WHEN** a developer runs route smoke-check mode with quiet output enabled
+- **THEN** the command emits no route-tree representation output
+- **AND** the command exits successfully for a clean route tree
+- **AND** the command exits with a non-zero status for route-surface problems
 
 ### Requirement: Endpoint shape reporting
 

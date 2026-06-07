@@ -9,13 +9,13 @@
 
 ## 2. Migration CLI
 
-- [ ] 2.1 Add `migrate revision` as a Click subcommand under `wevra.db.migrate`.
+- [ ] 2.1 Add `revision` as a Click subcommand under `wevra.db.migrate`.
 - [ ] 2.2 Require `--module <module>` and `-m/--message` for revision creation.
 - [ ] 2.3 Pass `--autogenerate`, `--head`, `--splice`, `--branch-label`,
   `--depends-on`, and `--rev-id` through to Alembic revision generation.
 - [ ] 2.4 Preserve existing `upgrade`, `downgrade`, `current`, `history`, and
   database URL override behaviours.
-- [ ] 2.5 Make `migrate revision --help` explain the usual roll-forward order
+- [ ] 2.5 Make `wevra-migrate revision --help` explain the usual roll-forward order
   and clarify that Alembic graph pointers control ordering.
 
 ## 3. Tests
@@ -30,7 +30,7 @@
   while file placement remains module-owned.
 - [ ] 3.5 Add tests proving existing migration subcommands and database URL
   override behaviour are unchanged.
-- [ ] 3.6 Add tests proving `migrate revision --help` includes the documented
+- [ ] 3.6 Add tests proving `wevra-migrate revision --help` includes the documented
   roll-forward order.
 
 ## 4. Documentation And Validation
@@ -42,5 +42,5 @@
 - [ ] 4.3 Run focused migration command tests.
 - [ ] 4.4 Run `uv run ruff format --check`, `uv run ruff check`,
   `uv run ty check src/`, `gtimeout 30s uv run pytest -q`,
-  `uv run validate --verbose`, and
+  `uv run wevra-validate --verbose`, and
   `uv run openspec validate add-migration-revision-command --strict`.
