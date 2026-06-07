@@ -111,7 +111,9 @@ from wevra.web.forms.csrf import (
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
 )
+from wevra.web.routes import RouteCompositionError
 from wevra.web.routes.contracts import _normalise_path_prefix
+from wevra.web.security import COOP_HEADER_NAME
 from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
 
 import app.asgi as asgi_module
@@ -144,6 +146,7 @@ from app.environment import (
 )
 from app.routes.health import health
 from app.settings import (
+    DEFAULT_ROUTE_PREFIXES,
     SQLITE_MEMORY_DATABASE_URL,
     Settings,
     load_settings,
@@ -178,13 +181,46 @@ def write_app_config(
     path: Path,
     *,
     modules: tuple[str, ...] = ("app", "wevra.web", "wevra.auth"),
+    route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_export_root: str = "static",
 ) -> Path:
+    prefixes = {
+        module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
+        for module_name in modules
+        if module_name in DEFAULT_ROUTE_PREFIXES
+    }
+    if route_prefixes is not None:
+        for module, labels in route_prefixes.items():
+            prefixes[module] = {**prefixes.get(module, {}), **labels}
+
+    missing_prefix_modules = tuple(
+        module_name for module_name in modules if module_name not in prefixes
+    )
+    if missing_prefix_modules:
+        raise ValueError(
+            "write_app_config needs explicit route_prefixes for modules without "
+            f"test defaults: {', '.join(missing_prefix_modules)}"
+        )
+
+    route_config = "\n".join(
+        "\n".join(
+            (
+                f"[routes.{json.dumps(module_name)}]",
+                *(
+                    f"{json.dumps(label)} = {json.dumps(prefix)}"
+                    for label, prefix in prefixes[module_name].items()
+                ),
+            )
+        )
+        for module_name in modules
+    )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
         modules = {json.dumps(list(modules))}
+
+        {route_config}
 
         [templates]
         auto_reload = true
@@ -199,17 +235,50 @@ def write_app_config(
     return path
 
 
+def test_write_app_config_requires_route_prefixes_for_modules_without_defaults(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        ValueError,
+        match="custom_route_app",
+    ):
+        write_app_config(tmp_path / "app.toml", modules=("custom_route_app",))
+
+
+def test_write_app_config_writes_explicit_hyphenated_route_labels(
+    tmp_path: Path,
+) -> None:
+    config_path = write_app_config(
+        tmp_path / "app.toml",
+        modules=("custom-route-app",),
+        route_prefixes={"custom-route-app": {"api-v2": "/api/v2"}},
+    )
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+    assert data["routes"]["custom-route-app"]["api-v2"] == "/api/v2"
+
+
 def build_test_app_config(
     root: Path,
     *,
     modules: tuple[str, ...],
-    route_prefixes: dict[str, str] | None = None,
+    route_prefixes: dict[str, dict[str, str]] | None = None,
 ) -> AppConfig:
+    prefixes = {
+        module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
+        for module_name in modules
+        if module_name in DEFAULT_ROUTE_PREFIXES
+    }
+    if route_prefixes is not None:
+        for module, labels in route_prefixes.items():
+            prefixes[module] = {**prefixes.get(module, {}), **labels}
+
     return AppConfig(
         config_path=(root / "app.toml").resolve(),
         project_root=root.resolve(),
         modules=modules,
-        routes=RouteOptions(prefixes=route_prefixes or {}),
+        routes=RouteOptions(prefixes=prefixes),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         static=StaticOptions(url_path="/static/", export_root=Path("static")),
     )
@@ -896,23 +965,16 @@ def test_create_app_applies_configured_route_prefixes(
     (package_root / "routes.py").write_text(
         dedent(
             """
+            from fastapi import APIRouter
             from fastapi.responses import Response
-            from wevra.web.routes import HtmlRouteDefinition, ModuleRoutes
 
-            class View:
-                async def render(self, request, renderer):
-                    del request, renderer
-                    return Response("prefixed")
+            router = APIRouter()
 
-            module_routes = ModuleRoutes(
-                page_routes=(HtmlRouteDefinition(
-                    path="ping",
-                    name="prefixed:ping",
-                    methods=("GET",),
-                    surface="page",
-                    view=View(),
-                ),),
-            )
+            @router.get("/ping", name="prefixed:ping")
+            async def ping():
+                return Response("prefixed")
+
+            module_routers = {"default": router}
             """
         ),
         encoding="utf-8",
@@ -926,7 +988,7 @@ def test_create_app_applies_configured_route_prefixes(
             app_config=build_test_app_config(
                 tmp_path,
                 modules=("prefixed_route_app",),
-                route_prefixes={"prefixed_route_app": "/tools/"},
+                route_prefixes={"prefixed_route_app": {"default": "/tools"}},
             ),
         )
     )
@@ -938,6 +1000,32 @@ def test_create_app_applies_configured_route_prefixes(
         assert client.get("/ping").status_code == 404
     finally:
         asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_app_rejects_missing_configured_route_prefixes(
+    tmp_path: Path,
+) -> None:
+    with pytest.raises(
+        RouteCompositionError,
+        match="Route config for configured module 'app' is missing",
+    ):
+        create_app(
+            Settings(
+                database_url=SQLITE_MEMORY_DATABASE_URL,
+                project_root=tmp_path,
+                app_config=AppConfig(
+                    config_path=tmp_path / "app.toml",
+                    project_root=tmp_path,
+                    modules=("app",),
+                    routes=RouteOptions(prefixes={}),
+                    templates=TemplateOptions(auto_reload=True, cache_size=0),
+                    static=StaticOptions(
+                        url_path="/static/",
+                        export_root=Path("static"),
+                    ),
+                ),
+            )
+        )
 
 
 def test_create_app_registers_routes_only_from_configured_modules(
@@ -959,7 +1047,7 @@ def test_create_app_registers_routes_only_from_configured_modules(
         }
 
         assert "public:home" in route_names
-        assert "identity:login" not in route_names
+        assert "auth:login" not in route_names
         assert "health" in route_names
         assert not hasattr(web_app.state, "identity_options")
         assert not hasattr(web_app.state, "identity_delivery")
@@ -1007,6 +1095,33 @@ def test_missing_static_asset_does_not_render_html_error_page() -> None:
     assert response.headers["content-type"].startswith("text/plain")
     assert "<!doctype html>" not in response.text.lower()
     assert response.text == "Not Found"
+
+
+def test_create_app_applies_default_cross_origin_opener_policy() -> None:
+    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+
+    try:
+        response = TestClient(web_app).get("/")
+
+        assert response.headers[COOP_HEADER_NAME] == "same-origin"
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_create_app_can_disable_cross_origin_opener_policy() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            cross_origin_opener_policy=None,
+        )
+    )
+
+    try:
+        response = TestClient(web_app).get("/")
+
+        assert COOP_HEADER_NAME not in response.headers
+    finally:
+        asyncio.run(close_database(web_app.state.database))
 
 
 def test_settings_default_resource_roots_are_not_filesystem_overrides(
@@ -1766,7 +1881,7 @@ def test_model_packages_are_derived_from_modules() -> None:
 
 
 def test_configured_model_packages_load_migration_metadata_in_order() -> None:
-    metadata_values = load_model_metadata()
+    metadata_values = load_model_metadata(project_root=runtime_project_root())
 
     assert len(metadata_values) == 1
     assert all(isinstance(value, MetaData) for value in metadata_values)
@@ -1855,8 +1970,9 @@ import sys
 from pathlib import Path
 
 from wevra.db.migration_metadata import load_model_metadata
+from wevra.tools.project import runtime_project_root
 
-metadata_values = load_model_metadata(project_root=Path.cwd())
+metadata_values = load_model_metadata(project_root=runtime_project_root())
 forbidden_modules = (
     "wevra.auth.sessions",
     "jinja2",
@@ -2352,7 +2468,7 @@ def app_request_with_session_cookie(
         {
             "type": "http",
             "method": "POST",
-            "path": "/logout",
+            "path": "/account/logout",
             "headers": [
                 (
                     b"cookie",
@@ -2371,14 +2487,14 @@ def test_identity_login_logout_and_current_user_routes() -> None:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
 
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         assert login_page.status_code == 200
         assert "Sign in" in login_page.text
         assert CSRF_COOKIE_NAME in login_page.cookies
         assert f'name="{CSRF_FIELD_NAME}"' in login_page.text
 
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -2407,11 +2523,11 @@ def test_identity_login_logout_and_current_user_routes() -> None:
         assert account_page.status_code == 200
         assert "person@example.com" in account_page.text
 
-        logout_page = client.get("/logout")
+        logout_page = client.get("/account/logout")
         assert logout_page.status_code == 200
         assert "End the current browser session." in logout_page.text
 
-        logout_response = client.post("/logout", data=csrf_data(logout_page))
+        logout_response = client.post("/account/logout", data=csrf_data(logout_page))
         assert logout_response.status_code == 303
         assert logout_response.headers["location"] == "/"
         assert "Max-Age=0" in logout_response.headers["set-cookie"]
@@ -2440,9 +2556,9 @@ def test_identity_context_provider_exposes_safe_template_user() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -2483,9 +2599,9 @@ def test_identity_login_uses_secure_cookie_for_https_requests() -> None:
             follow_redirects=False,
         )
 
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -2514,9 +2630,9 @@ def test_identity_login_can_force_secure_cookie_for_http_requests() -> None:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
 
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -2544,9 +2660,9 @@ def test_identity_logout_clears_secure_cookie_for_https_requests() -> None:
             follow_redirects=False,
         )
 
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -2559,8 +2675,8 @@ def test_identity_logout_clears_secure_cookie_for_https_requests() -> None:
         assert login_response.status_code == 303
         assert "Secure" in login_response.headers["set-cookie"]
 
-        logout_page = client.get("/logout")
-        logout_response = client.post("/logout", data=csrf_data(logout_page))
+        logout_page = client.get("/account/logout")
+        logout_response = client.post("/account/logout", data=csrf_data(logout_page))
 
         assert logout_response.status_code == 303
         set_cookie = logout_response.headers["set-cookie"]
@@ -2582,7 +2698,7 @@ def test_public_signup_is_not_exposed_by_default() -> None:
     try:
         client = TestClient(web_app, follow_redirects=False)
 
-        assert client.get("/signup").status_code == 404
+        assert client.get("/account/signup").status_code == 404
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -2600,11 +2716,11 @@ def test_public_signup_route_rechecks_policy_when_mounted() -> None:
 
     try:
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
 
-        assert client.get("/signup").status_code == 404
+        assert client.get("/account/signup").status_code == 404
         submit_response = client.post(
-            "/signup",
+            "/account/signup",
             data=csrf_data(
                 login_page,
                 {
@@ -2635,13 +2751,13 @@ def test_public_signup_enabled_creates_user_without_session() -> None:
     try:
         asyncio.run(create_schema())
         client = TestClient(web_app, follow_redirects=False)
-        signup_page = client.get("/signup")
+        signup_page = client.get("/account/signup")
 
         assert signup_page.status_code == 200
         assert "Create account" in signup_page.text
 
         signup_response = client.post(
-            "/signup",
+            "/account/signup",
             data=csrf_data(
                 signup_page,
                 {
@@ -2655,9 +2771,9 @@ def test_public_signup_enabled_creates_user_without_session() -> None:
         assert "Account created. You can now sign in." in signup_response.text
         assert "uniquode_session" not in signup_response.cookies
 
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -2947,10 +3063,10 @@ def test_public_signup_route_returns_form_error_for_malformed_email() -> None:
     try:
         asyncio.run(create_schema())
         client = TestClient(web_app, follow_redirects=False)
-        signup_page = client.get("/signup")
+        signup_page = client.get("/account/signup")
 
         response = client.post(
-            "/signup",
+            "/account/signup",
             data=csrf_data(
                 signup_page,
                 {
@@ -3032,7 +3148,7 @@ def test_identity_login_requires_csrf_before_session_cookie() -> None:
         client = TestClient(web_app, follow_redirects=False)
 
         response = client.post(
-            "/login",
+            "/account/login",
             data={
                 "email": "person@example.com",
                 "password": "correct horse",
@@ -3067,13 +3183,13 @@ def test_identity_login_normalises_unsafe_return_to(return_to: str) -> None:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
 
-        login_page = client.get("/login", params={"return_to": return_to})
+        login_page = client.get("/account/login", params={"return_to": return_to})
         assert login_page.status_code == 200
         assert 'name="return_to" type="hidden" value="/account"' in login_page.text
         assert return_to not in login_page.text
 
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3102,10 +3218,10 @@ def test_identity_login_rejects_invalid_credentials() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
 
         response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3147,10 +3263,10 @@ def test_identity_login_failure_preserves_public_signup_link() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
 
         response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3163,7 +3279,7 @@ def test_identity_login_failure_preserves_public_signup_link() -> None:
 
         assert response.status_code == 401
         assert "Create account" in response.text
-        assert str(web_app.url_path_for("identity:signup")) in response.text
+        assert str(web_app.url_path_for("auth:signup")) in response.text
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -3179,10 +3295,10 @@ def test_identity_login_rejects_inactive_user() -> None:
     try:
         seed_identity_user(web_app, is_active=False)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
 
         response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3220,9 +3336,9 @@ def test_existing_session_cookie_rejects_deactivated_user() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3256,9 +3372,9 @@ def test_existing_session_cookie_rejects_and_revokes_expired_user() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3314,9 +3430,9 @@ def test_identity_dependency_helpers_handle_required_and_anonymous_users() -> No
         assert anonymous_response.status_code == 200
         assert anonymous_response.json() == {"anonymous": True}
 
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3360,9 +3476,9 @@ def test_resolve_current_user_caches_result_per_request(monkeypatch) -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        login_page = client.get("/login")
+        login_page = client.get("/account/login")
         login_response = client.post(
-            "/login",
+            "/account/login",
             data=csrf_data(
                 login_page,
                 {
@@ -3417,10 +3533,10 @@ def test_password_reset_route_uses_delivery_hook() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset",
+            "/account/password/reset",
             data=csrf_data(reset_page, {"email": "person@example.com"}),
         )
 
@@ -3429,7 +3545,7 @@ def test_password_reset_route_uses_delivery_hook() -> None:
         assert delivery.reset_tokens[0][0] == "person@example.com"
 
         confirm_response = client.post(
-            "/password/reset/confirm",
+            "/account/password/reset/confirm",
             data=csrf_data(
                 response,
                 {
@@ -3451,10 +3567,10 @@ def test_password_reset_confirm_returns_html_error_for_invalid_token() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset/confirm",
+            "/account/password/reset/confirm",
             data=csrf_data(
                 reset_page,
                 {"token": "invalid", "password": "new correct horse"},
@@ -3476,17 +3592,17 @@ def test_password_reset_confirm_rejects_blank_password() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset",
+            "/account/password/reset",
             data=csrf_data(reset_page, {"email": "person@example.com"}),
         )
         assert response.status_code == 200
         assert delivery.reset_tokens
 
         confirm_response = client.post(
-            "/password/reset/confirm",
+            "/account/password/reset/confirm",
             data=csrf_data(
                 response,
                 {
@@ -3510,10 +3626,10 @@ def test_password_reset_request_ignores_inactive_user() -> None:
     try:
         seed_identity_user(web_app, is_active=False)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset",
+            "/account/password/reset",
             data=csrf_data(reset_page, {"email": "person@example.com"}),
         )
 
@@ -3532,10 +3648,10 @@ def test_password_reset_request_ignores_expired_user() -> None:
     try:
         seed_identity_user(web_app, expires_at=1.0)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset",
+            "/account/password/reset",
             data=csrf_data(reset_page, {"email": "person@example.com"}),
         )
 
@@ -3554,10 +3670,10 @@ def test_password_reset_confirm_rejects_user_expired_after_token_issue() -> None
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset",
+            "/account/password/reset",
             data=csrf_data(reset_page, {"email": "person@example.com"}),
         )
         assert response.status_code == 200
@@ -3570,7 +3686,7 @@ def test_password_reset_confirm_rejects_user_expired_after_token_issue() -> None
         update_identity_user(web_app, email="person@example.com", expires_at=1.0)
 
         confirm_response = client.post(
-            "/password/reset/confirm",
+            "/account/password/reset/confirm",
             data=csrf_data(
                 response,
                 {
@@ -3598,10 +3714,10 @@ def test_password_reset_confirm_rejects_user_inactive_after_token_issue() -> Non
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        reset_page = client.get("/password/reset")
+        reset_page = client.get("/account/password/reset")
 
         response = client.post(
-            "/password/reset",
+            "/account/password/reset",
             data=csrf_data(reset_page, {"email": "person@example.com"}),
         )
         assert response.status_code == 200
@@ -3614,7 +3730,7 @@ def test_password_reset_confirm_rejects_user_inactive_after_token_issue() -> Non
         update_identity_user(web_app, email="person@example.com", is_active=False)
 
         confirm_response = client.post(
-            "/password/reset/confirm",
+            "/account/password/reset/confirm",
             data=csrf_data(
                 response,
                 {
@@ -3642,10 +3758,11 @@ def test_verification_route_uses_delivery_hook() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        verify_page = client.get("/verify")
+        verify_page = client.get("/account/verify")
 
         response = client.post(
-            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+            "/account/verify",
+            data=csrf_data(verify_page, {"email": "person@example.com"}),
         )
 
         assert response.status_code == 200
@@ -3653,7 +3770,7 @@ def test_verification_route_uses_delivery_hook() -> None:
         assert delivery.verification_tokens[0][0] == "person@example.com"
 
         confirm_response = client.post(
-            "/verify/confirm",
+            "/account/verify/confirm",
             data=csrf_data(response, {"token": delivery.verification_tokens[0][1]}),
         )
 
@@ -3688,10 +3805,11 @@ def test_verification_confirm_rejects_user_deactivated_after_token_request() -> 
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        verify_page = client.get("/verify")
+        verify_page = client.get("/account/verify")
 
         response = client.post(
-            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+            "/account/verify",
+            data=csrf_data(verify_page, {"email": "person@example.com"}),
         )
         assert response.status_code == 200
         assert delivery.verification_tokens
@@ -3705,7 +3823,7 @@ def test_verification_confirm_rejects_user_deactivated_after_token_request() -> 
         assert verification_result.error_type == ERROR_INACTIVE_USER
 
         confirm_response = client.post(
-            "/verify/confirm",
+            "/account/verify/confirm",
             data=csrf_data(response, {"token": token}),
         )
 
@@ -3741,10 +3859,11 @@ def test_verification_confirm_rejects_email_changed_after_token_request() -> Non
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        verify_page = client.get("/verify")
+        verify_page = client.get("/account/verify")
 
         response = client.post(
-            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+            "/account/verify",
+            data=csrf_data(verify_page, {"email": "person@example.com"}),
         )
         assert response.status_code == 200
         assert delivery.verification_tokens
@@ -3758,7 +3877,7 @@ def test_verification_confirm_rejects_email_changed_after_token_request() -> Non
         assert verification_result.error_type == ERROR_IDENTITY_CHANGED
 
         confirm_response = client.post(
-            "/verify/confirm",
+            "/account/verify/confirm",
             data=csrf_data(response, {"token": token}),
         )
 
@@ -3791,10 +3910,11 @@ def test_verification_request_ignores_ineligible_user(
             is_verified=is_verified,
         )
         client = TestClient(web_app, follow_redirects=False)
-        verify_page = client.get("/verify")
+        verify_page = client.get("/account/verify")
 
         response = client.post(
-            "/verify", data=csrf_data(verify_page, {"email": "person@example.com"})
+            "/account/verify",
+            data=csrf_data(verify_page, {"email": "person@example.com"}),
         )
 
         assert response.status_code == 200
@@ -3813,7 +3933,7 @@ def test_verification_confirm_returns_html_error_for_invalid_token() -> None:
     try:
         seed_identity_user(web_app)
         client = TestClient(web_app, follow_redirects=False)
-        verify_page = client.get("/verify")
+        verify_page = client.get("/account/verify")
         verification_result = asyncio.run(
             identity_users.verify_user(
                 Request({"type": "http", "app": web_app}),
@@ -3825,7 +3945,7 @@ def test_verification_confirm_returns_html_error_for_invalid_token() -> None:
         assert verification_result.error_type == ERROR_INVALID_TOKEN
 
         response = client.post(
-            "/verify/confirm",
+            "/account/verify/confirm",
             data=csrf_data(verify_page, {"token": "invalid"}),
         )
 
@@ -4440,7 +4560,7 @@ def test_earlier_application_module_can_override_wevra_auth_identity_template(
     )
 
     try:
-        response = TestClient(web_app).get("/login")
+        response = TestClient(web_app).get("/account/login")
 
         assert response.status_code == 200
         assert "Overridden login" in response.text
