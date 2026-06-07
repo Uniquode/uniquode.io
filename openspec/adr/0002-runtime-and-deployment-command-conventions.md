@@ -27,8 +27,15 @@ app.asgi:app
 
 Wevra-owned operator commands should be exposed through prefixed package
 scripts to avoid collisions with host application or environment-specific
-commands. The authoritative command list is the Wevra package script metadata
-in `wevra/pyproject.toml`; application docs and specs should describe usage
+commands. The ADR-owned command set is:
+
+- `wevra-runserver`
+- `wevra-migrate`
+- `wevra-routes`
+- `wevra-validate`
+- `wevra-identitymgr`
+
+Package metadata, application docs, and specs should conform to this decision
 without re-declaring those scripts from the host app package. The local
 development server command is:
 
