@@ -191,20 +191,24 @@ uv --directory app run ty check src/
 uv --directory app run pytest -q
 ```
 
-Initialise or update the local SQLite development database:
+Initialise the local SQLite development database the first time, then apply the
+schema migrations:
 
 ```sh
+uv run wevra-migrate init
 uv run wevra-migrate upgrade
 ```
 
 Use `--database-url` to target an explicit database for one migration command:
 
 ```sh
+uv run wevra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 init
 uv run wevra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 upgrade
 ```
 
-PostgreSQL environments must provide the database, users, roles, and privileges
-before application startup. Alembic handles application schema migrations only.
+PostgreSQL environments use `wevra-migrate init` for explicit database, user,
+role, and privilege provisioning before `wevra-migrate upgrade` applies
+application schema migrations.
 
 Manage local identity users with the operator CLI:
 
