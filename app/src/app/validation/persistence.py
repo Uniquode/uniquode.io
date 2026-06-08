@@ -210,7 +210,7 @@ def validate_persistence(settings: Settings) -> ValidationResult:
         passed=has_alembic_config and has_migrations_root,
         description=(
             "development database initialisation command is available: "
-            "uv run wevra-migrate upgrade"
+            "uv run wevra-migrate init"
         ),
         error=(
             "Development database initialisation requires Alembic config and "

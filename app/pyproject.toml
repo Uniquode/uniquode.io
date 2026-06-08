@@ -9,7 +9,7 @@ requires-python = ">=3.13"
 dependencies = [
     "envex>=5.0.0",
     "fastapi>=0.136.3",
-    "starlette>=0.50.0",
+    "starlette>=1.2.1",
     "wevra",
 ]
 
@@ -30,7 +30,7 @@ runserver_app = "app.asgi:app"
 
 [dependency-groups]
 dev = [
-    "httpx>=0.28.1",
+    "httpx2>=2.3.0",
     "pre-commit>=4.6.0",
     "pytest>=9.0.3",
     "ruff>=0.15.16",

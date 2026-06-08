@@ -198,4 +198,3 @@ existing broad validation command.
 
 - **WHEN** a developer or CI job wants route-tree smoke checking
 - **THEN** it invokes the route-inspection utility's check mode explicitly
-
