@@ -3,8 +3,9 @@
 ## Purpose
 Define the package-owned administrative authentication management CLI for local
 users, groups, scopes, memberships, password operations, and effective-scope
-inspection. The current project command is `identitymgr`; a future command
-rename to `authmgr` requires a separate behaviour change.
+inspection. The current project command is `wevra-authmgr`, implemented through
+the `wevra.auth.cli.authmgr` package.
+
 ## Requirements
 ### Requirement: Auth management command
 The system SHALL provide a `wevra.auth`-owned CLI script named `wevra-authmgr`
