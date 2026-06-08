@@ -21,7 +21,9 @@ Never use `--no-gpg-sign` or `--no-verify` with Git commands. If a commit fails,
 stop and inform the user.
 
 If `.guide.yaml` exists, treat it as current local project state.
-Read `.todo/context.md` at session start when present. Update it at meaningful milestones.
+Read `.todo/context.md` at session start when present.
+Update it at meaningful milestones and periodically ensure that it is cleaned of stale data
+or details that are no longer needed. It is a handoff document, not a historical record.
 
 Use `.agents/skills` or `~/.agents/skills` on demand.
 Use `.agents/steering/` or `~/.agents/steering` on demand; start with
