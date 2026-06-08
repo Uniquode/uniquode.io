@@ -90,11 +90,12 @@ the identity data.
 
 Treat local identity administration tooling as part of the `auth_ext` boundary
 when it operates on the reusable `auth_ext` identity model. Package-owned tools
-such as `wevra-identitymgr` must use generic auth configuration, for example
-`auth.toml` with `[auth]` sections, rather than importing host application
-settings or depending on a host project root. A host application may share the
-same auth configuration source, but it should not have to wrap or own the
-package CLI for the CLI to be publishable with `fastapi-users-auth-ext`.
+such as `wevra-authmgr` must remain publishable with the reusable auth package,
+but normal operation belongs inside a configured host application. The command
+resolves the host application config boundary, reads `[auth]` from that
+application config for auth policy, and uses the host application's configured
+database URL rather than an auth-specific config file or auth-specific database
+environment variable.
 
 If `auth_ext` ships SQLAlchemy ORM models, they should live in an
 `auth_ext.models` package that follows the platform `models` convention:
@@ -164,9 +165,9 @@ not necessarily unique to one host.
 
 Owning local identity administration tooling in `auth_ext` keeps operational
 management aligned with the package schema and makes the CLI publishable with
-the package. The trade-off is that `auth_ext` must provide generic
-configuration and database-session bootstrapping for its tools rather than
-relying on host-specific settings modules.
+the package. The trade-off is that the reusable package must define a host
+application config contract for its tools instead of relying on a host-specific
+settings module.
 
 Supporting both OAuth2 client and local OAuth2 authorisation capability creates a broader identity surface area than a simple social-login implementation. That flexibility is intentional, but it should be implemented in staged slices rather than all at once.
 
@@ -213,7 +214,9 @@ API token support allows machine access without forcing browser-facing workflows
   belongs to `auth_ext`, so `auth_ext` may add or change identity-account fields
   while host applications consume the model and own presentation/policy
   integration.
-- 2026-05-30: Clarified that local identity administration tools such as
-  `wevra-identitymgr` also belong to `auth_ext` when they operate on the
-  reusable identity model, and should use generic `[auth]` configuration rather
-  than host-specific settings.
+- 2026-05-30: Clarified that local identity administration tools also belong to
+  `auth_ext` when they operate on the reusable identity model.
+- 2026-06-08: Replaced standalone auth-tool configuration with host
+  application config as the normal auth-management boundary. The package-owned
+  `wevra-authmgr` command reads `[auth]` policy from the resolved app config
+  and uses the host application's database URL.

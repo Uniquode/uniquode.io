@@ -13,6 +13,7 @@ from wevra.auth.options import (
     IdentityOptions,
     is_generate_local_identity_secret,
 )
+from wevra.auth.settings import load_auth_settings
 from wevra.core.composition import (
     AppConfig,
 )
@@ -32,6 +33,7 @@ from wevra.web.security import CrossOriginOpenerPolicy
 
 from app.configuration import ConfigurationError
 from app.environment import (
+    ENV_DATABASE_URL,
     IDENTITY_ENV_SETTINGS,
     SETTINGS_ENV_SETTINGS,
     load_environment,
@@ -197,10 +199,16 @@ class Settings:
         if identity_options.session_cookie_name != WEVRA_DEFAULT_SESSION_COOKIE_NAME:
             return identity_options
 
-        return replace(
+        normalised_options = replace(
             identity_options,
             session_cookie_name=DEFAULT_SESSION_COOKIE_NAME,
         )
+        object.__setattr__(
+            normalised_options,
+            "token_secrets_configured",
+            identity_options.token_secrets_configured,
+        )
+        return normalised_options
 
     @staticmethod
     def _resolve_optional_path(
@@ -369,22 +377,93 @@ def load_settings(
             Settings,
             environment_loader=load_environment,
             env_settings=SETTINGS_ENV_SETTINGS,
-            extra_value_loaders=(_identity_options_kwargs_from_environment,),
+            app_config_value_loaders=(_settings_kwargs_from_app_config,),
             environ=environ,
             project_root=resolved_project_root,
             read_dotenv=read_dotenv,
+            require_app_config=True,
         )
     except SettingsLoadError as exc:
         raise wrapped_error(ConfigurationError, exc) from exc
 
 
-def _identity_options_kwargs_from_environment(env: Env) -> dict[str, IdentityOptions]:
+def _settings_kwargs_from_app_config(
+    app_config: AppConfig,
+    env: Env,
+) -> dict[str, Any]:
+    environ: dict[str, str] = {}
+    if env.is_set(ENV_DATABASE_URL):
+        database_url = env.get(ENV_DATABASE_URL)
+        if database_url is not None:
+            environ[ENV_DATABASE_URL] = database_url
+    auth_settings = load_auth_settings(app_config=app_config, environ=environ)
+    return {
+        "database_url": auth_settings.database_url,
+        "identity_options": _identity_options_with_environment(
+            auth_settings.identity_options,
+            app_config.auth,
+            env,
+        ),
+    }
+
+
+def _identity_options_with_environment(
+    identity_options: IdentityOptions,
+    auth_config: Mapping[str, Any],
+    env: Env,
+) -> IdentityOptions:
     if not env_setting_is_set(env, IDENTITY_ENV_SETTINGS):
-        return {}
+        return identity_options
 
     identity_values = values_from_env_settings(env, IDENTITY_ENV_SETTINGS)
-    identity_kwargs = {
-        "session_cookie_name": DEFAULT_SESSION_COOKIE_NAME,
-        **identity_values,
-    }
-    return {"identity_options": IdentityOptions(**cast(Any, identity_kwargs))}
+    merged_options = replace(identity_options, **cast(Any, identity_values))
+    object.__setattr__(
+        merged_options,
+        "token_secrets_configured",
+        _identity_token_secrets_configured(
+            identity_options,
+            auth_config,
+            identity_values,
+        ),
+    )
+    return merged_options
+
+
+def _identity_token_secrets_configured(
+    identity_options: IdentityOptions,
+    auth_config: Mapping[str, Any],
+    identity_values: Mapping[str, Any],
+) -> bool:
+    return _identity_token_secret_configured(
+        "reset_password_token_secret",
+        identity_options,
+        auth_config,
+        identity_values,
+    ) and _identity_token_secret_configured(
+        "verification_token_secret",
+        identity_options,
+        auth_config,
+        identity_values,
+    )
+
+
+def _identity_token_secret_configured(
+    field_name: str,
+    identity_options: IdentityOptions,
+    auth_config: Mapping[str, Any],
+    identity_values: Mapping[str, Any],
+) -> bool:
+    if field_name in identity_values:
+        return _identity_token_secret_value_configured(identity_values[field_name])
+    if field_name in auth_config:
+        return _identity_token_secret_value_configured(auth_config[field_name])
+
+    return identity_options.token_secrets_configured
+
+
+def _identity_token_secret_value_configured(value: Any) -> bool:
+    return (
+        isinstance(value, str)
+        and bool(value.strip())
+        and not is_generate_local_identity_secret(value)
+    )

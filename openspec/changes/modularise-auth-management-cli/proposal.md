@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-226](https://linear.app/uniquode/issue/UT-226/modularise-auth-management-cli)
+
 `src/wevra/auth/cli/identitymgr.py` is now large enough that command registration,
 dispatch, schema checks, output formatting, and resource-specific command
 definitions are difficult to evolve together. Splitting the CLI into explicit
