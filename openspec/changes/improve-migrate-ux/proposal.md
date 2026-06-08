@@ -5,12 +5,13 @@ Linear: [UT-224](https://linear.app/uniquode/issue/UT-224/improve-migrate-ux)
 The `wevra-migrate` CLI currently follows Alembic's default model where an
 empty database is implicitly at `base` and `wevra-migrate upgrade` can
 initialise it as a side effect. Wevra should expose a stricter operational
-lifecycle so first-time database provisioning, schema initialisation, and
-routine upgrades are distinct and visible.
+lifecycle so first-time database provisioning, migration-state initialisation,
+and routine schema upgrades are distinct and visible.
 
 ## What Changes
 
-- Add a distinct `wevra-migrate init` command for first-time database setup.
+- Add a distinct `wevra-migrate init` command for first-time database
+  provisioning and migration-state setup.
 - Change `wevra-migrate upgrade` so it expects an already initialised managed
   database and fails with clear guidance when migration state is absent.
 - Improve `wevra-migrate current` so it reports connection, initialisation, and
@@ -22,17 +23,16 @@ routine upgrades are distinct and visible.
   - Alembic migration-state initialisation;
   - ordinary migration upgrade or downgrade.
 - Treat SQLite as a special case: a file-backed SQLite database may not require
-  authentication or separate database creation, and connecting can create the
-  file and tables.
+  authentication or separate database creation, and `init` can create the file
+  plus Alembic migration state without applying application schema revisions.
 - Treat PostgreSQL and stricter managed databases as explicit provisioning
-  environments: creating databases, users, roles, and permissions may require a
-  different administrative connection or happen outside the application
-  database user's privileges.
-- Use the existing `dbscripts` dependency as the out-of-band provisioning
-  boundary for operations that cannot be performed through the ordinary
-  application database connection.
+  environments: `init` provisions databases, users, roles, and permissions via
+  a separate administrative connection before marking Alembic migration state.
+- Use the existing `dbscripts` dependency as the provisioning mechanism for
+  operations that cannot be performed through the ordinary application database
+  connection.
 - Keep ordinary application startup from creating databases, users, roles,
-  permissions, or schema as an implicit side effect.
+  permissions, migration state, or schema as an implicit side effect.
 - Keep backend-specific diagnostics safe: command output should distinguish
   unavailable, unprovisioned, uninitialised, and current states without leaking
   credentials or raw driver traces.
@@ -46,8 +46,8 @@ None.
 ### Modified Capabilities
 
 - `development-database`: Define explicit migration lifecycle UX for
-  `wevra-migrate init`, stricter `wevra-migrate upgrade`, backend-aware
-  database provisioning, and clearer `wevra-migrate current` state reporting.
+  `wevra-migrate init`, backend-aware database provisioning, stricter
+  `wevra-migrate upgrade`, and clearer `wevra-migrate current` state reporting.
 
 ## Impact
 
