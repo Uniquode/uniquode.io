@@ -6,7 +6,8 @@ TBD - created by archiving change init-project. Update Purpose after archive.
 ### Requirement: Project metadata and toolchain
 The system SHALL define Python project metadata for a Python 3.13+ application
 managed by `uv`, with the repository root acting as a local workspace
-coordinator and `app` acting as the buildable application project.
+coordinator, `app` acting as the buildable application project, and Wevra
+owning reusable operator command scripts.
 
 #### Scenario: Workspace metadata exists
 - **WHEN** a developer inspects the project root
@@ -18,19 +19,30 @@ coordinator and `app` acting as the buildable application project.
 - **WHEN** a developer inspects `app/pyproject.toml`
 - **THEN** it defines the `app` project name, Python 3.13+ requirement,
   `uv_build` build backend, runtime dependencies, development dependency
-  groups, application package build metadata, and project scripts
+  groups, and application package build metadata
+- **AND** it does not need to re-declare Wevra-owned operator scripts
+
+#### Scenario: Wevra command scripts are package-owned and prefixed
+- **WHEN** a developer inspects `wevra/pyproject.toml`
+- **THEN** the package exposes `wevra-runserver`, `wevra-migrate`,
+  `wevra-routes`, `wevra-validate`, and `wevra-identitymgr`
+- **AND** it does not expose unprefixed operator command names that are likely
+  to collide with host application or environment-specific commands
 
 #### Scenario: Project is initialized through uv
 - **WHEN** the initialization implementation creates `pyproject.toml`
-- **THEN** it uses `uv` project initialization rather than writing `pyproject.toml` directly
+- **THEN** it uses `uv` project initialization rather than writing
+  `pyproject.toml` directly
 
 #### Scenario: Git repository is initialized by project tooling
 - **WHEN** project initialization completes
-- **THEN** the repository has a Git repository initialized by `uv` project setup
+- **THEN** the repository has a Git repository initialized by `uv` project
+  setup
 
 #### Scenario: Tool configuration is discoverable
 - **WHEN** a developer inspects `pyproject.toml`
-- **THEN** configuration for Ruff, `ty`, and pytest is present or the file documents the command conventions needed to run them
+- **THEN** configuration for Ruff, `ty`, and pytest is present or the file
+  documents the command conventions needed to run them
 
 #### Scenario: Workspace framework dependency is declared
 - **WHEN** a developer inspects application dependency metadata
@@ -252,7 +264,8 @@ product-specific UI before requirements need it.
 - **THEN** HTML request dispatch and static asset serving are wired as separate mechanisms with distinct configuration and handling boundaries
 
 ### Requirement: Baseline validation commands
-The system SHALL provide repeatable baseline validation commands for formatting, linting, type checking, and tests.
+The system SHALL provide repeatable baseline validation commands for
+formatting, linting, type checking, and tests.
 
 #### Scenario: Application validation runs against workspace framework
 - **WHEN** a developer runs the application validation suite from the `app`
@@ -275,15 +288,15 @@ The system SHALL provide repeatable baseline validation commands for formatting,
 
 #### Scenario: Pre-commit runs application validation
 - **WHEN** pre-commit hooks run in the `uniquode` repository
-- **THEN** they include the application `validate` command as a configuration
-  and composition backstop
+- **THEN** they include the `wevra-validate` command as a configuration and
+  composition backstop
 - **AND** that hook runs with `app` as the host project directory
 
 #### Scenario: Application tests retain integration coverage
 - **WHEN** the `app` test suite is inspected
 - **THEN** it retains focused tests for application settings, startup,
-  configured module loading, app routes, app templates, and project command
-  adapters that depend on `wevra`
+  configured module loading, app routes, app templates, and Wevra command
+  adapters used by the host project
 
 #### Scenario: OpenSpec remains application-owned
 - **WHEN** the `wevra` project is extracted into its own repository
@@ -374,43 +387,53 @@ The system SHALL protect all server-rendered form submissions with a shared CSRF
   plaintext HTTP
 
 ### Requirement: Local runtime command
-The system SHALL provide a project runtime command named `runserver` for local execution of the ASGI application through `uv`.
+The system SHALL provide a package-owned runtime command named
+`wevra-runserver` for local execution of the configured host ASGI application
+through `uv`.
 
-#### Scenario: Project script is defined
-- **WHEN** a developer inspects `pyproject.toml`
-- **THEN** the project metadata defines a `runserver` command
+#### Scenario: Prefixed package script is defined
+- **WHEN** a developer inspects `wevra/pyproject.toml`
+- **THEN** the project metadata defines a `wevra-runserver` command
 
-#### Scenario: Runtime command targets the stable ASGI app
+#### Scenario: Host application supplies the stable ASGI app target
 - **WHEN** a developer runs the documented local server command
-- **THEN** it starts Uvicorn against `uniquode.asgi:app`
+- **THEN** Wevra resolves the host project metadata
+- **AND** it starts Uvicorn against the configured host ASGI application target
 
 #### Scenario: Runtime command implementation is tool-owned
-- **WHEN** a developer inspects the `runserver` project script entry point
+- **WHEN** a developer inspects the `wevra-runserver` package script entry point
 - **THEN** the command wrapper is provided by `wevra.tools`
-  while still targeting the documented ASGI application
+  while still targeting the configured host application
 
 #### Scenario: Runtime command is invoked through uv
 - **WHEN** local development instructions reference the server startup command
-- **THEN** they use `uv run runserver`
+- **THEN** they use `uv run wevra-runserver`
 
 ### Requirement: Local runtime defaults
-The system SHALL define the baseline local runtime behaviour of the `runserver` command for host, port, and reload operation.
+The system SHALL define the baseline local runtime behaviour of the
+`wevra-runserver` command for host, port, and reload operation.
 
 #### Scenario: Local runtime uses development-oriented defaults
-- **WHEN** a developer runs `uv run runserver` without additional arguments
-- **THEN** the application starts with the documented local host, port, and reload defaults
+- **WHEN** a developer runs `uv run wevra-runserver` without additional
+  arguments
+- **THEN** the application starts with the documented local host, port, and
+  reload defaults
 
 #### Scenario: Local runtime accepts explicit overrides
-- **WHEN** a developer runs `uv run runserver` with supported host, port, or reload command-line options
-- **THEN** the application starts with the supplied values instead of the baseline defaults
+- **WHEN** a developer runs `uv run wevra-runserver` with supported host, port,
+  or reload command-line options
+- **THEN** the application starts with the supplied values instead of the
+  baseline defaults
 
 #### Scenario: Reload falls back to environment configuration
-- **WHEN** a developer runs `uv run runserver` without `--reload` and `APP_RELOAD` is set to a truthy value
+- **WHEN** a developer runs `uv run wevra-runserver` without `--reload` and
+  `APP_RELOAD` is set to a truthy value
 - **THEN** the application starts with reload enabled
 
 #### Scenario: Runtime contract stays independent of front-end tooling
 - **WHEN** the local runtime command is reviewed
-- **THEN** it does not require a front-end asset pipeline in order to start the ASGI application
+- **THEN** it does not require a front-end asset pipeline in order to start the
+  ASGI application
 
 ### Requirement: Runtime command validation
 The system SHALL provide focused validation that the local runtime command wiring remains aligned with the documented ASGI target and startup contract.
@@ -420,51 +443,53 @@ The system SHALL provide focused validation that the local runtime command wirin
 - **THEN** at least one focused test or smoke check verifies the configured local runtime command or its equivalent startup contract
 
 ### Requirement: Runtime command Uvicorn pass-through
-The system SHALL allow the `runserver` command to forward additional command-line
-arguments to Uvicorn after a `--` separator while preserving the project-owned
-ASGI target and local runtime defaults.
+The system SHALL allow the `wevra-runserver` command to forward additional
+command-line arguments to Uvicorn after a `--` separator while preserving the
+configured host ASGI target and local runtime defaults.
 
 #### Scenario: Uvicorn arguments are forwarded
-- **WHEN** a developer runs `uv run runserver -- --forwarded-allow-ips 127.0.0.1`
-- **THEN** the command invokes Uvicorn for `uniquode.asgi:app` with
-  `--forwarded-allow-ips 127.0.0.1`
+- **WHEN** a developer runs
+  `uv run wevra-runserver -- --forwarded-allow-ips 127.0.0.1`
+- **THEN** the command invokes Uvicorn for the configured host ASGI application
+  with `--forwarded-allow-ips 127.0.0.1`
 
 #### Scenario: Project runtime options still apply
-- **WHEN** a developer runs `uv run runserver --host 0.0.0.0 --port 9000 -- --proxy-headers`
+- **WHEN** a developer runs
+  `uv run wevra-runserver --host 0.0.0.0 --port 9000 -- --proxy-headers`
 - **THEN** the command applies the project `--host` and `--port` options and
   passes `--proxy-headers` through to Uvicorn
 
 #### Scenario: Application target remains project-owned
-- **WHEN** a developer runs `uv run runserver -- other.asgi:app`
+- **WHEN** a developer runs `uv run wevra-runserver -- other.asgi:app`
 - **THEN** the command rejects the extra application target instead of passing
   two positional application targets to Uvicorn
 
 #### Scenario: Reload environment fallback remains available
-- **WHEN** a developer runs `uv run runserver -- <uvicorn args>` without the
-  project `--reload` option and `APP_RELOAD` is set to a truthy value
+- **WHEN** a developer runs `uv run wevra-runserver -- <uvicorn args>` without
+  the project `--reload` option and `APP_RELOAD` is set to a truthy value
 - **THEN** the command starts Uvicorn with reload enabled and preserves the
   supplied Uvicorn arguments
 
 #### Scenario: Reload environment fallback can be disabled explicitly
-- **WHEN** a developer runs `uv run runserver --no-reload` and `APP_RELOAD` is
-  set to a truthy value
+- **WHEN** a developer runs `uv run wevra-runserver --no-reload` and
+  `APP_RELOAD` is set to a truthy value
 - **THEN** the command starts Uvicorn without reload enabled
 
 ### Requirement: Project CLI parser standard
-The system SHALL use Click for project-owned command-line entrypoints covered by
-this change while preserving their documented command interfaces.
+The system SHALL use Click for project-owned command-line entrypoints covered
+by this change while preserving their documented command interfaces.
 
 #### Scenario: Click dependency is direct
 - **WHEN** project CLI code imports Click
 - **THEN** `pyproject.toml` lists Click as a direct runtime dependency
 
 #### Scenario: Validation command keeps existing behaviour
-- **WHEN** a developer runs the validation command with existing targets,
-  verbosity, or override options
+- **WHEN** a developer runs `wevra-validate` with existing targets, verbosity,
+  or override options
 - **THEN** the command accepts the same options and reports the same validation
-  outcomes and exit status as before the parser migration
+  outcomes and exit status as before the command-prefix change
 
 #### Scenario: Validation command implementation is tool-owned
-- **WHEN** a developer inspects the `validate` project script entry point
-- **THEN** the command wrapper is provided by `wevra.tools` and
-  discovers validation targets from configured modules
+- **WHEN** a developer inspects the `wevra-validate` package script entry point
+- **THEN** the command wrapper is provided by `wevra.tools` and discovers
+  validation targets from configured modules
