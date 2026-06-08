@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import re
+import sqlite3
 import subprocess
 import sys
 import tomllib
@@ -453,6 +454,13 @@ def test_migrate_upgrade_uses_settings_database_url(
         )
 
     monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
+    monkeypatch.setattr(
+        data_migrate_module,
+        "_migration_state_from_connection",
+        lambda _database_url: data_migrate_module.MigrationState(initialised=True),
+    )
+    with sqlite3.connect(tmp_path / "app.sqlite3") as connection:
+        connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
     write_wevra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
@@ -479,6 +487,14 @@ def test_migrate_database_url_override_takes_precedence(
         calls.append(("current", config.get_main_option("sqlalchemy.url")))
 
     monkeypatch.setattr(migrate_module.command, "current", record_current)
+    monkeypatch.setattr(
+        data_migrate_module,
+        "inspect_migration_state",
+        lambda _database_url: data_migrate_module.MigrationState(
+            initialised=True,
+            current_revisions=("abc123",),
+        ),
+    )
     write_wevra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
@@ -521,6 +537,14 @@ def test_migrate_database_url_override_preempts_blank_environment_value(
         calls.append(("current", config.get_main_option("sqlalchemy.url")))
 
     monkeypatch.setattr(migrate_module.command, "current", record_current)
+    monkeypatch.setattr(
+        data_migrate_module,
+        "inspect_migration_state",
+        lambda _database_url: data_migrate_module.MigrationState(
+            initialised=True,
+            current_revisions=("abc123",),
+        ),
+    )
     write_wevra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
@@ -553,6 +577,13 @@ def test_migrate_database_url_override_can_follow_subcommand(
         calls.append((revision, config.get_main_option("sqlalchemy.url")))
 
     monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
+    monkeypatch.setattr(
+        data_migrate_module,
+        "_migration_state_from_connection",
+        lambda _database_url: data_migrate_module.MigrationState(initialised=True),
+    )
+    with sqlite3.connect(tmp_path / "subcommand.sqlite3") as connection:
+        connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
     write_wevra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
@@ -616,6 +647,14 @@ def test_migrate_reports_operation_errors_cleanly(
         raise exception
 
     monkeypatch.setattr(migrate_module.command, "current", fail_current)
+    monkeypatch.setattr(
+        data_migrate_module,
+        "inspect_migration_state",
+        lambda _database_url: data_migrate_module.MigrationState(
+            initialised=True,
+            current_revisions=("abc123",),
+        ),
+    )
     write_wevra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
@@ -638,6 +677,14 @@ def test_migrate_reports_metadata_configuration_errors_cleanly(
         raise MigrationConfigError("bad module metadata")
 
     monkeypatch.setattr(migrate_module.command, "current", fail_current)
+    monkeypatch.setattr(
+        data_migrate_module,
+        "inspect_migration_state",
+        lambda _database_url: data_migrate_module.MigrationState(
+            initialised=True,
+            current_revisions=("abc123",),
+        ),
+    )
     write_wevra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
@@ -694,35 +741,54 @@ def test_migrate_dispatches_supported_commands(
     ]
 
 
-def test_migrate_upgrade_initialises_empty_sqlite_database(tmp_path) -> None:
+def test_migrate_init_then_upgrade_initialises_empty_sqlite_database(tmp_path) -> None:
     database_path = tmp_path / "dev.sqlite3"
     database_url = f"sqlite+aiosqlite:///{database_path.as_posix()}"
 
-    exit_code = migrate_module.main(["--database-url", database_url, "upgrade"])
-
-    assert exit_code == 0
+    assert migrate_module.main(["--database-url", database_url, "init"]) == 0
     assert database_path.is_file()
 
     settings = Settings(database_url=database_url)
     engine = create_database_engine(settings)
 
-    async def assert_tables() -> None:
+    async def table_names() -> set[str]:
         async with engine.begin() as connection:
-            table_names = await connection.run_sync(
-                lambda sync_connection: sqlalchemy_inspect(
-                    sync_connection
-                ).get_table_names()
+            return set(
+                await connection.run_sync(
+                    lambda sync_connection: sqlalchemy_inspect(
+                        sync_connection
+                    ).get_table_names()
+                )
             )
 
-        assert "alembic_version" in table_names
-        assert "identity_user" in table_names
-        assert "identity_access_token" in table_names
-        assert "identity_oauth_account" in table_names
-
     try:
-        asyncio.run(assert_tables())
+        assert asyncio.run(table_names()) == {"alembic_version"}
     finally:
         asyncio.run(close_database(engine))
+
+    assert migrate_module.main(["--database-url", database_url, "upgrade"]) == 0
+
+    engine = create_database_engine(settings)
+
+    async def upgraded_table_names() -> set[str]:
+        async with engine.begin() as connection:
+            return set(
+                await connection.run_sync(
+                    lambda sync_connection: sqlalchemy_inspect(
+                        sync_connection
+                    ).get_table_names()
+                )
+            )
+
+    try:
+        upgraded_tables = asyncio.run(upgraded_table_names())
+    finally:
+        asyncio.run(close_database(engine))
+
+    assert "alembic_version" in upgraded_tables
+    assert "identity_user" in upgraded_tables
+    assert "identity_access_token" in upgraded_tables
+    assert "identity_oauth_account" in upgraded_tables
 
 
 def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
