@@ -184,6 +184,8 @@ def write_app_config(
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_export_root: str = "static",
+    database_url: str = "sqlite+aiosqlite:///app.sqlite3",
+    auth_options: dict[str, object] | None = None,
 ) -> Path:
     prefixes = {
         module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
@@ -204,31 +206,47 @@ def write_app_config(
         )
 
     route_config = "\n".join(
-        "\n".join(
-            (
-                f"[routes.{json.dumps(module_name)}]",
-                *(
-                    f"{json.dumps(label)} = {json.dumps(prefix)}"
-                    for label, prefix in prefixes[module_name].items()
-                ),
+        (
+            f"{module_name.replace('.', '-')} = "
+            "{ "
+            + ", ".join(
+                f"{json.dumps(label)} = {json.dumps(prefix)}"
+                for label, prefix in prefixes[module_name].items()
             )
+            + " }"
         )
         for module_name in modules
+    )
+    auth_config = "\n".join(
+        f"{key} = {json.dumps(value)}" for key, value in (auth_options or {}).items()
     )
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
+        [app]
+        database_url = {json.dumps(database_url)}
         modules = {json.dumps(list(modules))}
 
+        [app.routes]
         {route_config}
 
-        [templates]
+        [app.templates]
         auto_reload = true
         cache_size = 0
 
-        [static]
+        [app.static]
         url_path = {json.dumps(static_url_path)}
         export_root = {json.dumps(static_export_root)}
+
+        [auth]
+        session_cookie_force_secure = false
+        {auth_config}
+
+        [auth.password.policy]
+        minimum_length = 12
+        minimum_character_categories = 2
+        minimum_strength = 0.45
+        common_fragments = ["admin", "password", "test"]
         """,
         encoding="utf-8",
     )
@@ -245,18 +263,18 @@ def test_write_app_config_requires_route_prefixes_for_modules_without_defaults(
         write_app_config(tmp_path / "app.toml", modules=("custom_route_app",))
 
 
-def test_write_app_config_writes_explicit_hyphenated_route_labels(
+def test_write_app_config_writes_hyphenated_route_module_alias_and_labels(
     tmp_path: Path,
 ) -> None:
     config_path = write_app_config(
         tmp_path / "app.toml",
-        modules=("custom-route-app",),
-        route_prefixes={"custom-route-app": {"api-v2": "/api/v2"}},
+        modules=("custom.route.app",),
+        route_prefixes={"custom.route.app": {"api-v2": "/api/v2"}},
     )
 
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
-    assert data["routes"]["custom-route-app"]["api-v2"] == "/api/v2"
+    assert data["app"]["routes"]["custom-route-app"]["api-v2"] == "/api/v2"
 
 
 def build_test_app_config(
@@ -340,6 +358,7 @@ def test_app_project_does_not_redeclare_wevra_operator_scripts() -> None:
         "routes",
         "runserver",
         "validate",
+        "wevra-authmgr",
         "wevra-identitymgr",
         "wevra-migrate",
         "wevra-routes",
@@ -435,6 +454,7 @@ def test_migrate_upgrade_uses_settings_database_url(
 
     monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(["upgrade"])
@@ -460,6 +480,7 @@ def test_migrate_database_url_override_takes_precedence(
 
     monkeypatch.setattr(migrate_module.command, "current", record_current)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(
@@ -501,6 +522,7 @@ def test_migrate_database_url_override_preempts_blank_environment_value(
 
     monkeypatch.setattr(migrate_module.command, "current", record_current)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
     monkeypatch.setenv(ENV_DATABASE_URL, "")
 
@@ -532,6 +554,7 @@ def test_migrate_database_url_override_can_follow_subcommand(
 
     monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(
@@ -594,6 +617,7 @@ def test_migrate_reports_operation_errors_cleanly(
 
     monkeypatch.setattr(migrate_module.command, "current", fail_current)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(["current"])
@@ -615,6 +639,7 @@ def test_migrate_reports_metadata_configuration_errors_cleanly(
 
     monkeypatch.setattr(migrate_module.command, "current", fail_current)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(["current"])
@@ -654,6 +679,7 @@ def test_migrate_dispatches_supported_commands(
 
     monkeypatch.setattr(migrate_module.command, command_name, record_command)
     write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(argv)
@@ -1208,11 +1234,12 @@ def test_settings_resolves_sqlite_database_url_without_moving_query_into_path(
     )
 
 
-def test_load_settings_allows_missing_default_app_toml(tmp_path) -> None:
-    settings = load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
-
-    assert settings.app_config is None
-    assert settings.modules == ("app", "wevra.web", "wevra.auth")
+def test_load_settings_rejects_missing_default_app_toml(tmp_path) -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match="Application config file could not be resolved",
+    ):
+        load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
 
 
 def test_load_settings_reads_default_app_toml(tmp_path) -> None:
@@ -1220,18 +1247,95 @@ def test_load_settings_reads_default_app_toml(tmp_path) -> None:
         tmp_path / "app.toml",
         modules=("app", "wevra.auth"),
         static_url_path="/assets/",
+        database_url="sqlite+aiosqlite:///identity.sqlite3",
     )
 
     settings = load_settings(environ={}, project_root=tmp_path, read_dotenv=False)
 
     assert settings.app_config is not None
     assert settings.app_config.config_path == config_path.resolve()
+    assert settings.app_config.database_url == "sqlite+aiosqlite:///identity.sqlite3"
     assert settings.modules == ("app", "wevra.auth")
     assert settings.template_auto_reload is True
     assert settings.template_cache_size == 0
     assert settings.template_root is None
     assert settings.static_root is None
     assert settings.static_mount_path == "/assets"
+    assert settings.database_url == sqlite_file_url(tmp_path / "identity.sqlite3")
+    assert settings.identity_options.password_minimum_length == 12
+    assert settings.identity_options.password_common_fragments == (
+        "admin",
+        "password",
+        "test",
+    )
+    assert settings.identity_options.token_secrets_configured is False
+
+
+def test_load_settings_database_url_overrides_app_config_database_url(
+    tmp_path: Path,
+) -> None:
+    write_app_config(
+        tmp_path / "app.toml",
+        database_url="sqlite+aiosqlite:///from-config.sqlite3",
+    )
+
+    settings = load_settings(
+        environ={ENV_DATABASE_URL: "sqlite+aiosqlite:///from-env.sqlite3"},
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.database_url == sqlite_file_url(tmp_path / "from-env.sqlite3")
+
+
+def test_load_settings_identity_env_preserves_app_auth_config(
+    tmp_path: Path,
+) -> None:
+    write_app_config(
+        tmp_path / "app.toml",
+        auth_options={
+            "reset_password_token_secret": "configured-reset-secret",
+            "verification_token_secret": "configured-verification-secret",
+        },
+    )
+
+    settings = load_settings(
+        environ={ENV_SESSION_LIFETIME: "3600"},
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.identity_options.session_lifetime_seconds == 3600
+    assert settings.identity_options.password_minimum_length == 12
+    assert settings.identity_options.password_common_fragments == (
+        "admin",
+        "password",
+        "test",
+    )
+    assert settings.identity_options.reset_password_token_secret == (
+        "configured-reset-secret"
+    )
+    assert settings.identity_options.verification_token_secret == (
+        "configured-verification-secret"
+    )
+    assert settings.identity_options.token_secrets_configured is True
+
+
+def test_load_settings_ignores_removed_auth_database_url_env(
+    tmp_path: Path,
+) -> None:
+    write_app_config(
+        tmp_path / "app.toml",
+        database_url="sqlite+aiosqlite:///from-config.sqlite3",
+    )
+
+    settings = load_settings(
+        environ={"AUTH_DATABASE_URL": "sqlite+aiosqlite:///ignored.sqlite3"},
+        project_root=tmp_path,
+        read_dotenv=False,
+    )
+
+    assert settings.database_url == sqlite_file_url(tmp_path / "from-config.sqlite3")
 
 
 def test_load_settings_uses_app_config_environment_override(tmp_path) -> None:
@@ -1287,6 +1391,7 @@ def test_load_settings_rejects_missing_app_config_override(tmp_path) -> None:
 
 
 def test_load_settings_uses_environment_values(tmp_path) -> None:
+    write_app_config(tmp_path / "app.toml")
     database_url = "postgresql+asyncpg://user:password@db.example/app"
     settings = load_settings(
         environ={
@@ -1324,6 +1429,7 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
 
 
 def test_load_settings_reads_local_dotenv(tmp_path) -> None:
+    write_app_config(tmp_path / "app.toml")
     (tmp_path / ".env").write_text(
         "\n".join(
             [
@@ -1345,6 +1451,7 @@ def test_load_settings_reads_local_dotenv(tmp_path) -> None:
 
 
 def test_load_settings_resolves_env_paths_from_project_root(tmp_path) -> None:
+    write_app_config(tmp_path / "app.toml")
     settings = load_settings(
         environ={
             ENV_ALEMBIC_CONFIG: "config/alembic.ini",
@@ -1377,6 +1484,8 @@ def test_load_settings_rejects_blank_env_values(
     env_name: str,
     expected_message: str,
 ) -> None:
+    if env_name != ENV_APP_CONFIG:
+        write_app_config(tmp_path / "app.toml")
     with pytest.raises(ConfigurationError, match=expected_message):
         load_settings(
             environ={env_name: ""},
@@ -1451,6 +1560,7 @@ def test_settings_preserves_explicit_identity_session_cookie_name() -> None:
 def test_load_settings_uses_app_identity_session_cookie_default_with_identity_env(
     tmp_path,
 ) -> None:
+    write_app_config(tmp_path / "app.toml")
     settings = load_settings(
         environ={ENV_SESSION_LIFETIME: "3600"},
         project_root=tmp_path,
@@ -1477,6 +1587,7 @@ def test_identity_options_reject_invalid_account_creation_policy() -> None:
 
 
 def test_load_settings_reads_account_creation_policy_env(tmp_path) -> None:
+    write_app_config(tmp_path / "app.toml")
     settings = load_settings(
         environ={ENV_ACCOUNT_CREATION_POLICY: "public-signup"},
         project_root=tmp_path,
