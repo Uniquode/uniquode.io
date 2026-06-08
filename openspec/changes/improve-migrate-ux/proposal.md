@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-224](https://linear.app/uniquode/issue/UT-224/improve-migrate-ux)
+
 The `wevra-migrate` CLI currently follows Alembic's default model where an
 empty database is implicitly at `base` and `wevra-migrate upgrade` can
 initialise it as a side effect. Wevra should expose a stricter operational

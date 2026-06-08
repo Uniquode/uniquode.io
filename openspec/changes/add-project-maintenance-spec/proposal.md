@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-227](https://linear.app/uniquode/issue/UT-227/add-project-maintenance-spec)
+
 The project needs an explicit maintenance contract for keeping submissions
 reviewable, tests coherent, and documentation/specifications aligned as the
 implementation grows.

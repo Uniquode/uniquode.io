@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-225](https://linear.app/uniquode/issue/UT-225/add-migration-revision-command)
+
 Module-owned migration locations are now part of the data infrastructure, but
 the project migration CLI only applies and inspects existing revisions. Without
 a project-supported revision command, developers must remember raw Alembic
