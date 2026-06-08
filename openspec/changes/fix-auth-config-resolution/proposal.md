@@ -1,5 +1,7 @@
 ## Why
 
+Linear: [UT-223](https://linear.app/uniquode/issue/UT-223/fix-auth-config-resolution)
+
 `wevra-identitymgr` still behaves like a standalone auth-package command: by
 default it looks for `./auth.toml`, while the rest of the Wevra project
 commands resolve the configured host app and load `APP_CONFIG` / `app.toml`.
@@ -25,7 +27,14 @@ behaviour.
 - Make the host app config the canonical auth configuration source.
 - Move auth configuration into `[auth]` and `[auth.password.policy]` sections
   in `app.toml`.
-- Make `wevra-identitymgr` resolve the same host project root as other Wevra
+- Move application configuration into the `[app]` namespace in `app.toml`.
+- Move database configuration into `[app].database_url` so the application
+  database is not represented as auth-owned configuration.
+- Use compact `[app.routes]` inline route mappings and normalise route module
+  aliases such as `wevra-auth` to `wevra.auth` at load time.
+- Rename `wevra-identitymgr` to `wevra-authmgr` so the auth operator command is
+  shorter and clearly scoped to auth management.
+- Make `wevra-authmgr` resolve the same host project root as other Wevra
   project commands, then load auth settings from `APP_CONFIG` or the project
   default `app.toml`.
 - Make normal project commands fail fast when no `APP_CONFIG` / project
@@ -36,13 +45,12 @@ behaviour.
   project or set `APP_CONFIG`.
 - Retire standalone `auth.toml` discovery and the `AUTH_CONFIG` environment
   variable from the project command path.
-- Remove the need to pass `--config` for normal `wevra-identitymgr` usage.
-- Keep `AUTH_DATABASE_URL` as the auth-specific database override, with generic
-  `DATABASE_URL` as the shared database override.
-- Resolve relative auth database paths relative to the loaded app config file
+- Remove the need to pass `--config` for normal `wevra-authmgr` usage.
+- Use generic `DATABASE_URL` as the only database environment override.
+- Resolve relative configured database paths relative to the loaded app config file
   directory.
 - Update application defaults and documentation so runtime app settings and
-  `wevra-identitymgr` consume the same `[auth]` configuration.
+  `wevra-authmgr` consume the same application config boundary.
 - Update ADR 0005 so its accepted architecture guidance reflects application
   config as the canonical auth configuration boundary for Wevra-hosted apps.
 - Preserve explicit settings construction for tests and specialised callers;
@@ -57,10 +65,12 @@ None.
 
 ### Modified Capabilities
 
-- `auth-management-cli`: Change `wevra-identitymgr` configuration resolution from
-  standalone auth config files to host application config resolution.
+- `auth-management-cli`: Rename `wevra-identitymgr` to `wevra-authmgr` and
+  change its configuration resolution from standalone auth config files to host
+  application config resolution.
 - `identity-authentication`: Make `[auth]` in application config the canonical
-  source for reusable auth runtime and policy settings.
+  source for reusable auth runtime and policy settings while auth persistence
+  uses the application database URL.
 - `environment-configuration`: Require resolved application configuration for
   normal project command and default startup settings loading.
 - `application-infrastructure`: Keep the workspace root as a coordinator while
@@ -70,11 +80,11 @@ None.
 ## Impact
 
 - Affected code is expected to include Wevra auth settings loading,
-  `wevra-identitymgr` command setup, application settings loading, committed
+  `wevra-authmgr` command setup, application settings loading, committed
   configuration files, tests, documentation, and ADR 0005.
-- `auth.toml`, `AUTH_CONFIG`, and normal `--config`-based operation are removed
-  rather than retained as legacy compatibility because there are no released
-  users to preserve.
+- `auth.toml`, `AUTH_CONFIG`, `AUTH_DATABASE_URL`, `wevra-identitymgr`, and
+  normal `--config`-based operation are removed rather than retained as legacy
+  compatibility because there are no released users to preserve.
 - Existing local config should be folded into `app/app.toml`; the app project
   remains the host project root for Wevra commands in this workspace.
 - Commands invoked from the workspace root may still work when Wevra can

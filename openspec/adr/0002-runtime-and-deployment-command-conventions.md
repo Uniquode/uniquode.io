@@ -33,7 +33,7 @@ commands. The ADR-owned command set is:
 - `wevra-migrate`
 - `wevra-routes`
 - `wevra-validate`
-- `wevra-identitymgr`
+- `wevra-authmgr`
 
 Package metadata, application docs, and specs should conform to this decision
 without re-declaring those scripts from the host app package. The local
