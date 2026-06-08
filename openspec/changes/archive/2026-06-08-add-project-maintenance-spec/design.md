@@ -42,18 +42,19 @@ The requirements describe review passes and outcomes rather than prescribing a
 specific script or checklist format.
 
 Rationale: the project is still evolving, and exact operational workflows will
-change. The useful contract is that setup, server, admin, CLI, API, background,
-search, test, repository hygiene, and documentation/spec alignment are checked
-against implemented behaviour.
+change. The useful contract is that workspace setup, server startup,
+validation, migration, route inspection, auth management, app/runtime checks,
+Wevra/app coordination, repository hygiene, and documentation/spec alignment
+are checked against implemented behaviour.
 
 ### Preserve Behavioural Coverage During Test Cleanup
 
 Test consolidation is allowed only when failures remain clear and equivalent
 behaviour coverage remains.
 
-Rationale: parameterization can reduce repetition, but cleanup must not hide
-important parser, CLI, import, API, search, admin, or background workflow
-coverage.
+Rationale: parameterisation can reduce repetition, but cleanup must not hide
+important configuration, CLI, migration, validation, route inspection, auth
+management, web composition, or application runtime coverage.
 
 ## Risks / Trade-offs
 
