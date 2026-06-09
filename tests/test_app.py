@@ -9,6 +9,7 @@ import sqlite3
 import subprocess
 import sys
 import tomllib
+from dataclasses import fields
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from textwrap import dedent
@@ -51,8 +52,9 @@ from wevra.auth.accounts.schemas import UserCreate
 from wevra.auth.models import (
     AccessToken,
     Base,
+    ExternalIdentityLink,
+    IdentityProvider,
     InitialAdminBootstrap,
-    OAuthAccount,
     User,
 )
 from wevra.auth.models import (
@@ -61,7 +63,14 @@ from wevra.auth.models import (
 from wevra.auth.options import (
     DEFAULT_SESSION_COOKIE_NAME as WEVRA_DEFAULT_SESSION_COOKIE_NAME,
 )
-from wevra.auth.options import IdentityOptions
+from wevra.auth.options import (
+    PASSKEY,
+    PROVIDER,
+    TOTP,
+    VALID_IDENTITY_INTEGRATIONS,
+    IdentityOptions,
+    identity_env_setting_name,
+)
 from wevra.auth.sessions import (
     create_authentication_backend,
     create_database_strategy,
@@ -69,6 +78,14 @@ from wevra.auth.sessions import (
     require_anonymous_user,
     require_current_user,
     session_cookie_secure_for_request,
+)
+from wevra.auth.settings import (
+    ENV_ACCOUNT_CREATION_POLICY,
+    ENV_RESET_SECRET,
+    ENV_SESSION_COOKIE,
+    ENV_SESSION_FORCE_SECURE,
+    ENV_SESSION_LIFETIME,
+    ENV_VERIFICATION_SECRET,
 )
 from wevra.core.composition import (
     AppConfig,
@@ -123,8 +140,6 @@ from app.app import create_app
 from app.asgi import app
 from app.configuration import ConfigurationError
 from app.environment import (
-    ENV_ACCOUNT_CREATION_POLICY,
-    ENV_ADVANCED_AUTH,
     ENV_ALEMBIC_CONFIG,
     ENV_APP_CONFIG,
     ENV_APP_ENV,
@@ -134,15 +149,10 @@ from app.environment import (
     ENV_CSRF_SECURE,
     ENV_DATABASE_URL,
     ENV_MIGRATIONS_ROOT,
-    ENV_OAUTH_LINKING,
-    ENV_RESET_SECRET,
-    ENV_SESSION_COOKIE,
-    ENV_SESSION_FORCE_SECURE,
-    ENV_SESSION_LIFETIME,
     ENV_STATIC_ROOT,
     ENV_STATIC_URL,
     ENV_TEMPLATE_ROOT,
-    ENV_VERIFICATION_SECRET,
+    IDENTITY_ENV_SETTINGS,
     load_environment,
 )
 from app.routes.health import health
@@ -156,6 +166,33 @@ from app.settings import (
 CSRF_INPUT_PATTERN = re.compile(
     rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
 )
+
+
+DEFAULT_IDENTITY_INTEGRATION_FLAGS = {
+    integration: False for integration in VALID_IDENTITY_INTEGRATIONS
+}
+
+
+def assert_identity_integration_flags(
+    options: IdentityOptions,
+    integration_flags: dict[str, bool],
+) -> None:
+    for integration, expected in integration_flags.items():
+        assert options.integration_enabled(integration) is expected
+
+
+IDENTITY_TABLE_NAMES = frozenset(
+    {
+        "identity_user",
+        "identity_access_token",
+        "identity_provider",
+        "identity_external_identity_link",
+    },
+)
+
+
+def assert_identity_tables_present(table_names: set[str]) -> None:
+    assert IDENTITY_TABLE_NAMES.issubset(table_names)
 
 
 def sqlite_file_url(path: Path) -> str:
@@ -786,9 +823,7 @@ def test_migrate_init_then_upgrade_initialises_empty_sqlite_database(tmp_path) -
         asyncio.run(close_database(engine))
 
     assert "alembic_version" in upgraded_tables
-    assert "identity_user" in upgraded_tables
-    assert "identity_access_token" in upgraded_tables
-    assert "identity_oauth_account" in upgraded_tables
+    assert_identity_tables_present(upgraded_tables)
 
 
 def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
@@ -994,6 +1029,26 @@ def test_load_environment_wraps_loader_failures_without_raw_detail(
     assert "RuntimeError" in str(excinfo.value)
     assert "secret" not in str(excinfo.value)
     assert "DATABASE_URL" not in str(excinfo.value)
+
+
+def test_identity_env_settings_align_with_identity_option_fields() -> None:
+    identity_integration_fields = {
+        f"{integration}_enabled" for integration in VALID_IDENTITY_INTEGRATIONS
+    }
+    identity_option_enabled_fields = {
+        identity_field.name
+        for identity_field in fields(IdentityOptions)
+        if identity_field.name in identity_integration_fields
+    }
+    identity_env_enabled_fields = {
+        env_setting.field_name
+        for env_setting in IDENTITY_ENV_SETTINGS
+        if env_setting.value_type == "bool"
+        and env_setting.field_name in identity_integration_fields
+    }
+
+    assert identity_option_enabled_fields == identity_integration_fields
+    assert identity_env_enabled_fields == identity_integration_fields
 
 
 def test_create_app_mounts_configurable_static_files() -> None:
@@ -1459,6 +1514,7 @@ def test_load_settings_rejects_missing_app_config_override(tmp_path) -> None:
 def test_load_settings_uses_environment_values(tmp_path) -> None:
     write_app_config(tmp_path / "app.toml")
     database_url = "postgresql+asyncpg://user:password@db.example/app"
+    enabled_value = "true"
     settings = load_settings(
         environ={
             ENV_APP_NAME: "env-app",
@@ -1471,8 +1527,9 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
             ENV_SESSION_COOKIE: "session-id",
             ENV_SESSION_FORCE_SECURE: "true",
             ENV_SESSION_LIFETIME: "3600",
-            ENV_OAUTH_LINKING: "on",
-            ENV_ADVANCED_AUTH: "1",
+            identity_env_setting_name(PROVIDER): enabled_value,
+            identity_env_setting_name(TOTP): enabled_value,
+            identity_env_setting_name(PASSKEY): enabled_value,
             ENV_STATIC_URL: "assets",
         },
         project_root=tmp_path,
@@ -1489,8 +1546,9 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
     assert settings.identity_options.session_lifetime_seconds == 3600
     assert settings.identity_options.reset_password_token_secret == "reset-secret"
     assert settings.identity_options.verification_token_secret == "verification-secret"
-    assert settings.identity_options.oauth_account_linking_enabled is True
-    assert settings.identity_options.advanced_authentication_enabled is True
+    assert settings.identity_options.provider_enabled is True
+    assert settings.identity_options.totp_enabled is True
+    assert settings.identity_options.passkey_enabled is True
     assert settings.static_mount_path == "/assets"
 
 
@@ -1600,8 +1658,10 @@ def test_settings_include_identity_options() -> None:
     assert options.password_minimum_strength == 0.45
     assert options.password_minimum_character_categories == 2
     assert options.token_secrets_configured is False
-    assert options.integration_enabled("oauth-account-linking") is False
-    assert options.integration_enabled("advanced-authentication") is False
+    assert_identity_integration_flags(
+        options=options,
+        integration_flags=DEFAULT_IDENTITY_INTEGRATION_FLAGS,
+    )
 
 
 def test_settings_default_identity_session_cookie_name_is_app_specific() -> None:
@@ -1921,13 +1981,17 @@ def test_non_local_settings_require_configured_csrf_token_secret() -> None:
 
 
 def test_identity_options_expose_integration_flags() -> None:
+    enabled_flags = {name: True for name in DEFAULT_IDENTITY_INTEGRATION_FLAGS}
     options = IdentityOptions(
-        oauth_account_linking_enabled=True,
-        advanced_authentication_enabled=True,
+        provider_enabled=True,
+        totp_enabled=True,
+        passkey_enabled=True,
     )
 
-    assert options.integration_enabled("oauth-account-linking") is True
-    assert options.integration_enabled("advanced-authentication") is True
+    assert_identity_integration_flags(
+        options=options,
+        integration_flags=enabled_flags,
+    )
 
 
 def test_create_app_configures_database_and_identity_boundaries() -> None:
@@ -1998,7 +2062,8 @@ def test_session_scope_yields_async_session() -> None:
 
 def test_identity_models_define_fastapi_users_columns() -> None:
     user_columns = set(User.__table__.columns.keys())
-    oauth_columns = set(OAuthAccount.__table__.columns.keys())
+    provider_columns = set(IdentityProvider.__table__.columns.keys())
+    external_identity_link_columns = set(ExternalIdentityLink.__table__.columns.keys())
     access_token_columns = set(AccessToken.__table__.columns.keys())
 
     assert {
@@ -2011,31 +2076,43 @@ def test_identity_models_define_fastapi_users_columns() -> None:
     }.issubset(user_columns)
     assert {
         "id",
-        "oauth_name",
+        "provider_name",
+        "provider_subject",
         "access_token",
-        "expires_at",
-        "refresh_token",
-        "account_id",
         "account_email",
+        "provider_enabled",
+        "provider_metadata",
+    }.issubset(provider_columns)
+    assert {
         "user_id",
-    }.issubset(oauth_columns)
+        "provider_id",
+    }.issubset(external_identity_link_columns)
     assert {"token", "created_at", "user_id"}.issubset(access_token_columns)
     assert User.__tablename__ == "identity_user"
-    assert OAuthAccount.__tablename__ == "identity_oauth_account"
+    assert IdentityProvider.__tablename__ == "identity_provider"
     assert AccessToken.__tablename__ == "identity_access_token"
+    assert ExternalIdentityLink.__tablename__ == "identity_external_identity_link"
 
 
-def test_oauth_account_model_links_to_local_user() -> None:
-    oauth_foreign_keys = OAuthAccount.__table__.columns["user_id"].foreign_keys
+def test_external_identity_models_link_to_local_user_and_provider() -> None:
+    external_link_foreign_keys = ExternalIdentityLink.__table__.columns[
+        "user_id"
+    ].foreign_keys
+    external_provider_foreign_keys = ExternalIdentityLink.__table__.columns[
+        "provider_id"
+    ].foreign_keys
     access_token_foreign_keys = AccessToken.__table__.columns["user_id"].foreign_keys
 
-    assert {str(foreign_key.column) for foreign_key in oauth_foreign_keys} == {
+    assert {str(foreign_key.column) for foreign_key in external_link_foreign_keys} == {
         "identity_user.id"
     }
+    assert {
+        str(foreign_key.column) for foreign_key in external_provider_foreign_keys
+    } == {"identity_provider.id"}
     assert {str(foreign_key.column) for foreign_key in access_token_foreign_keys} == {
         "identity_user.id"
     }
-    assert User.oauth_accounts.property.mapper.class_ is OAuthAccount
+    assert User.external_identity_links.property.mapper.class_ is ExternalIdentityLink
 
 
 def test_sqlalchemy_metadata_creates_identity_tables() -> None:
@@ -2051,9 +2128,7 @@ def test_sqlalchemy_metadata_creates_identity_tables() -> None:
                 ).get_table_names()
             )
 
-        assert "identity_user" in table_names
-        assert "identity_oauth_account" in table_names
-        assert "identity_access_token" in table_names
+        assert_identity_tables_present(set(table_names))
 
     try:
         asyncio.run(assert_tables())
@@ -2734,12 +2809,14 @@ def test_identity_context_provider_exposes_safe_template_user() -> None:
     async def template_user_context(request: Request) -> dict[str, object]:
         context = get_request_context(request)
         user = context.get("user")
+        template_user_fields = None
+        if user is not None:
+            template_user_fields = tuple(sorted(getattr(type(user), "__slots__", ())))
         return {
             "email": getattr(user, "email", None),
             "identity": context.get("identity"),
             "template_user_type": type(user).__name__,
-            "has_hashed_password": hasattr(user, "hashed_password"),
-            "has_oauth_accounts": hasattr(user, "oauth_accounts"),
+            "template_user_fields": template_user_fields,
         }
 
     try:
@@ -2762,16 +2839,20 @@ def test_identity_context_provider_exposes_safe_template_user() -> None:
         response = client.get("/test/template-user")
 
         assert response.status_code == 200
-        assert response.json() == {
-            "email": "person@example.com",
-            "identity": {
-                "authenticated": True,
-                "is_superuser": False,
-                "is_verified": False,
-            },
-            "template_user_type": "TemplateUser",
-            "has_hashed_password": False,
-            "has_oauth_accounts": False,
+        response_json = response.json()
+        assert response_json["email"] == "person@example.com"
+        assert response_json["identity"] == {
+            "authenticated": True,
+            "is_superuser": False,
+            "is_verified": False,
+        }
+        assert response_json["template_user_type"] == "TemplateUser"
+        assert set(response_json["template_user_fields"]) >= {
+            "email",
+            "id",
+            "is_active",
+            "is_superuser",
+            "is_verified",
         }
     finally:
         asyncio.run(close_database(web_app.state.database))

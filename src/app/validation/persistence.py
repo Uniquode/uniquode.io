@@ -180,7 +180,8 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                 revision_content = "\n".join(revision_contents)
                 for table_name in (
                     "identity_user",
-                    "identity_oauth_account",
+                    "identity_provider",
+                    "identity_external_identity_link",
                     "identity_access_token",
                 ):
                     record_check(

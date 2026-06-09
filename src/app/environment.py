@@ -6,13 +6,12 @@ from pathlib import Path
 from typing import Final, cast
 
 from envex import Env
+from wevra.auth.settings import IDENTITY_ENV_SETTINGS as wevra_identity_env_settings
 from wevra.core.composition import APP_CONFIG_ENV
 from wevra.core.settings import EnvironmentSetting
 
 from app.configuration import ConfigurationError
 
-ENV_ACCOUNT_CREATION_POLICY: Final = "ACCOUNT_CREATION_POLICY"
-ENV_ADVANCED_AUTH: Final = "ADVANCED_AUTH"
 ENV_ALEMBIC_CONFIG: Final = "ALEMBIC_CONFIG"
 ENV_APP_CONFIG: Final = APP_CONFIG_ENV
 ENV_APP_ENV: Final = "APP_ENV"
@@ -22,15 +21,9 @@ ENV_CSRF_SECRET: Final = "CSRF_SECRET"
 ENV_CSRF_SECURE: Final = "CSRF_SECURE"
 ENV_DATABASE_URL: Final = "DATABASE_URL"
 ENV_MIGRATIONS_ROOT: Final = "MIGRATIONS_ROOT"
-ENV_OAUTH_LINKING: Final = "OAUTH_LINKING"
-ENV_RESET_SECRET: Final = "RESET_SECRET"
-ENV_SESSION_COOKIE: Final = "SESSION_COOKIE"
-ENV_SESSION_FORCE_SECURE: Final = "SESSION_FORCE_SECURE"
-ENV_SESSION_LIFETIME: Final = "SESSION_LIFETIME"
 ENV_STATIC_ROOT: Final = "STATIC_ROOT"
 ENV_STATIC_URL: Final = "STATIC_URL"
 ENV_TEMPLATE_ROOT: Final = "TEMPLATE_ROOT"
-ENV_VERIFICATION_SECRET: Final = "VERIFICATION_SECRET"
 
 SETTINGS_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
     EnvironmentSetting(ENV_ALEMBIC_CONFIG, "alembic_config", "path"),
@@ -45,14 +38,7 @@ SETTINGS_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
     EnvironmentSetting(ENV_TEMPLATE_ROOT, "template_root", "path"),
 )
 IDENTITY_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
-    EnvironmentSetting(ENV_ACCOUNT_CREATION_POLICY, "account_creation_policy"),
-    EnvironmentSetting(ENV_ADVANCED_AUTH, "advanced_authentication_enabled", "bool"),
-    EnvironmentSetting(ENV_OAUTH_LINKING, "oauth_account_linking_enabled", "bool"),
-    EnvironmentSetting(ENV_RESET_SECRET, "reset_password_token_secret"),
-    EnvironmentSetting(ENV_SESSION_COOKIE, "session_cookie_name"),
-    EnvironmentSetting(ENV_SESSION_FORCE_SECURE, "session_cookie_force_secure", "bool"),
-    EnvironmentSetting(ENV_SESSION_LIFETIME, "session_lifetime_seconds", "int"),
-    EnvironmentSetting(ENV_VERIFICATION_SECRET, "verification_token_secret"),
+    *wevra_identity_env_settings,
 )
 SUPPORTED_SETTINGS_ENV_VARS: Final = tuple(
     env_setting.name for env_setting in SETTINGS_ENV_SETTINGS + IDENTITY_ENV_SETTINGS
