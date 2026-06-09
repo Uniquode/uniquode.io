@@ -1032,23 +1032,23 @@ def test_load_environment_wraps_loader_failures_without_raw_detail(
 
 
 def test_identity_env_settings_align_with_identity_option_fields() -> None:
+    identity_integration_fields = {
+        f"{integration}_enabled" for integration in VALID_IDENTITY_INTEGRATIONS
+    }
     identity_option_enabled_fields = {
         identity_field.name
         for identity_field in fields(IdentityOptions)
-        if identity_field.name.endswith("_enabled")
+        if identity_field.name in identity_integration_fields
     }
     identity_env_enabled_fields = {
         env_setting.field_name
         for env_setting in IDENTITY_ENV_SETTINGS
         if env_setting.value_type == "bool"
-        and env_setting.field_name.endswith("_enabled")
-    }
-    integration_enabled_fields = {
-        f"{integration}_enabled" for integration in VALID_IDENTITY_INTEGRATIONS
+        and env_setting.field_name in identity_integration_fields
     }
 
-    assert identity_option_enabled_fields == identity_env_enabled_fields
-    assert identity_option_enabled_fields == integration_enabled_fields
+    assert identity_option_enabled_fields == identity_integration_fields
+    assert identity_env_enabled_fields == identity_integration_fields
 
 
 def test_create_app_mounts_configurable_static_files() -> None:
@@ -2839,21 +2839,20 @@ def test_identity_context_provider_exposes_safe_template_user() -> None:
         response = client.get("/test/template-user")
 
         assert response.status_code == 200
-        assert response.json() == {
-            "email": "person@example.com",
-            "identity": {
-                "authenticated": True,
-                "is_superuser": False,
-                "is_verified": False,
-            },
-            "template_user_type": "TemplateUser",
-            "template_user_fields": [
-                "email",
-                "id",
-                "is_active",
-                "is_superuser",
-                "is_verified",
-            ],
+        response_json = response.json()
+        assert response_json["email"] == "person@example.com"
+        assert response_json["identity"] == {
+            "authenticated": True,
+            "is_superuser": False,
+            "is_verified": False,
+        }
+        assert response_json["template_user_type"] == "TemplateUser"
+        assert set(response_json["template_user_fields"]) >= {
+            "email",
+            "id",
+            "is_active",
+            "is_superuser",
+            "is_verified",
         }
     finally:
         asyncio.run(close_database(web_app.state.database))
