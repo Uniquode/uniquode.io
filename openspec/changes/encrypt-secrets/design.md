@@ -14,6 +14,7 @@ The change is security-sensitive, cross-cutting within auth persistence, and int
 **Goals:**
 - Introduce a shared wevra crypto service for encrypting/decrypting sensitive secret material.
 - Keep env- and config-driven key loading outside application code, with lazy initialisation.
+- Ensure deployments that need encrypted-provider operations can perform explicit startup validation when enabled.
 - Add key-versioned envelopes and support rotation with legacy-key decryption.
 - Add checksum validation as a typo-safety check.
 - Persist provider tokens as encrypted fields (`crypt_access_token`, `crypt_refresh_token`) while maintaining a migration path for existing rows.
@@ -56,6 +57,7 @@ Rationale: Envelope metadata in the value itself keeps compatibility with existi
 3. **Model encryption requirements as secret-use opt-in and explicit**
 
 Decision: Consumers must indicate whether an operation requires encrypted secret handling before invoking service methods.
+Additionally, the application can run a health/startup check in a dedicated phase for strict validation.
 
 Why: This avoids hard failure at import/startup for deployments that do not use provider credential persistence.
 
@@ -64,6 +66,12 @@ Alternatives:
 - Skip all startup checks and fail unpredictably later.
 
 Rationale: lazy initialisation with explicit usage aligns with your requirement: strict only when needed.
+
+Operational rule:
+- For deployments that require encrypted-provider functionality, enable a strict startup path via
+  `WEVRA_CRYPTO_KEYS_REQUIRE=1` (or equivalent env toggle). In this mode, service
+  validation is executed during startup/validation command and startup is blocked if key material
+  is missing, unparsable, or invalid.
 
 4. **Adopt current/legacy key registry pattern**
 
@@ -105,13 +113,14 @@ Rationale: CRC32 is practical and low-cost, with clear security caveat communica
 2. Define config-driven key material contract (current + legacy versions) and validation/parsing helpers.
 3. Implement service API with:
    - lazy key material load,
-   - versioned encrypt/decrypt.
+   - versioned encrypt/decrypt,
+   - explicit health/startup validation mode (`validate` API + env-gated startup check).
 4. Rename `IdentityProvider.access_token` to `crypt_access_token` and
    `refresh_token` to `crypt_refresh_token` via migration.
 5. Update auth persistence paths that read/write provider tokens to call the crypto service.
 6. Add compatibility read/write path for existing plaintext tokens where required by migration order.
 7. Add migration tests and integration tests for provider enablement without key, valid and invalid keys, and rotation/decryption of prior versions.
-8. Add rollout guidance in release notes/docs: rotate to `current` key by changing `key version` and keeping previous version(s) until old rows have been re-written.
+8. Add rollout guidance in release notes/docs: rotate to `current` key by changing `key version` and keeping previous version(s) until old rows have been rewritten.
 
 Rollback strategy:
 - If implementation issues occur, deploy with current key unchanged and preserve legacy keys list empty or previous set.
