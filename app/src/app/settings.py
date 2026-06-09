@@ -13,16 +13,17 @@ from wevra.auth.options import (
     IdentityOptions,
     is_generate_local_identity_secret,
 )
-from wevra.auth.settings import load_auth_settings
+from wevra.auth.settings import (
+    load_auth_settings,
+    merge_identity_options_with_environment,
+)
 from wevra.core.composition import (
     AppConfig,
 )
 from wevra.core.diagnostics import wrapped_error
 from wevra.core.settings import (
     SettingsLoadError,
-    env_setting_is_set,
     load_composed_settings,
-    values_from_env_settings,
 )
 from wevra.db.urls import (
     SQLITE_ASYNC_DATABASE_URL_PREFIX,
@@ -34,7 +35,6 @@ from wevra.web.security import CrossOriginOpenerPolicy
 from app.configuration import ConfigurationError
 from app.environment import (
     ENV_DATABASE_URL,
-    IDENTITY_ENV_SETTINGS,
     SETTINGS_ENV_SETTINGS,
     load_environment,
 )
@@ -399,71 +399,9 @@ def _settings_kwargs_from_app_config(
     auth_settings = load_auth_settings(app_config=app_config, environ=environ)
     return {
         "database_url": auth_settings.database_url,
-        "identity_options": _identity_options_with_environment(
+        "identity_options": merge_identity_options_with_environment(
             auth_settings.identity_options,
             app_config.auth,
             env,
         ),
     }
-
-
-def _identity_options_with_environment(
-    identity_options: IdentityOptions,
-    auth_config: Mapping[str, Any],
-    env: Env,
-) -> IdentityOptions:
-    if not env_setting_is_set(env, IDENTITY_ENV_SETTINGS):
-        return identity_options
-
-    identity_values = values_from_env_settings(env, IDENTITY_ENV_SETTINGS)
-    merged_options = replace(identity_options, **cast(Any, identity_values))
-    object.__setattr__(
-        merged_options,
-        "token_secrets_configured",
-        _identity_token_secrets_configured(
-            identity_options,
-            auth_config,
-            identity_values,
-        ),
-    )
-    return merged_options
-
-
-def _identity_token_secrets_configured(
-    identity_options: IdentityOptions,
-    auth_config: Mapping[str, Any],
-    identity_values: Mapping[str, Any],
-) -> bool:
-    return _identity_token_secret_configured(
-        "reset_password_token_secret",
-        identity_options,
-        auth_config,
-        identity_values,
-    ) and _identity_token_secret_configured(
-        "verification_token_secret",
-        identity_options,
-        auth_config,
-        identity_values,
-    )
-
-
-def _identity_token_secret_configured(
-    field_name: str,
-    identity_options: IdentityOptions,
-    auth_config: Mapping[str, Any],
-    identity_values: Mapping[str, Any],
-) -> bool:
-    if field_name in identity_values:
-        return _identity_token_secret_value_configured(identity_values[field_name])
-    if field_name in auth_config:
-        return _identity_token_secret_value_configured(auth_config[field_name])
-
-    return identity_options.token_secrets_configured
-
-
-def _identity_token_secret_value_configured(value: Any) -> bool:
-    return (
-        isinstance(value, str)
-        and bool(value.strip())
-        and not is_generate_local_identity_secret(value)
-    )
