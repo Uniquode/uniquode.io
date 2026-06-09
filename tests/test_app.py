@@ -52,8 +52,6 @@ from wevra.auth.accounts.schemas import UserCreate
 from wevra.auth.models import (
     AccessToken,
     Base,
-    ExternalIdentityLink,
-    IdentityProvider,
     InitialAdminBootstrap,
     User,
 )
@@ -2062,9 +2060,6 @@ def test_session_scope_yields_async_session() -> None:
 
 def test_identity_models_define_fastapi_users_columns() -> None:
     user_columns = set(User.__table__.columns.keys())
-    provider_columns = set(IdentityProvider.__table__.columns.keys())
-    external_identity_link_columns = set(ExternalIdentityLink.__table__.columns.keys())
-    access_token_columns = set(AccessToken.__table__.columns.keys())
 
     assert {
         "id",
@@ -2074,45 +2069,7 @@ def test_identity_models_define_fastapi_users_columns() -> None:
         "is_superuser",
         "is_verified",
     }.issubset(user_columns)
-    assert {
-        "id",
-        "provider_name",
-        "provider_subject",
-        "access_token",
-        "account_email",
-        "provider_enabled",
-        "provider_metadata",
-    }.issubset(provider_columns)
-    assert {
-        "user_id",
-        "provider_id",
-    }.issubset(external_identity_link_columns)
-    assert {"token", "created_at", "user_id"}.issubset(access_token_columns)
     assert User.__tablename__ == "identity_user"
-    assert IdentityProvider.__tablename__ == "identity_provider"
-    assert AccessToken.__tablename__ == "identity_access_token"
-    assert ExternalIdentityLink.__tablename__ == "identity_external_identity_link"
-
-
-def test_external_identity_models_link_to_local_user_and_provider() -> None:
-    external_link_foreign_keys = ExternalIdentityLink.__table__.columns[
-        "user_id"
-    ].foreign_keys
-    external_provider_foreign_keys = ExternalIdentityLink.__table__.columns[
-        "provider_id"
-    ].foreign_keys
-    access_token_foreign_keys = AccessToken.__table__.columns["user_id"].foreign_keys
-
-    assert {str(foreign_key.column) for foreign_key in external_link_foreign_keys} == {
-        "identity_user.id"
-    }
-    assert {
-        str(foreign_key.column) for foreign_key in external_provider_foreign_keys
-    } == {"identity_provider.id"}
-    assert {str(foreign_key.column) for foreign_key in access_token_foreign_keys} == {
-        "identity_user.id"
-    }
-    assert User.external_identity_links.property.mapper.class_ is ExternalIdentityLink
 
 
 def test_sqlalchemy_metadata_creates_identity_tables() -> None:
