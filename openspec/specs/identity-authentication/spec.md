@@ -5,15 +5,18 @@ Define local user identity, FastAPI Users integration, browser sessions,
 account lifecycle hooks, bootstrap behaviour, and identity extension policy.
 ## Requirements
 ### Requirement: Canonical local user identity
-The system SHALL use a local user account as the canonical identity record for browser, API, and future external-provider authentication.
+The system SHALL use a local user account as the canonical identity record for
+browser, API, password, and linked external-provider authentication.
 
 #### Scenario: Local account is canonical
-- **WHEN** a user authenticates through any supported login method
-- **THEN** the authenticated subject resolves to a local user account controlled by the application
+- **WHEN** a user authenticates through any supported method
+- **THEN** the authenticated subject resolves to a local user account controlled
+  by the application
 
 #### Scenario: External identity does not replace local account
-- **WHEN** a user later authenticates through an external provider
-- **THEN** the provider identity is linked to a local account rather than becoming the canonical user record
+- **WHEN** a user authenticates through an external provider
+- **THEN** the provider identity is linked to a local account rather than
+  becoming the canonical user record
 
 ### Requirement: FastAPI Users baseline integration
 The system SHALL use FastAPI Users for the baseline local account lifecycle and authentication primitives where they fit the project identity model.
@@ -70,57 +73,45 @@ before final browser authentication state is established.
   trusting an earlier ceremony step
 
 ### Requirement: Password-based local sign-in
-The system SHALL provide password-based local sign-in for local user accounts as
-one possible step in the authentication ceremony through the FastAPI Users
-identity boundary.
+The system SHALL provide password-based local sign-in for local user accounts
+through the FastAPI Users boundary and the shared authentication ceremony.
 
 #### Scenario: Valid credentials create authenticated browser state
-- **WHEN** an active local user submits valid password credentials and no
-  additional authenticator is required
-- **THEN** the system authenticates the local account and establishes the configured browser authentication state
-
-#### Scenario: Valid credentials can continue the ceremony
-- **WHEN** an active local user submits valid password credentials and policy
-  requires another authenticator
-- **THEN** the system keeps the authentication ceremony incomplete and requests
-  the next required authenticator instead of issuing final browser
+- **WHEN** an active local user submits valid password credentials and policy does
+  not require a further assertion
+- **THEN** the system authenticates the local account and establishes browser
   authentication state
+
+#### Scenario: Valid credentials can require another assertion
+- **WHEN** an active local user submits valid password credentials and policy
+  requires a further assertion
+- **THEN** the system keeps the ceremony incomplete and asks for the next
+  permitted assertion instead of issuing browser session state
 
 #### Scenario: Invalid credentials do not authenticate
 - **WHEN** a login attempt submits invalid credentials
-- **THEN** the system rejects the attempt without establishing authenticated browser state
+- **THEN** the system rejects the attempt without authenticating the browser
 
 #### Scenario: Inactive users do not authenticate
 - **WHEN** an inactive local user submits valid password credentials
-- **THEN** the system rejects the attempt without establishing authenticated
-  browser state
-
-#### Scenario: Blank passwords are not accepted
-- **WHEN** a password-based account creation or reset flow receives an empty or
-  whitespace-only password
-- **THEN** the identity boundary rejects the password without storing usable
-  password credentials
-
-#### Scenario: Login redirects stay same-origin
-- **WHEN** a login request includes a return target
-- **THEN** the target is accepted only when it is a same-origin relative path
-  and unsafe targets fall back to the account page
+- **THEN** the system rejects the attempt without authenticating the browser
 
 ### Requirement: Browser-session authentication
-The system SHALL support session-backed browser authentication as the primary human-user login mechanism.
+The system SHALL support session-backed browser authentication after a completed
+authentication ceremony.
 
 #### Scenario: Authenticated browser request resolves current user
-- **WHEN** a browser request includes valid authenticated session state for an
-  active local user
-- **THEN** the request can resolve the current local user through the identity boundary
+- **WHEN** a browser request includes valid browser session state for an active
+  local user
+- **THEN** the request can resolve the local user through identity boundaries
 
-#### Scenario: Inactive sessions do not resolve
-- **WHEN** a browser request includes session state for an inactive local user
+#### Scenario: Incomplete ceremony does not resolve session
+- **WHEN** a browser request has state for an incomplete ceremony
 - **THEN** the request is treated as unauthenticated
 
-#### Scenario: Logout clears browser authentication state
-- **WHEN** an authenticated user logs out
-- **THEN** the browser authentication state is invalidated or cleared so later requests are unauthenticated
+#### Scenario: Inactive sessions do not resolve
+- **WHEN** session state belongs to an inactive local user
+- **THEN** the request is treated as unauthenticated
 
 ### Requirement: Account lifecycle email hooks
 The system SHALL provide password reset and email verification flows with application-owned email delivery.
@@ -338,3 +329,34 @@ configured database URL.
 - **THEN** they are configured through the host application's resolved app
   configuration boundary rather than through a package-global standalone auth
   configuration boundary
+
+### Requirement: External-provider ceremony participation
+The system SHALL treat linked external-provider assertions as one possible final
+ceremony method for local users.
+
+#### Scenario: Linked provider callback satisfies assertion
+- **WHEN** an external provider callback is valid for a linked local user
+- **THEN** the ceremony records the provider assertion for that local user
+
+#### Scenario: Provider assertion does not bypass local session rules
+- **WHEN** policy requires an additional assertion in addition to provider
+  callback
+- **THEN** the ceremony remains incomplete until all required assertions pass
+
+### Requirement: External identity feature gating
+The system SHALL hide optional provider-linking, TOTP, and passkey integration
+unless explicitly enabled in wevra authentication configuration.
+
+#### Scenario: Disabled provider linking is not exposed
+- **WHEN** provider-linking is disabled in wevra authentication configuration
+- **THEN** provider linking routes and login choices are not exposed
+
+#### Scenario: Disabled authentication methods are not exposed
+- **WHEN** TOTP or passkey is disabled in wevra authentication configuration
+- **THEN** those methods are not offered in the ceremony or login choices
+
+#### Scenario: Inactive local user cannot complete provider assertion
+- **WHEN** provider callback resolves to an inactive local user
+- **THEN** the ceremony rejects the assertion and does not issue browser
+  authentication state
+

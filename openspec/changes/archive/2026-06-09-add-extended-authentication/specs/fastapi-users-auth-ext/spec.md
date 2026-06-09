@@ -15,6 +15,8 @@ specific ORM or database.
 - **THEN** optional adapters (for example SQLAlchemy, Beanie, Tortoise, Redis)
   can be attached without changing the addon contracts
 
+## ADDED Requirements
+
 ### Requirement: Shared ownership of storage contracts
 The addon SHALL provide protocol types in `wevra` so applications consume the
 link and assertion contracts without adding new schema ownership or provider

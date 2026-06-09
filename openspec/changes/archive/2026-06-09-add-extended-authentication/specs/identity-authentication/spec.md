@@ -55,6 +55,8 @@ authentication ceremony.
 - **WHEN** session state belongs to an inactive local user
 - **THEN** the request is treated as unauthenticated
 
+## ADDED Requirements
+
 ### Requirement: External-provider ceremony participation
 The system SHALL treat linked external-provider assertions as one possible final
 ceremony method for local users.

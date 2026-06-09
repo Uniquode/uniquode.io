@@ -1,5 +1,8 @@
-## MODIFIED Requirements
+# external-identity Specification
 
+## Purpose
+TBD - created by archiving change add-extended-authentication. Update Purpose after archive.
+## Requirements
 ### Requirement: Canonical local user identity
 The system SHALL use a local user account as the canonical identity record for
 browser, API, password, and external-provider authentication.
@@ -88,3 +91,4 @@ assertions in the authentication ceremony rather than as direct session writes.
 - **WHEN** a provider callback resolves to an inactive local account
 - **THEN** the ceremony rejects the callback and does not issue browser
   authentication state
+
