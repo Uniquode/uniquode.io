@@ -12,7 +12,9 @@ some tokens are long-lived and can be abused if the persistence layer is comprom
 - rename persisted credential fields to `crypt_access_token` and
   `crypt_refresh_token` to make encryption-at-rest explicit;
 - define migration and runtime handling for encrypted credential fields while preserving
-  existing stored values during rollout.
+  compatibility with existing tokens during rollout;
+- define key versioning and rotation semantics via a cryptographic service so environments can
+  safely move between keys without changing encrypted payload schema.
 
 ## Capabilities
 
@@ -20,6 +22,8 @@ some tokens are long-lived and can be abused if the persistence layer is comprom
 
 - `identity-secrets-encryption`: encrypted persistence for provider credentials used by
   identity-linked authentication flows.
+- `crypto-service`: shared crypto key loading, feature-gated secret requirements,
+  key versioning and rotation, and versioned envelope encrypt/decrypt API.
 
 ### Modified Capabilities
 
