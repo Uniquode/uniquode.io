@@ -1,31 +1,34 @@
 ## Why
 
-Configuration for authentication and database behaviour is currently consumed in a fragmented way, with consumers reading environment state directly and assuming static values. This makes startup and runtime reconfiguration hard to coordinate and ties callers to each other’s resolution details.
+Configuration for authentication, database behaviour, feature flags, and provider integration is currently consumed in a fragmented way, with consumers reading environment state directly and assuming static values. This makes startup readiness, runtime reconfiguration, and module-specific configuration ownership hard to coordinate.
 
-We need a central, asynchronous configuration protocol so wevra owns config determination once, exposes readiness and change notifications, and allows consumers to receive only the values they need. This supports operational flexibility, including feature flag and connection updates, without ad hoc polling or manual process restart.
+We need a central asynchronous configuration service so Wevra owns configuration readiness, snapshots, and change notification semantics, while the host app or CLI explicitly injects where configuration comes from.
 
 ## What Changes
 
-- Define a protocol for config sources in wevra that provides one deterministic startup flow (`ready()`), typed snapshot access, and a structured stream of configuration changes.
-- Introduce an explicit listener interface so consumers register interest and receive only relevant updates (for example identity/auth settings versus identity-linking settings).
-- Add a first-party environment configuration source that translates environment-derived values into the new canonical config protocol.
-- Add a first-party file configuration source that reads configuration from file-backed stores and participates in the same readiness and change-stream contract.
-- Define this as a foundational architecture change without implementation code in this proposal-only phase.
+- Add a central configuration service that accepts app/CLI-injected configuration sources rather than discovering its own source configuration from the file it is meant to load.
+- Define a deterministic readiness contract through `ready()` so startup can block until required initial configuration data is available.
+- Define immutable configuration snapshots with versioning so consumers can read the latest resolved values without coupling to source mechanics.
+- Define a structured event stream for configuration messages, section changes, key changes, reloads, removals, and source diagnostics.
+- Define subscription filtering through structured selectors such as section, key, key prefix, source, or event kind.
+- Provide first-party source adapters for environment-backed values and file-backed values, constructed explicitly by the app startup path or CLI.
+- Require listeners to consume filtered async subscriptions as the primitive notification model.
+- Keep runtime application of configuration changes owned by the subscribing facility or module; the configuration service delivers changes but does not force hot reload semantics.
 
 ## Capabilities
 
 ### New Capabilities
-- `async-config-sources`: Define a shared async protocol for startup readiness, snapshot access, and runtime config updates.
-- `config-listener-protocol`: Define how subsystems register interest and consume only relevant configuration updates.
-- `environment-config-source`: Define the environment-backed implementation of the async config-source contract.
-- `file-config-source`: Define the file-backed implementation of the async config-source contract.
+
+- `configuration-service`: Define the central async configuration service, injected sources, readiness handling, snapshots, structured selectors, subscriptions, and update events.
 
 ### Modified Capabilities
-- `environment-configuration`: Change from static environment loading only to asynchronous generation and propagation through a central config protocol.
+
+- `environment-configuration`: Change environment-backed configuration from static direct loading only to a source adapter that can feed the central configuration service while preserving explicit settings construction and existing app config boundary rules.
 
 ## Impact
 
-- API/contracts impact: Adds a new config-source and listener contract that should become the authoritative model for configuration flow in wevra.
-- Runtime impact: Enables dynamic updates (including database-related settings) through a controlled readiness-plus-stream mechanism.
-- Testing impact: New tests are required for source adapters, subscription filtering, and update semantics in later implementation phases.
-- No app code changes are introduced in this proposal-only scope.
+- API/contracts impact: Adds a configuration service contract that should become the authoritative model for configuration readiness, snapshots, and change delivery in Wevra.
+- App/CLI impact: App startup and project commands must construct and inject configuration sources such as file and environment sources into the configuration service.
+- Runtime impact: Enables controlled delivery of configuration changes, including feature flags and provider settings, without forcing every consumer to support hot reload.
+- Testing impact: Requires tests for source injection, readiness blocking/failure, snapshot versioning, selector filtering, subscription delivery, and source diagnostics.
+- Migration impact: Existing static settings loaders can be adapted gradually by wrapping their current environment and app-config logic as configuration sources.
