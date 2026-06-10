@@ -368,4 +368,3 @@ unless explicitly enabled in wevra authentication configuration.
 - **WHEN** provider callback resolves to an inactive local user
 - **THEN** the ceremony rejects the assertion and does not issue browser
   authentication state
-

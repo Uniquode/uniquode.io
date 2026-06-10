@@ -40,4 +40,3 @@ email ownership relation used by password flows.
 - **WHEN** a user completes a passkey assertion for a challenged login
 - **THEN** the assertion applies to the locally resolved user established from the
   same email principal resolution path
-

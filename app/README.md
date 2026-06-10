@@ -50,7 +50,7 @@ Runtime configuration is loaded through `envex`, including local `.env` files.
 `DATABASE_URL` is the database connection string. App settings use concise names
 such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET`, `CSRF_SECURE`, `RESET_SECRET`,
 `VERIFICATION_SECRET`, `SESSION_COOKIE`, `SESSION_FORCE_SECURE`,
-`SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_ENABLED`, `PASSKEY_ENABLED`, and
+`SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_MODE`, `PASSKEY_ENABLED`, and
 `APP_RELOAD`.
 `wevra.core` owns the reusable envex/app.toml settings-loading mechanics, while
 `app.settings` owns this application's concrete settings fields, defaults,

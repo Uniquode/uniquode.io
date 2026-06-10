@@ -1,11 +1,16 @@
 ## Context
 
-`encrypt-secrets` addresses plaintext storage of provider credentials in `wevra` authentication persistence. Provider tokens are currently persisted on `IdentityProvider` as `access_token` and `refresh_token`, which can be long-lived and reusable by attackers if database contents are exposed.
+`encrypt-secrets` addresses plaintext storage of reversible secret values in
+`wevra` authentication persistence. Provider tokens were originally represented
+as `access_token` and `refresh_token`; persisted reversible secrets must now use
+`crypt_*` fields, be encrypted at rest, and be decrypted only close to the code
+path that needs plaintext.
 
 Current boundaries in use:
 - `wevra.auth.models.IdentityProvider` holds provider identity records.
 - Auth settings and environment handling are already centralised in `wevra` modules.
-- No dedicated crypto service module exists yet.
+- `wevra.services.crypto.SecretEnvelopeService` now provides key loading,
+  versioned envelopes, verifier helpers, and key rotation support.
 
 The change is security-sensitive, cross-cutting within auth persistence, and introduces migration and key-management questions, so design approval is required before implementation.
 
@@ -14,10 +19,16 @@ The change is security-sensitive, cross-cutting within auth persistence, and int
 **Goals:**
 - Introduce a shared wevra crypto service for encrypting/decrypting sensitive secret material.
 - Keep env- and config-driven key loading outside application code, with lazy initialisation.
-- Ensure deployments that need encrypted-provider operations can perform explicit startup validation when enabled.
+- Ensure deployments that need encrypted-provider operations fail clearly when a
+  provider-secret operation is attempted without valid key material.
 - Add key-versioned envelopes and support rotation with legacy-key decryption.
 - Add checksum validation as a typo-safety check.
-- Persist provider tokens as encrypted fields (`crypt_access_token`, `crypt_refresh_token`) while maintaining a migration path for existing rows.
+- Persist provider tokens as encrypted fields (`crypt_access_token`,
+  `crypt_refresh_token`) while maintaining an explicit compatibility path for
+  existing plaintext rows during rollout.
+- Represent encrypted reversible secrets crossing service/persistence boundaries
+  as `SecretEnvelope` value objects while keeping key-aware work in
+  `SecretEnvelopeService`.
 - Define clear failure behaviour when encryption is required but keys are unavailable or invalid.
 
 **Non-Goals:**
@@ -57,7 +68,6 @@ Rationale: Envelope metadata in the value itself keeps compatibility with existi
 3. **Model encryption requirements as secret-use opt-in and explicit**
 
 Decision: Consumers must indicate whether an operation requires encrypted secret handling before invoking service methods.
-Additionally, the application can run a health/startup check in a dedicated phase for strict validation.
 
 Why: This avoids hard failure at import/startup for deployments that do not use provider credential persistence.
 
@@ -68,10 +78,11 @@ Alternatives:
 Rationale: lazy initialisation with explicit usage aligns with your requirement: strict only when needed.
 
 Operational rule:
-- For deployments that require encrypted-provider functionality, enable a strict startup path via
-  `WEVRA_CRYPTO_KEYS_REQUIRE=1` (or equivalent env toggle). In this mode, service
-  validation is executed during startup/validation command and startup is blocked if key material
-  is missing, unparsable, or invalid.
+- Provider-secret save/decrypt operations use required crypto operations and
+  fail clearly when key material is missing, unparsable, invalid, or lacks the
+  referenced key version.
+- Deployments that do not use provider-secret operations are not blocked by
+  missing secret keys.
 
 4. **Adopt current/legacy key registry pattern**
 
@@ -99,12 +110,28 @@ Alternatives:
 
 Rationale: CRC32 is practical and low-cost, with clear security caveat communicated in design.
 
+6. **Use an explicit encrypted value object**
+
+Decision: Add `SecretEnvelope` as the value object for encrypted reversible
+secret envelopes passed across service and persistence boundaries.
+
+Why: This makes the encrypted-at-rest contract visible in types and reduces the
+chance of confusing plaintext strings with encrypted `crypt_*` values.
+
+Alternatives:
+- Continue passing raw encrypted strings across every boundary.
+- Let the value object load keys or decrypt implicitly.
+
+Rationale: `SecretEnvelope` carries encrypted data only. `SecretEnvelopeService`
+remains the explicit key-aware component for creation from plaintext and
+decryption to plaintext.
+
 ## Risks / Trade-offs
 
 - **[Risk] Key exposure by environment file or process dump** → **Mitigation:** emphasise secure key storage patterns (vault/secret manager), keep source-of-truth outside source code, and include operational hardening guidance.
 - **[Risk] CRC32 is not security-sensitive** → **Mitigation:** document that it is only typo detection and does not replace proper key secrecy.
 - **[Risk] Provider tokens are stored in `identity_provider` rows and must migrate from plaintext** → **Mitigation:** migration adds new encrypted columns and supports reading existing plaintext for read compatibility.
-- **[Risk] Lazy key loading can delay failure** → **Mitigation:** surface explicit error on first required operation and include test coverage for missing/invalid key scenarios.
+- **[Risk] Lazy key loading can delay failure** → **Mitigation:** surface explicit error on first required provider-secret operation and include test coverage for missing/invalid key scenarios.
 - **[Risk] Envelope format drift between algorithm versions** → **Mitigation:** schema-stable envelope prefix with version mapping and explicit unsupported-format rejection.
 
 ## Migration Plan
@@ -114,15 +141,27 @@ Rationale: CRC32 is practical and low-cost, with clear security caveat communica
 3. Implement service API with:
    - lazy key material load,
    - versioned encrypt/decrypt,
-   - explicit health/startup validation mode (`validate` API + env-gated startup check).
-4. Rename `IdentityProvider.access_token` to `crypt_access_token` and
+   - required-operation failure for missing or invalid key material,
+   - one-way verifier helpers for non-reversible secret checks.
+4. Add `SecretEnvelope` as the encrypted value object for reversible persisted
+   secrets.
+5. Rename `IdentityProvider.access_token` to `crypt_access_token` and
    `refresh_token` to `crypt_refresh_token` via migration.
-5. Update auth persistence paths that read/write provider tokens to call the crypto service.
-6. Add compatibility read/write path for existing plaintext tokens where required by migration order.
-7. Add migration tests and integration tests for provider enablement without key, valid and invalid keys, and rotation/decryption of prior versions.
-8. Add rollout guidance in release notes/docs: rotate to `current` key by changing `key version` and keeping previous version(s) until old rows have been rewritten.
+6. Add a provider credential persistence boundary that encrypts token values on
+   save and exposes encrypted values as `SecretEnvelope` objects.
+7. Add explicit decrypt methods for provider-token use boundaries.
+8. Add compatibility handling for existing plaintext tokens where required by
+   migration order, while rejecting malformed encrypted-looking envelopes.
+9. Add migration/service tests and integration tests for provider-secret
+   operations without keys, provider-disabled configuration without keys,
+   valid keys, invalid envelopes, and rotation/decryption of prior versions.
+10. Add rollout guidance in release notes/docs: rotate to `current` key by
+    changing `key version` and keeping previous version(s) in the legacy list
+    until old rows have been rewritten or intentionally invalidated.
 
 Rollback strategy:
 - If implementation issues occur, deploy with current key unchanged and preserve legacy keys list empty or previous set.
 - New encrypted writes stop at old key when `current` remains unchanged.
-- Feature can be temporarily disabled (provider integration disabled) while keys are corrected.
+- Provider-secret operations can be temporarily disabled or avoided while keys
+  are corrected; unrelated identity operations should continue without requiring
+  secret key configuration.

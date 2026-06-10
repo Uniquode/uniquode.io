@@ -59,4 +59,3 @@ with implemented behaviour.
   behaviour
 - **THEN** they are updated through the maintenance change to match the
   implemented project
-
