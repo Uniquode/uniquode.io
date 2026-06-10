@@ -30,19 +30,19 @@ The configuration service SHALL provide an async readiness contract that blocks 
 - **WHEN** an optional source reports an error before initial configuration is available
 - **THEN** `ready()` can still complete if all required sources are ready and the optional source error is emitted as a diagnostic event
 
-### Requirement: Versioned configuration snapshots
-The configuration service SHALL expose immutable snapshots of the latest resolved configuration state.
+### Requirement: Versioned current config
+The configuration service SHALL expose immutable current config state of the latest resolved configuration state.
 
-#### Scenario: Snapshot available after readiness
+#### Scenario: Current config available after readiness
 - **WHEN** `ready()` has completed successfully
-- **THEN** callers can retrieve a snapshot containing the latest resolved configuration values
+- **THEN** callers can retrieve current config containing the latest resolved configuration values
 
-#### Scenario: Snapshot versions advance
+#### Scenario: Config versions advance
 - **WHEN** a source update changes resolved configuration
-- **THEN** the next snapshot has a newer version than the previous snapshot
+- **THEN** the next current config has a newer version than the previous config
 
-#### Scenario: Snapshot metadata identifies sources
-- **WHEN** a snapshot contains values from one or more sources
+#### Scenario: Current config metadata identifies sources
+- **WHEN** current config contains values from one or more sources
 - **THEN** diagnostic metadata can identify the source responsible for a value without exposing secret values
 
 ### Requirement: Structured configuration events
@@ -89,6 +89,36 @@ The configuration service SHALL expose async subscription streams as the primiti
 #### Scenario: Slow subscriber does not block all dispatch
 - **WHEN** one subscriber consumes events slowly
 - **THEN** the service prevents that subscriber from indefinitely blocking unrelated subscribers
+
+### Requirement: Blocking initial subscription config
+The configuration service SHALL provide each subscription with a blocking initial config API that waits for readiness and returns matching current configuration state.
+
+#### Scenario: Subscriber starts before readiness
+- **WHEN** a subscriber registers before the configuration service is ready
+- **THEN** subscription registration succeeds immediately
+- **AND** `initial_config()` blocks until readiness succeeds or fails
+
+#### Scenario: Subscriber starts after readiness
+- **WHEN** a subscriber registers after configuration readiness has completed
+- **THEN** `initial_config()` returns a coherent matching config from the current configuration state
+
+#### Scenario: Required initial config is missing
+- **WHEN** `initial_config()` is called with the default `required=True`
+- **AND** no matching configuration exists after readiness
+- **THEN** it raises an actionable configuration error
+
+#### Scenario: Optional initial config is missing
+- **WHEN** `initial_config(required=False)` is called
+- **AND** no matching configuration exists after readiness
+- **THEN** it returns an empty matching config
+
+#### Scenario: Readiness fails
+- **WHEN** configuration service readiness fails before an initial config can be returned
+- **THEN** `initial_config()` raises the readiness error
+
+#### Scenario: Initial config handoff has no event gap
+- **WHEN** `initial_config()` returns a config version
+- **THEN** the subscription stream delivers matching events newer than that config version without missing updates emitted during subscription creation
 
 ### Requirement: Delivery does not force hot reload
 The configuration service SHALL deliver configuration changes without deciding whether each facility applies those changes at runtime.

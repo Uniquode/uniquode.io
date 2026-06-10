@@ -9,7 +9,7 @@ The system SHALL provide an environment-backed source adapter that can feed envi
 
 #### Scenario: Environment source emits canonical values
 - **WHEN** the environment source starts
-- **THEN** it emits parsed configuration values using the same section and key structure used by configuration service snapshots and events
+- **THEN** it emits parsed configuration values using the same section and key structure used by configuration service config state and events
 
 #### Scenario: Existing settings construction remains available
 - **WHEN** tests or specialised callers construct settings explicitly without using the configuration service
