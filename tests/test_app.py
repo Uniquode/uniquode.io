@@ -34,6 +34,7 @@ from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 from starlette.staticfiles import StaticFiles
 from wevra.auth import (
     ERROR_ALREADY_EXISTS,
+    ERROR_AUTHENTICATION_METHOD_REQUIRED,
     ERROR_IDENTITY_CHANGED,
     ERROR_INACTIVE_USER,
     ERROR_INVALID_EMAIL,
@@ -41,6 +42,8 @@ from wevra.auth import (
     ERROR_INVALID_TOKEN,
     ERROR_PASSWORD_TOO_SHORT,
     ERROR_PASSWORD_TOO_WEAK,
+    TOTP_ASSERTION_METHOD,
+    AuthenticationAssertion,
     PasswordStrength,
     Result,
 )
@@ -49,6 +52,11 @@ from wevra.auth.accounts.bootstrap import (
     bootstrap_initial_admin,
 )
 from wevra.auth.accounts.schemas import UserCreate
+from wevra.auth.mfa.storage import (
+    SqlAlchemyRecoveryCodeStore,
+    SqlAlchemyTOTPCredentialStore,
+)
+from wevra.auth.mfa.totp import generate_totp, generate_totp_secret
 from wevra.auth.models import (
     AccessToken,
     Base,
@@ -64,7 +72,6 @@ from wevra.auth.options import (
 from wevra.auth.options import (
     PASSKEY,
     PROVIDER,
-    TOTP,
     VALID_IDENTITY_INTEGRATIONS,
     IdentityOptions,
     identity_env_setting_name,
@@ -83,8 +90,10 @@ from wevra.auth.settings import (
     ENV_SESSION_COOKIE,
     ENV_SESSION_FORCE_SECURE,
     ENV_SESSION_LIFETIME,
+    ENV_TOTP_MODE,
     ENV_VERIFICATION_SECRET,
 )
+from wevra.auth.timestamps import current_timestamp
 from wevra.core.composition import (
     AppConfig,
     CompositionError,
@@ -108,6 +117,7 @@ from wevra.db.persistence import (
     sqlite_database_path,
 )
 from wevra.db.surfaces import DataCompositionError
+from wevra.services.crypto import SecretEnvelopeService
 from wevra.tools.project import (
     ProjectToolConfigurationError,
     import_from_string,
@@ -184,6 +194,9 @@ IDENTITY_TABLE_NAMES = frozenset(
         "identity_user",
         "identity_access_token",
         "identity_provider",
+        "identity_authentication_challenge",
+        "identity_totp_credential",
+        "identity_totp_recovery_code",
         "identity_external_identity_link",
     },
 )
@@ -506,7 +519,7 @@ def test_migrate_upgrade_uses_settings_database_url(
     assert calls == [
         (
             "upgrade",
-            "head",
+            "heads",
             sqlite_file_url(tmp_path / "app.sqlite3"),
         )
     ]
@@ -634,7 +647,7 @@ def test_migrate_database_url_override_can_follow_subcommand(
     assert exit_code == 0
     assert calls == [
         (
-            "head",
+            "heads",
             sqlite_file_url(tmp_path / "subcommand.sqlite3"),
         )
     ]
@@ -1045,8 +1058,13 @@ def test_identity_env_settings_align_with_identity_option_fields() -> None:
         and env_setting.field_name in identity_integration_fields
     }
 
-    assert identity_option_enabled_fields == identity_integration_fields
-    assert identity_env_enabled_fields == identity_integration_fields
+    expected_enabled_fields = {"provider_enabled", "passkey_enabled"}
+
+    assert identity_option_enabled_fields == expected_enabled_fields
+    assert identity_env_enabled_fields == expected_enabled_fields
+    assert "totp_mode" in {
+        identity_field.name for identity_field in fields(IdentityOptions)
+    }
 
 
 def test_create_app_mounts_configurable_static_files() -> None:
@@ -1526,7 +1544,7 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
             ENV_SESSION_FORCE_SECURE: "true",
             ENV_SESSION_LIFETIME: "3600",
             identity_env_setting_name(PROVIDER): enabled_value,
-            identity_env_setting_name(TOTP): enabled_value,
+            ENV_TOTP_MODE: "required",
             identity_env_setting_name(PASSKEY): enabled_value,
             ENV_STATIC_URL: "assets",
         },
@@ -1545,9 +1563,22 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
     assert settings.identity_options.reset_password_token_secret == "reset-secret"
     assert settings.identity_options.verification_token_secret == "verification-secret"
     assert settings.identity_options.provider_enabled is True
-    assert settings.identity_options.totp_enabled is True
+    assert settings.identity_options.totp_mode == "required"
     assert settings.identity_options.passkey_enabled is True
     assert settings.static_mount_path == "/assets"
+
+
+def test_load_settings_rejects_invalid_totp_mode_environment_value(tmp_path) -> None:
+    write_app_config(tmp_path / "app.toml")
+
+    with pytest.raises(ConfigurationError, match="TOTP mode"):
+        load_settings(
+            environ={
+                ENV_TOTP_MODE: "turbo",
+            },
+            project_root=tmp_path,
+            read_dotenv=False,
+        )
 
 
 def test_load_settings_reads_local_dotenv(tmp_path) -> None:
@@ -1982,7 +2013,7 @@ def test_identity_options_expose_integration_flags() -> None:
     enabled_flags = {name: True for name in DEFAULT_IDENTITY_INTEGRATION_FLAGS}
     options = IdentityOptions(
         provider_enabled=True,
-        totp_enabled=True,
+        totp_mode="required",
         passkey_enabled=True,
     )
 
@@ -2577,6 +2608,78 @@ def test_authentication_ceremony_finalisation_reloads_user_state() -> None:
         asyncio.run(close_database(web_app.state.database))
 
 
+def test_authentication_ceremony_finalisation_requires_totp_assertion() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="required"),
+        )
+    )
+
+    async def assert_finalisation() -> None:
+        async with web_app.state.database.engine.begin() as connection:
+            await connection.run_sync(Base.metadata.create_all)
+
+        async with session_scope(web_app.state.database.session_factory) as session:
+            manager = create_user_manager(
+                session, web_app.state.settings.identity_options
+            )
+            user = await manager.create(
+                UserCreate(email="totp-ceremony@example.com", password="correct horse"),
+                safe=True,
+            )
+
+        request = Request({"type": "http", "app": web_app})
+        ceremony_id = "totp-ceremony"
+        missing_result = await identity_users.complete_authentication_ceremony(
+            request,
+            user,
+            ceremony_id=ceremony_id,
+            required_methods=(TOTP_ASSERTION_METHOD,),
+        )
+        assert missing_result.is_failure() is True
+        assert missing_result.error_type == ERROR_AUTHENTICATION_METHOD_REQUIRED
+
+        stale_result = await identity_users.complete_authentication_ceremony(
+            request,
+            user,
+            ceremony_id=ceremony_id,
+            required_methods=(TOTP_ASSERTION_METHOD,),
+            assertions=(
+                AuthenticationAssertion(
+                    user_id=str(user.id),
+                    method=TOTP_ASSERTION_METHOD,
+                    asserted_at=1.0,
+                    ceremony_id=ceremony_id,
+                ),
+            ),
+        )
+        assert stale_result.is_failure() is True
+        assert stale_result.error_type == ERROR_AUTHENTICATION_METHOD_REQUIRED
+
+        asserted_result = await identity_users.complete_authentication_ceremony(
+            request,
+            user,
+            ceremony_id=ceremony_id,
+            required_methods=(TOTP_ASSERTION_METHOD,),
+            assertions=(
+                AuthenticationAssertion(
+                    user_id=str(user.id),
+                    method=TOTP_ASSERTION_METHOD,
+                    asserted_at=current_timestamp(),
+                    ceremony_id=ceremony_id,
+                ),
+            ),
+        )
+        assert asserted_result.is_ok() is True
+        assert asserted_result.value
+
+    try:
+        asyncio.run(assert_finalisation())
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
 class CaptureIdentityDelivery:
     def __init__(self) -> None:
         self.reset_tokens: list[tuple[str, str]] = []
@@ -2677,6 +2780,80 @@ def csrf_token_from(response) -> str:
 
 def csrf_data(response, data: dict[str, str] | None = None) -> dict[str, str]:
     return {CSRF_FIELD_NAME: csrf_token_from(response)} | dict(data or {})
+
+
+def hidden_input_value(response_text: str, field_name: str) -> str | None:
+    match = re.search(
+        rf'name="{re.escape(field_name)}"[^>]*value="([^"]*)"',
+        response_text,
+    )
+    return match.group(1) if match else None
+
+
+def configure_test_only_secret_envelope_service(web_app: FastAPI) -> None:
+    if hasattr(web_app.state, "secret_envelope_service"):
+        return
+
+    web_app.state.secret_envelope_service = SecretEnvelopeService.for_testing()
+
+
+def add_totp_credential(
+    web_app: FastAPI,
+    *,
+    email: str,
+    secret: str | None = None,
+    active: bool = True,
+) -> tuple[str, str]:
+    credential_secret = secret or generate_totp_secret()
+    configure_test_only_secret_envelope_service(web_app)
+
+    async def _seed() -> tuple[str, str]:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            store = SqlAlchemyTOTPCredentialStore(
+                session,
+                web_app.state.secret_envelope_service,
+            )
+            credential_id = await store.create_pending_totp_credential(
+                str(user.id),
+                credential_secret,
+            )
+            if active:
+                await store.activate_totp_credential(credential_id)
+            await session.commit()
+            return credential_id, credential_secret
+
+    return asyncio.run(_seed())
+
+
+def add_totp_recovery_codes(
+    web_app: FastAPI,
+    *,
+    email: str,
+    credential_id: str,
+    recovery_codes: tuple[str, ...],
+) -> None:
+    configure_test_only_secret_envelope_service(web_app)
+
+    async def _seed() -> None:
+        async with session_scope(web_app.state.database.session_factory) as session:
+            user = (
+                await session.execute(select(User).where(User.email == email))
+            ).scalar_one()
+            store = SqlAlchemyRecoveryCodeStore(
+                session,
+                web_app.state.secret_envelope_service,
+            )
+            await store.replace_recovery_codes(
+                str(user.id),
+                credential_id,
+                recovery_codes,
+            )
+            await session.commit()
+
+    asyncio.run(_seed())
 
 
 def app_request_with_session_cookie(
@@ -2910,6 +3087,503 @@ def test_identity_logout_clears_secure_cookie_for_https_requests() -> None:
         assert "uniquode_session=" in set_cookie
         assert "Max-Age=0" in set_cookie
         assert "Secure" in set_cookie
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_disabled_totp_mode_completes_directly() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="disabled"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_verified=True)
+        add_totp_credential(
+            web_app,
+            email="person@example.com",
+            secret="TESTSECRET",
+        )
+
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/account/login")
+        assert login_page.status_code == 200
+
+        login_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert login_response.headers["location"] == "/account"
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_opt_in_totp_mode_does_not_block_login() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="opt_in"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+
+        login_page = client.get("/account/login")
+        assert login_page.status_code == 200
+
+        login_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert login_response.status_code == 303
+        assert login_response.headers["location"] == "/account"
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_required_totp_mode_prompts_setup_and_reprompts_on_bypass() -> (
+    None
+):
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="required"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_verified=True)
+
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/account/login")
+        setup_prompt = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+
+        assert setup_prompt.status_code == 200
+        assert "Set up two-factor authentication" in setup_prompt.text
+        assert "Continue to TOTP setup" in setup_prompt.text
+        setup_challenge_id = hidden_input_value(
+            setup_prompt.text,
+            "setup_challenge_id",
+        )
+        assert setup_challenge_id
+
+        leaked_client = TestClient(web_app, follow_redirects=False)
+        leaked_login_page = leaked_client.get("/account/login")
+        leaked_bypass_response = leaked_client.post(
+            "/account/login",
+            data=csrf_data(
+                leaked_login_page,
+                {
+                    "return_to": "/account",
+                    "setup_challenge_id": setup_challenge_id,
+                    "bypass_totp_setup": "1",
+                },
+            ),
+        )
+        assert leaked_bypass_response.status_code == 401
+
+        bypass_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                setup_prompt,
+                {
+                    "return_to": "/account",
+                    "setup_challenge_id": setup_challenge_id,
+                    "bypass_totp_setup": "1",
+                },
+            ),
+        )
+        assert bypass_response.status_code == 303
+        assert bypass_response.headers["location"] == "/account"
+
+        followup_client = TestClient(web_app, follow_redirects=False)
+        followup_login_page = followup_client.get("/account/login")
+        followup_prompt = followup_client.post(
+            "/account/login",
+            data=csrf_data(
+                followup_login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert followup_prompt.status_code == 200
+        assert "Continue to TOTP setup" in followup_prompt.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_login_totp_replay_rejected_recovery_code_single_use() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="required"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_verified=True)
+        credential_id, secret = add_totp_credential(
+            web_app,
+            email="person@example.com",
+            secret="TESTSECRET",
+        )
+        add_totp_recovery_codes(
+            web_app,
+            email="person@example.com",
+            credential_id=credential_id,
+            recovery_codes=("R3C0V3RY77",),
+        )
+
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/account/login")
+
+        challenge_prompt = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert challenge_prompt.status_code == 200
+        assert "Two-factor authentication" in challenge_prompt.text
+        assert 'name="totp_code"' in challenge_prompt.text
+
+        challenge_id = hidden_input_value(challenge_prompt.text, "challenge_id")
+        assert challenge_id
+
+        totp_code = generate_totp(secret=secret)
+        second_client = TestClient(web_app, follow_redirects=False)
+        second_client_login_page = second_client.get("/account/login")
+        nonce_missing_attempt = second_client.post(
+            "/account/login",
+            data=csrf_data(
+                second_client_login_page,
+                {
+                    "challenge_id": challenge_id,
+                    "totp_code": totp_code,
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert nonce_missing_attempt.status_code == 401
+
+        challenge_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                challenge_prompt,
+                {
+                    "challenge_id": challenge_id,
+                    "totp_code": totp_code,
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert challenge_response.status_code == 303
+
+        replay_client = TestClient(web_app, follow_redirects=False)
+        replay_prompt_login = replay_client.get("/account/login")
+        replay_prompt = replay_client.post(
+            "/account/login",
+            data=csrf_data(
+                replay_prompt_login,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        replay_challenge_id = hidden_input_value(
+            replay_prompt.text,
+            "challenge_id",
+        )
+        assert replay_challenge_id
+
+        replay_attempt = replay_client.post(
+            "/account/login",
+            data=csrf_data(
+                replay_prompt,
+                {
+                    "challenge_id": replay_challenge_id,
+                    "totp_code": totp_code,
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert replay_attempt.status_code == 401
+        assert "Verification code is invalid." in replay_attempt.text
+
+        recovery_client = TestClient(web_app, follow_redirects=False)
+        recovery_login_page = recovery_client.get("/account/login")
+        recovery_prompt = recovery_client.post(
+            "/account/login",
+            data=csrf_data(
+                recovery_login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        recovery_challenge_id = hidden_input_value(
+            recovery_prompt.text,
+            "challenge_id",
+        )
+        assert recovery_challenge_id
+        recovery_complete = recovery_client.post(
+            "/account/login",
+            data=csrf_data(
+                recovery_prompt,
+                {
+                    "challenge_id": recovery_challenge_id,
+                    "recovery_code": "R3C0V3RY77",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert recovery_complete.status_code == 303
+
+        reuse_client = TestClient(web_app, follow_redirects=False)
+        reuse_prompt_login = reuse_client.get("/account/login")
+        reuse_prompt = reuse_client.post(
+            "/account/login",
+            data=csrf_data(
+                reuse_prompt_login,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        reuse_challenge_id = hidden_input_value(reuse_prompt.text, "challenge_id")
+        assert reuse_challenge_id
+        reuse_attempt = reuse_client.post(
+            "/account/login",
+            data=csrf_data(
+                reuse_prompt,
+                {
+                    "challenge_id": reuse_challenge_id,
+                    "recovery_code": "R3C0V3RY77",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert reuse_attempt.status_code == 401
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_totp_disable_required_mode_reprompts_setup() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="required"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_verified=True)
+        _credential_id, secret = add_totp_credential(
+            web_app,
+            email="person@example.com",
+            secret="TESTSECRET",
+        )
+
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/account/login")
+        challenge_prompt = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        challenge_id = hidden_input_value(challenge_prompt.text, "challenge_id")
+        assert challenge_id
+        login_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                challenge_prompt,
+                {
+                    "challenge_id": challenge_id,
+                    "totp_code": generate_totp(secret=secret),
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+
+        account_page = client.get("/account")
+        disable_response = client.post(
+            "/account/totp/disable",
+            data=csrf_data(account_page, {"password": "correct horse"}),
+        )
+        assert disable_response.status_code == 303
+        assert disable_response.headers["location"] == "/account"
+
+        followup_client = TestClient(web_app, follow_redirects=False)
+        followup_login_page = followup_client.get("/account/login")
+        followup_prompt = followup_client.post(
+            "/account/login",
+            data=csrf_data(
+                followup_login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert followup_prompt.status_code == 200
+        assert "Continue to TOTP setup" in followup_prompt.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_totp_reset_invalidates_credential_and_requires_reenrolment() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="required"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_verified=True)
+        _credential_id, secret = add_totp_credential(
+            web_app,
+            email="person@example.com",
+            secret="TESTSECRET",
+        )
+
+        client = TestClient(web_app, follow_redirects=False)
+        login_page = client.get("/account/login")
+        challenge_prompt = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        challenge_id = hidden_input_value(challenge_prompt.text, "challenge_id")
+        assert challenge_id
+        login_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                challenge_prompt,
+                {
+                    "challenge_id": challenge_id,
+                    "totp_code": generate_totp(secret=secret),
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+
+        account_page = client.get("/account")
+        reset_response = client.post(
+            "/account/totp/reset",
+            data=csrf_data(account_page, {"password": "correct horse"}),
+        )
+        assert reset_response.status_code == 303
+        assert reset_response.headers["location"] == "/account/totp/setup"
+
+        followup_client = TestClient(web_app, follow_redirects=False)
+        followup_login_page = followup_client.get("/account/login")
+        followup_prompt = followup_client.post(
+            "/account/login",
+            data=csrf_data(
+                followup_login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert followup_prompt.status_code == 200
+        assert "Continue to TOTP setup" in followup_prompt.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_identity_totp_setup_route_requires_verified_email_for_enrolment() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="opt_in"),
+        )
+    )
+
+    try:
+        seed_identity_user(web_app, is_verified=False)
+        client = TestClient(web_app, follow_redirects=False)
+
+        login_page = client.get("/account/login")
+        login_response = client.post(
+            "/account/login",
+            data=csrf_data(
+                login_page,
+                {
+                    "email": "person@example.com",
+                    "password": "correct horse",
+                    "return_to": "/account",
+                },
+            ),
+        )
+        assert login_response.status_code == 303
+
+        setup_page = client.get("/account/totp/setup")
+        assert setup_page.status_code == 200
+        assert "Verify your email before setting up TOTP." in setup_page.text
     finally:
         asyncio.run(close_database(web_app.state.database))
 
@@ -4003,6 +4677,40 @@ def test_verification_route_uses_delivery_hook() -> None:
 
         assert confirm_response.status_code == 200
         assert "Email verification complete." in confirm_response.text
+    finally:
+        asyncio.run(close_database(web_app.state.database))
+
+
+def test_verification_confirm_required_totp_mode_surfaces_setup_prompt() -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            identity_options=IdentityOptions(totp_mode="required"),
+        )
+    )
+    delivery = CaptureIdentityDelivery()
+    web_app.state.identity_delivery = delivery
+
+    try:
+        seed_identity_user(web_app)
+        client = TestClient(web_app, follow_redirects=False)
+        verify_page = client.get("/account/verify")
+        response = client.post(
+            "/account/verify",
+            data=csrf_data(verify_page, {"email": "person@example.com"}),
+        )
+        assert response.status_code == 200
+        assert delivery.verification_tokens
+
+        confirm_response = client.post(
+            "/account/verify/confirm",
+            data=csrf_data(response, {"token": delivery.verification_tokens[0][1]}),
+        )
+
+        assert confirm_response.status_code == 200
+        assert "Email verification complete." in confirm_response.text
+        assert "TOTP setup is required for this account." in confirm_response.text
+        assert "Continue to sign in" in confirm_response.text
     finally:
         asyncio.run(close_database(web_app.state.database))
 

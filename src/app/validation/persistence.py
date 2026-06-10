@@ -154,43 +154,13 @@ def validate_persistence(settings: Settings) -> ValidationResult:
                     if path.name != "__init__.py"
                 )
             )
-            has_revision_files = record_check(
+            record_check(
                 checks,
                 errors,
                 passed=bool(revision_files),
                 description="Alembic migration revision exists",
                 error="At least one Alembic migration revision is required.",
             )
-            if has_revision_files and "wevra.auth" in settings.modules:
-                revision_contents = [
-                    content
-                    for path in revision_files
-                    if (
-                        content := read_text_for_validation(
-                            path,
-                            checks,
-                            errors,
-                            description=(
-                                f"Alembic revision reads as UTF-8: {path.name}"
-                            ),
-                        )
-                    )
-                    is not None
-                ]
-                revision_content = "\n".join(revision_contents)
-                for table_name in (
-                    "identity_user",
-                    "identity_provider",
-                    "identity_external_identity_link",
-                    "identity_access_token",
-                ):
-                    record_check(
-                        checks,
-                        errors,
-                        passed=table_name in revision_content,
-                        description=f"Alembic migration creates table: {table_name}",
-                        error=f"Alembic migration must create table: {table_name}",
-                    )
         else:
             record_check(
                 checks,
