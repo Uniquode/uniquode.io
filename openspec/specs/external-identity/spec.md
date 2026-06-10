@@ -91,4 +91,3 @@ assertions in the authentication ceremony rather than as direct session writes.
 - **WHEN** a provider callback resolves to an inactive local account
 - **THEN** the ceremony rejects the callback and does not issue browser
   authentication state
-

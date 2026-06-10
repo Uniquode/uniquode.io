@@ -213,4 +213,3 @@ finalisation.
   via `identity_user_email`
 - **THEN** the addon resolves that user first and applies the callback to the same
   user context
-

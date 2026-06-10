@@ -40,4 +40,3 @@ The system SHALL allow one canonical email to be marked as primary for each user
 #### Scenario: Only one email can be primary per user
 - **WHEN** two email rows for the same user are marked primary
 - **THEN** persistence rejects the second primary claim
-

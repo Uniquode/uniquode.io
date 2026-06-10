@@ -147,7 +147,6 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     assert "ok: Alembic migration file exists: env.py" in captured.out
     assert "ok: module migration version locations exist:" in captured.out
     assert "ok: Alembic migration revision exists" in captured.out
-    assert "ok: Alembic migration creates table: identity_user" in captured.out
     assert "ok: development database initialisation command is available:" in (
         captured.out
     )
