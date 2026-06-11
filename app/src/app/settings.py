@@ -422,10 +422,14 @@ def _settings_kwargs_from_config(
         app_config=app_config,
         environ=_auth_database_environment(app_values),
     )
+    database_url = _configured_database_url(
+        app_values,
+        fallback=auth_settings.database_url,
+    )
     settings_kwargs: dict[str, Any] = {
         "project_root": app_config.project_root,
         "app_config": app_config,
-        "database_url": app_values.get("database_url", auth_settings.database_url),
+        "database_url": database_url,
         "identity_options": merge_identity_options_with_environment(
             auth_settings.identity_options,
             app_config.auth,
@@ -460,8 +464,19 @@ def _settings_kwargs_from_config(
 
 
 def _auth_database_environment(app_values: Mapping[str, Any]) -> dict[str, str]:
+    database_url = _configured_database_url(app_values)
+    return {ENV_DATABASE_URL: database_url} if database_url is not None else {}
+
+
+def _configured_database_url(
+    app_values: Mapping[str, Any],
+    *,
+    fallback: str | None = None,
+) -> str | None:
     database_url = app_values.get("database_url")
-    return {ENV_DATABASE_URL: database_url} if isinstance(database_url, str) else {}
+    if not isinstance(database_url, str) or not database_url.strip():
+        return fallback
+    return database_url
 
 
 def _environment_mapping(env: Env) -> dict[str, str]:
