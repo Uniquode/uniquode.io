@@ -10,33 +10,45 @@ from wevra.auth.settings import IDENTITY_ENV_SETTINGS as wevra_identity_env_sett
 from wevra.core.composition import APP_CONFIG_ENV
 from wevra.core.settings import EnvironmentSetting
 
+from app.config_definitions import (
+    ENV_ALEMBIC_CONFIG,
+    ENV_APP_ENV,
+    ENV_APP_NAME,
+    ENV_CSRF_SECRET,
+    ENV_CSRF_SECURE,
+    ENV_DATABASE_URL,
+    ENV_MIGRATIONS_ROOT,
+    ENV_STATIC_ROOT,
+    ENV_STATIC_URL,
+    ENV_TEMPLATE_ROOT,
+    SETTINGS_ENV_SETTINGS,
+)
 from app.configuration import ConfigurationError
 
-ENV_ALEMBIC_CONFIG: Final = "ALEMBIC_CONFIG"
 ENV_APP_CONFIG: Final = APP_CONFIG_ENV
-ENV_APP_ENV: Final = "APP_ENV"
-ENV_APP_NAME: Final = "APP_NAME"
 ENV_APP_RELOAD: Final = "APP_RELOAD"
-ENV_CSRF_SECRET: Final = "CSRF_SECRET"
-ENV_CSRF_SECURE: Final = "CSRF_SECURE"
-ENV_DATABASE_URL: Final = "DATABASE_URL"
-ENV_MIGRATIONS_ROOT: Final = "MIGRATIONS_ROOT"
-ENV_STATIC_ROOT: Final = "STATIC_ROOT"
-ENV_STATIC_URL: Final = "STATIC_URL"
-ENV_TEMPLATE_ROOT: Final = "TEMPLATE_ROOT"
 
-SETTINGS_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
-    EnvironmentSetting(ENV_ALEMBIC_CONFIG, "alembic_config", "path"),
-    EnvironmentSetting(ENV_APP_ENV, "deployment_environment"),
-    EnvironmentSetting(ENV_APP_NAME, "app_name"),
-    EnvironmentSetting(ENV_CSRF_SECRET, "csrf_token_secret"),
-    EnvironmentSetting(ENV_CSRF_SECURE, "csrf_cookie_secure", "bool"),
-    EnvironmentSetting(ENV_DATABASE_URL, "database_url"),
-    EnvironmentSetting(ENV_MIGRATIONS_ROOT, "migrations_root", "path"),
-    EnvironmentSetting(ENV_STATIC_ROOT, "static_root", "path"),
-    EnvironmentSetting(ENV_STATIC_URL, "static_url_path"),
-    EnvironmentSetting(ENV_TEMPLATE_ROOT, "template_root", "path"),
+__all__ = (
+    "ENV_ALEMBIC_CONFIG",
+    "ENV_APP_CONFIG",
+    "ENV_APP_ENV",
+    "ENV_APP_NAME",
+    "ENV_APP_RELOAD",
+    "ENV_CSRF_SECRET",
+    "ENV_CSRF_SECURE",
+    "ENV_DATABASE_URL",
+    "ENV_MIGRATIONS_ROOT",
+    "ENV_STATIC_ROOT",
+    "ENV_STATIC_URL",
+    "ENV_TEMPLATE_ROOT",
+    "IDENTITY_ENV_SETTINGS",
+    "SETTINGS_ENV_SETTINGS",
+    "SUPPORTED_ENV_VARS",
+    "SUPPORTED_RUNSERVER_ENV_VARS",
+    "SUPPORTED_SETTINGS_ENV_VARS",
+    "load_environment",
 )
+
 IDENTITY_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
     *wevra_identity_env_settings,
 )
