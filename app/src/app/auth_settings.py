@@ -3,18 +3,18 @@ from dataclasses import replace
 from wevra.auth.options import (
     DEFAULT_SESSION_COOKIE_NAME as WEVRA_DEFAULT_SESSION_COOKIE_NAME,
 )
-from wevra.auth.options import is_generate_local_identity_secret
 from wevra.auth.settings import (
     DATABASE_URL_ENV,
     AuthSettings,
     load_auth_settings_from_config,
+    validate_auth_settings,
 )
 from wevra.config import AppConfigSource, ConfigService
 
-from app.configuration import ConfigurationError
 from app.settings import Settings
 
 APP_SESSION_COOKIE_NAME = "uniquode_session"
+LOCAL_DEPLOYMENT_ENVIRONMENT = "local"
 
 
 def load_app_auth_settings(settings: Settings) -> AuthSettings:
@@ -62,21 +62,11 @@ def validate_app_auth_settings(
     settings: Settings,
     auth_settings: AuthSettings,
 ) -> None:
-    if settings.deployment_environment == "local":
-        return
+    validate_auth_settings(
+        auth_settings,
+        allow_local_secrets=_allow_local_auth_secrets(settings),
+    )
 
-    identity_options = auth_settings.identity_options
-    if (
-        is_generate_local_identity_secret(identity_options.reset_password_token_secret)
-        or is_generate_local_identity_secret(identity_options.verification_token_secret)
-        or not identity_options.token_secrets_configured
-    ):
-        raise ConfigurationError(
-            "Non-local deployments must configure identity reset and "
-            "verification token secrets."
-        )
-    if not identity_options.session_cookie_force_secure:
-        raise ConfigurationError(
-            "Non-local deployments must force secure session cookies; set "
-            "SESSION_FORCE_SECURE=true or auth.session_cookie_force_secure = true."
-        )
+
+def _allow_local_auth_secrets(settings: Settings) -> bool:
+    return settings.deployment_environment == LOCAL_DEPLOYMENT_ENVIRONMENT

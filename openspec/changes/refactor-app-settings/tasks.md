@@ -26,6 +26,9 @@
 - [x] 4.2 Update auth composition to request auth settings from `wevra.auth` rather than from `app.Settings`.
 - [x] 4.3 Update cross-module settings access to go through the owning module's loader, accessor, or protocol.
 - [x] 4.4 Preserve app/CLI source injection boundaries established by `refactor-config-source`.
+- [x] 4.5 Move auth deployment policy validation out of the host app and into Wevra-owned auth settings/composition APIs.
+- [x] 4.6 Ensure app validation only invokes Wevra-owned auth validation and reports its result, without inspecting auth settings internals.
+- [x] 4.7 Avoid reconstructing raw config services in auth helper paths when startup already has an app config/config service available.
 
 ## 5. Test boundary cleanup
 
@@ -33,6 +36,8 @@
 - [x] 5.2 Keep app tests focused on host-owned settings, startup wiring, and integration outcomes.
 - [x] 5.3 Remove duplicated assertions that test Wevra settings semantics from the host app suite.
 - [x] 5.4 Add or update integration tests proving app startup wires module settings correctly without aggregating them in `app.Settings`.
+- [x] 5.5 Move auth deployment policy tests out of the host app suite when they assert Wevra-owned auth semantics.
+- [x] 5.6 Keep host app tests limited to proving that auth validation is delegated to Wevra and surfaced correctly.
 
 ## 6. Validation
 
