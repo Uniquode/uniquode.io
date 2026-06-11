@@ -2,10 +2,10 @@ import re
 from typing import Final
 
 from envex import Env
+from wevra.auth import AuthSettings, load_auth_settings, validate_auth_settings
 from wevra.db.urls import redact_database_url
 from wevra.tools.validation.core import ValidationCheck, ValidationResult, record_check
 
-from app.auth_settings import load_app_auth_settings
 from app.configuration import ConfigurationError
 from app.environment import (
     SUPPORTED_ENV_VARS,
@@ -68,7 +68,15 @@ def _record_auth_settings_check(
         return
 
     try:
-        load_app_auth_settings(settings)
+        auth_settings = (
+            load_auth_settings(app_config=settings.app_config)
+            if settings.app_config is not None
+            else AuthSettings(database_url=settings.database_url)
+        )
+        validate_auth_settings(
+            auth_settings,
+            allow_local_secrets=settings.deployment_environment == "local",
+        )
     except ConfigurationError as exc:
         record_check(
             checks,

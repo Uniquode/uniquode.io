@@ -7,6 +7,7 @@ import os
 import re
 import sqlite3
 import tomllib
+from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
 
@@ -1869,13 +1870,16 @@ def test_earlier_application_module_can_override_wevra_auth_identity_template(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
-            app_config=build_test_app_config(
-                tmp_path,
-                modules=(
-                    "identity_override_app",
-                    "wevra.web",
-                    "wevra.auth",
+            app_config=replace(
+                build_test_app_config(
+                    tmp_path,
+                    modules=(
+                        "identity_override_app",
+                        "wevra.web",
+                        "wevra.auth",
+                    ),
                 ),
+                database_url=SQLITE_MEMORY_DATABASE_URL,
             ),
         )
     )
