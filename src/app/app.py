@@ -27,6 +27,7 @@ from wevra.web.routes.discovery import (
 from wevra.web.security import SecurityHeaderOptions, register_security_headers
 from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
 
+from app.auth_settings import load_app_auth_settings
 from app.routes import register_routes
 from app.settings import Settings, load_settings
 
@@ -118,9 +119,11 @@ def _configure_identity(app: FastAPI, settings: Settings) -> None:
     from wevra.auth.delivery import NullIdentityDelivery
     from wevra.auth.sessions import create_fastapi_users
 
-    app.state.identity_options = settings.identity_options
+    auth_settings = load_app_auth_settings(settings)
+    identity_options = auth_settings.identity_options
+    app.state.auth_settings = auth_settings
     app.state.identity_delivery = NullIdentityDelivery()
-    app.state.fastapi_users = create_fastapi_users(settings.identity_options)
+    app.state.fastapi_users = create_fastapi_users(identity_options)
 
 
 def _static_app(

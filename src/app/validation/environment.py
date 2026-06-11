@@ -5,6 +5,7 @@ from envex import Env
 from wevra.db.urls import redact_database_url
 from wevra.tools.validation.core import ValidationCheck, ValidationResult, record_check
 
+from app.auth_settings import load_app_auth_settings
 from app.configuration import ConfigurationError
 from app.environment import (
     SUPPORTED_ENV_VARS,
@@ -40,6 +41,7 @@ def validate_environment(settings: Settings) -> ValidationResult:
     )
 
     _record_environment_loader_check(settings, checks, errors)
+    _record_auth_settings_check(settings, checks, errors)
 
     record_check(
         checks,
@@ -54,6 +56,35 @@ def validate_environment(settings: Settings) -> ValidationResult:
 
     return ValidationResult(
         name="environment", errors=tuple(errors), checks=tuple(checks)
+    )
+
+
+def _record_auth_settings_check(
+    settings: Settings,
+    checks: list[ValidationCheck],
+    errors: list[str],
+) -> None:
+    if not settings.identity_enabled:
+        return
+
+    try:
+        load_app_auth_settings(settings)
+    except ConfigurationError as exc:
+        record_check(
+            checks,
+            errors,
+            passed=False,
+            description="auth settings are valid for the current environment",
+            error=str(exc),
+        )
+        return
+
+    record_check(
+        checks,
+        errors,
+        passed=True,
+        description="auth settings are valid for the current environment",
+        error="",
     )
 
 

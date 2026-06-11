@@ -177,7 +177,7 @@ def test_validate_command_reports_invalid_environment_configuration(
     monkeypatch,
 ) -> None:
     monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.delenv("CSRF_SECRET", raising=False)
+    monkeypatch.setenv("CSRF_SECRET", "csrf-secret")
     monkeypatch.delenv("RESET_SECRET", raising=False)
     monkeypatch.delenv("VERIFICATION_SECRET", raising=False)
 
@@ -187,7 +187,7 @@ def test_validate_command_reports_invalid_environment_configuration(
 
     assert exit_code == 1
     assert captured.out == ""
-    assert "configuration: failed" in captured.err
+    assert "environment: failed" in captured.err
     assert "Non-local deployments must configure identity reset" in captured.err
 
 
