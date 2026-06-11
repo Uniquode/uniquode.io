@@ -51,7 +51,7 @@ Alternative considered: make `wevra.config` perform all coercion and validation 
 
 ### 3. Module settings are immutable policy objects
 
-Module-owned settings objects should be deeply immutable at their public boundaries after construction. A frozen typed settings object can safely be shared by reference by a settings provider without returning defensive copies only when nested collections and nested settings values are also immutable.
+Module-owned settings objects should be deeply immutable at their public boundaries after construction. A frozen typed settings object can safely be shared by reference by a settings provider without returning defensive copies, provided that nested collections and nested settings values are also immutable.
 
 Settings objects may expose methods when those methods represent owner-specific policy decisions, for example `auth_settings.is_totp_enabled()`. Cross-module callers should depend on the module's public settings type or on a narrower public protocol rather than inspecting raw config.
 

@@ -28,7 +28,7 @@
 - [x] 4.4 Preserve app/CLI source injection boundaries established by `refactor-config-source`.
 - [x] 4.5 Move auth deployment policy validation out of the host app and into Wevra-owned auth settings/composition APIs.
 - [x] 4.6 Ensure app validation only invokes Wevra-owned auth validation and reports its result, without inspecting auth settings internals.
-- [x] 4.7 Avoid reconstructing raw config services in auth helper paths when startup already has an app config/config service available.
+- [x] 4.7 Avoid reconstructing raw config services in auth helper paths when startup already has a central config service available.
 
 ## 5. Test boundary cleanup
 
