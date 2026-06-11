@@ -115,12 +115,23 @@ def _identity_enabled(settings: Settings) -> bool:
 
 
 def _configure_identity(app: FastAPI, settings: Settings) -> None:
+    from wevra.auth import AuthSettings, load_auth_settings, validate_auth_settings
     from wevra.auth.delivery import NullIdentityDelivery
     from wevra.auth.sessions import create_fastapi_users
 
-    app.state.identity_options = settings.identity_options
+    auth_settings = (
+        load_auth_settings(app_config=settings.app_config)
+        if settings.app_config is not None
+        else AuthSettings(database_url=settings.database_url)
+    )
+    validate_auth_settings(
+        auth_settings,
+        allow_local_secrets=settings.deployment_environment == "local",
+    )
+    identity_options = auth_settings.identity_options
+    app.state.auth_settings = auth_settings
     app.state.identity_delivery = NullIdentityDelivery()
-    app.state.fastapi_users = create_fastapi_users(settings.identity_options)
+    app.state.fastapi_users = create_fastapi_users(identity_options)
 
 
 def _static_app(
