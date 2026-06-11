@@ -1,22 +1,11 @@
 import logging
 from collections.abc import Mapping
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from pathlib import Path
 from secrets import token_urlsafe
 from typing import Any, Final, Literal, cast, get_args
 
 from envex import Env
-from wevra.auth.options import (
-    DEFAULT_SESSION_COOKIE_NAME as WEVRA_DEFAULT_SESSION_COOKIE_NAME,
-)
-from wevra.auth.options import (
-    IdentityOptions,
-    is_generate_local_identity_secret,
-)
-from wevra.auth.settings import (
-    load_auth_settings,
-    merge_identity_options_with_environment,
-)
 from wevra.config import AppConfigSource, ConfigService
 from wevra.core.composition import (
     APP_CONFIG_ENV,
@@ -40,7 +29,6 @@ from app.config_definitions import (
     APP_CONFIG_SECTION,
     APP_STATIC_CONFIG_SECTION,
     APP_TEMPLATES_CONFIG_SECTION,
-    ENV_DATABASE_URL,
     SETTINGS_ENV_SETTINGS,
     config_environment_names,
 )
@@ -88,15 +76,10 @@ DEFAULT_ROUTE_PREFIXES: Final[dict[str, dict[str, str]]] = {
     "wevra.web": {"partials": "", "api": ""},
     "wevra.auth": {"account": "/account", "api": ""},
 }
-DEFAULT_SESSION_COOKIE_NAME: Final = "uniquode_session"
 CSRF_TOKEN_SECRET_BYTES = 32
 _GENERATE_LOCAL_CSRF_SECRET = "__generate-local-csrf-secret__"
 
 logger = logging.getLogger(__name__)
-
-
-def _default_identity_options() -> IdentityOptions:
-    return IdentityOptions(session_cookie_name=DEFAULT_SESSION_COOKIE_NAME)
 
 
 @dataclass(frozen=True, slots=True)
@@ -111,7 +94,6 @@ class Settings:
     alembic_config: Path = DEFAULT_ALEMBIC_CONFIG
     csrf_token_secret: str = _GENERATE_LOCAL_CSRF_SECRET
     csrf_cookie_secure: bool | None = None
-    identity_options: IdentityOptions = field(default_factory=_default_identity_options)
     static_url_path: str = "/static/"
     template_auto_reload: bool | None = None
     template_cache_size: int = 400
@@ -130,14 +112,7 @@ class Settings:
             else self.csrf_cookie_secure
         )
         object.__setattr__(self, "csrf_cookie_secure", csrf_cookie_secure)
-        identity_options = self._normalise_identity_options(self.identity_options)
-        object.__setattr__(self, "identity_options", identity_options)
         csrf_secret_configured = self._csrf_secret_is_configured(self.csrf_token_secret)
-        if self.identity_enabled:
-            self._validate_identity_options(
-                self.deployment_environment,
-                identity_options,
-            )
         self._validate_csrf_options(
             self.deployment_environment,
             csrf_secret_configured,
@@ -203,24 +178,6 @@ class Settings:
         )
 
     @staticmethod
-    def _normalise_identity_options(
-        identity_options: IdentityOptions,
-    ) -> IdentityOptions:
-        if identity_options.session_cookie_name != WEVRA_DEFAULT_SESSION_COOKIE_NAME:
-            return identity_options
-
-        normalised_options = replace(
-            identity_options,
-            session_cookie_name=DEFAULT_SESSION_COOKIE_NAME,
-        )
-        object.__setattr__(
-            normalised_options,
-            "token_secrets_configured",
-            identity_options.token_secrets_configured,
-        )
-        return normalised_options
-
-    @staticmethod
     def _resolve_optional_path(
         path: Path | str | None,
         project_root: Path,
@@ -259,42 +216,6 @@ class Settings:
             return resolved_path.resolve()
 
         return resolved_path
-
-    @staticmethod
-    def _validate_identity_options(
-        deployment_environment: DeploymentEnvironment,
-        identity_options: IdentityOptions,
-    ) -> None:
-        if deployment_environment != "local" and (
-            is_generate_local_identity_secret(
-                identity_options.reset_password_token_secret
-            )
-            or is_generate_local_identity_secret(
-                identity_options.verification_token_secret
-            )
-        ):
-            raise ConfigurationError(
-                "Non-local deployments must not use generated local identity "
-                "secret sentinels."
-            )
-
-        if (
-            deployment_environment != "local"
-            and not identity_options.token_secrets_configured
-        ):
-            raise ConfigurationError(
-                "Non-local deployments must configure identity reset and "
-                "verification token secrets."
-            )
-
-        if (
-            deployment_environment != "local"
-            and not identity_options.session_cookie_force_secure
-        ):
-            raise ConfigurationError(
-                "Non-local deployments must force secure session cookies; set "
-                "SESSION_FORCE_SECURE=true or auth.session_cookie_force_secure = true."
-            )
 
     @staticmethod
     def _csrf_secret_is_configured(csrf_token_secret: str) -> bool:
@@ -418,23 +339,14 @@ def _settings_kwargs_from_config(
     static_values = dict(config.get_config(APP_STATIC_CONFIG_SECTION) or {})
     template_values = dict(config.get_config(APP_TEMPLATES_CONFIG_SECTION) or {})
     env_values = values_from_env_settings(env, SETTINGS_ENV_SETTINGS)
-    auth_settings = load_auth_settings(
-        app_config=app_config,
-        environ=_auth_database_environment(app_values),
-    )
     database_url = _configured_database_url(
         app_values,
-        fallback=auth_settings.database_url,
+        fallback=app_config.database_url,
     )
     settings_kwargs: dict[str, Any] = {
         "project_root": app_config.project_root,
         "app_config": app_config,
         "database_url": database_url,
-        "identity_options": merge_identity_options_with_environment(
-            auth_settings.identity_options,
-            app_config.auth,
-            env,
-        ),
         "static_url_path": static_values.get("url_path", app_config.static.url_path),
         "template_auto_reload": template_values.get(
             "auto_reload",
@@ -461,11 +373,6 @@ def _settings_kwargs_from_config(
         settings_kwargs["template_root"] = template_values["root"]
     settings_kwargs.update(env_values)
     return settings_kwargs
-
-
-def _auth_database_environment(app_values: Mapping[str, Any]) -> dict[str, str]:
-    database_url = _configured_database_url(app_values)
-    return {ENV_DATABASE_URL: database_url} if database_url is not None else {}
 
 
 def _configured_database_url(

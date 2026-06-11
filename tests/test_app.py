@@ -7,7 +7,7 @@ import os
 import re
 import sqlite3
 import tomllib
-from dataclasses import fields
+from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
 
@@ -29,27 +29,11 @@ from wevra.auth.models import (
     Base,
     User,
 )
-from wevra.auth.options import (
-    DEFAULT_SESSION_COOKIE_NAME as WEVRA_DEFAULT_SESSION_COOKIE_NAME,
-)
-from wevra.auth.options import (
-    PASSKEY,
-    PROVIDER,
-    VALID_IDENTITY_INTEGRATIONS,
-    IdentityOptions,
-    identity_env_setting_name,
-)
 from wevra.auth.sessions import (
     create_user_manager,
 )
 from wevra.auth.settings import (
-    ENV_ACCOUNT_CREATION_POLICY,
-    ENV_RESET_SECRET,
-    ENV_SESSION_COOKIE,
-    ENV_SESSION_FORCE_SECURE,
-    ENV_SESSION_LIFETIME,
-    ENV_TOTP_MODE,
-    ENV_VERIFICATION_SECRET,
+    AuthSettings,
 )
 from wevra.core.composition import (
     AppConfig,
@@ -105,7 +89,6 @@ from app.environment import (
     ENV_STATIC_ROOT,
     ENV_STATIC_URL,
     ENV_TEMPLATE_ROOT,
-    IDENTITY_ENV_SETTINGS,
     load_environment,
 )
 from app.routes.health import health
@@ -119,19 +102,6 @@ from app.settings import (
 CSRF_INPUT_PATTERN = re.compile(
     rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
 )
-
-
-DEFAULT_IDENTITY_INTEGRATION_FLAGS = {
-    integration: False for integration in VALID_IDENTITY_INTEGRATIONS
-}
-
-
-def assert_identity_integration_flags(
-    options: IdentityOptions,
-    integration_flags: dict[str, bool],
-) -> None:
-    for integration, expected in integration_flags.items():
-        assert options.integration_enabled(integration) is expected
 
 
 IDENTITY_TABLE_NAMES = frozenset(
@@ -916,31 +886,6 @@ def test_load_environment_wraps_loader_failures_without_raw_detail(
     assert "DATABASE_URL" not in str(excinfo.value)
 
 
-def test_identity_env_settings_align_with_identity_option_fields() -> None:
-    identity_integration_fields = {
-        f"{integration}_enabled" for integration in VALID_IDENTITY_INTEGRATIONS
-    }
-    identity_option_enabled_fields = {
-        identity_field.name
-        for identity_field in fields(IdentityOptions)
-        if identity_field.name in identity_integration_fields
-    }
-    identity_env_enabled_fields = {
-        env_setting.field_name
-        for env_setting in IDENTITY_ENV_SETTINGS
-        if env_setting.value_type == "bool"
-        and env_setting.field_name in identity_integration_fields
-    }
-
-    expected_enabled_fields = {"provider_enabled", "passkey_enabled"}
-
-    assert identity_option_enabled_fields == expected_enabled_fields
-    assert identity_env_enabled_fields == expected_enabled_fields
-    assert "totp_mode" in {
-        identity_field.name for identity_field in fields(IdentityOptions)
-    }
-
-
 def test_create_app_mounts_configurable_static_files() -> None:
     settings = Settings(
         static_root=Path("src/test-static"),
@@ -1273,13 +1218,6 @@ def test_load_settings_reads_default_app_toml(tmp_path) -> None:
     assert settings.static_root is None
     assert settings.static_mount_path == "/assets"
     assert settings.database_url == sqlite_file_url(tmp_path / "identity.sqlite3")
-    assert settings.identity_options.password_minimum_length == 12
-    assert settings.identity_options.password_common_fragments == (
-        "admin",
-        "password",
-        "test",
-    )
-    assert settings.identity_options.token_secrets_configured is False
 
 
 def test_load_settings_database_url_overrides_app_config_database_url(
@@ -1297,39 +1235,6 @@ def test_load_settings_database_url_overrides_app_config_database_url(
     )
 
     assert settings.database_url == sqlite_file_url(tmp_path / "from-env.sqlite3")
-
-
-def test_load_settings_identity_env_preserves_app_auth_config(
-    tmp_path: Path,
-) -> None:
-    write_app_config(
-        tmp_path / "app.toml",
-        auth_options={
-            "reset_password_token_secret": "configured-reset-secret",
-            "verification_token_secret": "configured-verification-secret",
-        },
-    )
-
-    settings = load_settings(
-        environ={ENV_SESSION_LIFETIME: "3600"},
-        project_root=tmp_path,
-        read_dotenv=False,
-    )
-
-    assert settings.identity_options.session_lifetime_seconds == 3600
-    assert settings.identity_options.password_minimum_length == 12
-    assert settings.identity_options.password_common_fragments == (
-        "admin",
-        "password",
-        "test",
-    )
-    assert settings.identity_options.reset_password_token_secret == (
-        "configured-reset-secret"
-    )
-    assert settings.identity_options.verification_token_secret == (
-        "configured-verification-secret"
-    )
-    assert settings.identity_options.token_secrets_configured is True
 
 
 def test_load_settings_ignores_removed_auth_database_url_env(
@@ -1404,7 +1309,6 @@ def test_load_settings_rejects_missing_app_config_override(tmp_path) -> None:
 def test_load_settings_uses_environment_values(tmp_path) -> None:
     write_app_config(tmp_path / "app.toml")
     database_url = "postgresql+asyncpg://user:password@db.example/app"
-    enabled_value = "true"
     settings = load_settings(
         environ={
             ENV_APP_NAME: "env-app",
@@ -1412,14 +1316,6 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
             ENV_DATABASE_URL: database_url,
             ENV_CSRF_SECRET: "csrf-secret",
             ENV_CSRF_SECURE: "true",
-            ENV_RESET_SECRET: "reset-secret",
-            ENV_VERIFICATION_SECRET: "verification-secret",
-            ENV_SESSION_COOKIE: "session-id",
-            ENV_SESSION_FORCE_SECURE: "true",
-            ENV_SESSION_LIFETIME: "3600",
-            identity_env_setting_name(PROVIDER): enabled_value,
-            ENV_TOTP_MODE: "required",
-            identity_env_setting_name(PASSKEY): enabled_value,
             ENV_STATIC_URL: "assets",
         },
         project_root=tmp_path,
@@ -1431,28 +1327,7 @@ def test_load_settings_uses_environment_values(tmp_path) -> None:
     assert settings.database_url == database_url
     assert settings.csrf_token_secret == "csrf-secret"
     assert settings.csrf_cookie_secure is True
-    assert settings.identity_options.session_cookie_name == "session-id"
-    assert settings.identity_options.session_cookie_force_secure is True
-    assert settings.identity_options.session_lifetime_seconds == 3600
-    assert settings.identity_options.reset_password_token_secret == "reset-secret"
-    assert settings.identity_options.verification_token_secret == "verification-secret"
-    assert settings.identity_options.provider_enabled is True
-    assert settings.identity_options.totp_mode == "required"
-    assert settings.identity_options.passkey_enabled is True
     assert settings.static_mount_path == "/assets"
-
-
-def test_load_settings_rejects_invalid_totp_mode_environment_value(tmp_path) -> None:
-    write_app_config(tmp_path / "app.toml")
-
-    with pytest.raises(ConfigurationError, match="TOTP mode"):
-        load_settings(
-            environ={
-                ENV_TOTP_MODE: "turbo",
-            },
-            project_root=tmp_path,
-            read_dotenv=False,
-        )
 
 
 def test_load_settings_reads_local_dotenv(tmp_path) -> None:
@@ -1462,7 +1337,6 @@ def test_load_settings_reads_local_dotenv(tmp_path) -> None:
             [
                 "APP_NAME=dotenv-app",
                 "DATABASE_URL=sqlite+aiosqlite:///dotenv.sqlite3",
-                "SESSION_LIFETIME=120",
             ]
         ),
         encoding="utf-8",
@@ -1474,7 +1348,6 @@ def test_load_settings_reads_local_dotenv(tmp_path) -> None:
     assert settings.database_url == (
         f"sqlite+aiosqlite:///{(tmp_path / 'dotenv.sqlite3').resolve().as_posix()}"
     )
-    assert settings.identity_options.session_lifetime_seconds == 120
 
 
 def test_load_settings_resolves_env_paths_from_project_root(tmp_path) -> None:
@@ -1501,7 +1374,6 @@ def test_load_settings_resolves_env_paths_from_project_root(tmp_path) -> None:
     [
         (ENV_DATABASE_URL, "DATABASE_URL must not be blank"),
         (ENV_APP_CONFIG, "APP_CONFIG must not be blank"),
-        (ENV_SESSION_LIFETIME, "SESSION_LIFETIME must not be blank"),
         (ENV_STATIC_URL, "STATIC_URL must not be blank"),
         (ENV_TEMPLATE_ROOT, "TEMPLATE_ROOT must not be blank"),
     ],
@@ -1546,75 +1418,6 @@ def test_sqlite_database_path_ignores_url_query_and_fragment() -> None:
     )
 
 
-def test_settings_include_identity_options() -> None:
-    settings = Settings()
-    options = settings.identity_options
-
-    assert settings.csrf_token_secret
-    assert settings.csrf_cookie_secure is False
-    assert settings.csrf_token_secret_configured is False
-    assert options.account_creation_policy == "admin-created"
-    assert options.session_cookie_name == "uniquode_session"
-    assert options.session_cookie_force_secure is False
-    assert options.session_lifetime_seconds == 2_592_000
-    assert options.password_minimum_length == 12
-    assert options.password_minimum_strength == 0.45
-    assert options.password_minimum_character_categories == 2
-    assert options.token_secrets_configured is False
-    assert_identity_integration_flags(
-        options=options,
-        integration_flags=DEFAULT_IDENTITY_INTEGRATION_FLAGS,
-    )
-
-
-def test_settings_default_identity_session_cookie_name_is_app_specific() -> None:
-    settings = Settings()
-
-    assert IdentityOptions().session_cookie_name == WEVRA_DEFAULT_SESSION_COOKIE_NAME
-    assert settings.identity_options.session_cookie_name == "uniquode_session"
-    assert (
-        settings.identity_options.session_cookie_name
-        != WEVRA_DEFAULT_SESSION_COOKIE_NAME
-    )
-
-
-def test_settings_preserves_explicit_identity_session_cookie_name() -> None:
-    settings = Settings(
-        identity_options=IdentityOptions(session_cookie_name="custom_session"),
-    )
-
-    assert settings.identity_options.session_cookie_name == "custom_session"
-
-
-def test_load_settings_uses_app_identity_session_cookie_default_with_identity_env(
-    tmp_path,
-) -> None:
-    write_app_config(tmp_path / "app.toml")
-    settings = load_settings(
-        environ={ENV_SESSION_LIFETIME: "3600"},
-        project_root=tmp_path,
-        read_dotenv=False,
-    )
-
-    assert settings.identity_options.session_lifetime_seconds == 3600
-    assert settings.identity_options.session_cookie_name == "uniquode_session"
-    assert (
-        settings.identity_options.session_cookie_name
-        != WEVRA_DEFAULT_SESSION_COOKIE_NAME
-    )
-
-
-def test_load_settings_reads_account_creation_policy_env(tmp_path) -> None:
-    write_app_config(tmp_path / "app.toml")
-    settings = load_settings(
-        environ={ENV_ACCOUNT_CREATION_POLICY: "public-signup"},
-        project_root=tmp_path,
-        read_dotenv=False,
-    )
-
-    assert settings.identity_options.account_creation_policy == "public-signup"
-
-
 def test_settings_logs_generated_local_csrf_token_secret(caplog) -> None:
     caplog.set_level(logging.INFO, logger="app.settings")
 
@@ -1622,28 +1425,6 @@ def test_settings_logs_generated_local_csrf_token_secret(caplog) -> None:
 
     assert settings.csrf_token_secret_configured is False
     assert "Generated startup-local CSRF token secret." in caplog.text
-
-
-def test_non_local_settings_require_configured_identity_token_secrets() -> None:
-    with pytest.raises(
-        ConfigurationError,
-        match="Non-local deployments must configure identity reset",
-    ):
-        Settings(deployment_environment="production")
-
-    settings = Settings(
-        deployment_environment="production",
-        csrf_token_secret="production-csrf-secret",
-        identity_options=IdentityOptions(
-            reset_password_token_secret="production-reset-secret",
-            verification_token_secret="production-verification-secret",
-            session_cookie_force_secure=True,
-        ),
-    )
-
-    assert settings.identity_options.token_secrets_configured is True
-    assert settings.csrf_token_secret_configured is True
-    assert settings.csrf_cookie_secure is True
 
 
 def test_non_local_settings_skip_identity_policy_when_wevra_auth_is_omitted(
@@ -1663,45 +1444,19 @@ def test_non_local_settings_skip_identity_policy_when_wevra_auth_is_omitted(
     assert settings.csrf_cookie_secure is True
 
 
-def test_non_local_settings_require_secure_session_cookies() -> None:
-    identity_options = IdentityOptions(
-        session_cookie_force_secure=False,
-        reset_password_token_secret="production-reset-secret",
-        verification_token_secret="production-verification-secret",
-    )
-
-    with pytest.raises(
-        ConfigurationError,
-        match="auth.session_cookie_force_secure = true",
-    ):
-        Settings(
-            deployment_environment="production",
-            csrf_token_secret="production-csrf-secret",
-            identity_options=identity_options,
-        )
-
-
 def test_non_local_settings_require_configured_csrf_token_secret() -> None:
-    identity_options = IdentityOptions(
-        reset_password_token_secret="production-reset-secret",
-        verification_token_secret="production-verification-secret",
-        session_cookie_force_secure=True,
-    )
-
     with pytest.raises(
         ConfigurationError,
         match="Non-local deployments must configure a stable CSRF token secret",
     ):
         Settings(
             deployment_environment="production",
-            identity_options=identity_options,
         )
 
     with pytest.raises(ConfigurationError, match="CSRF token secret must not be blank"):
         Settings(
             deployment_environment="production",
             csrf_token_secret="   ",
-            identity_options=identity_options,
         )
 
     with pytest.raises(
@@ -1712,7 +1467,6 @@ def test_non_local_settings_require_configured_csrf_token_secret() -> None:
             deployment_environment="production",
             csrf_token_secret="production-csrf-secret",
             csrf_cookie_secure=False,
-            identity_options=identity_options,
         )
 
 
@@ -1721,6 +1475,8 @@ def test_create_app_configures_database_and_identity_boundaries() -> None:
 
     try:
         assert isinstance(web_app.state.database, Database)
+        assert isinstance(web_app.state.auth_settings, AuthSettings)
+        assert not hasattr(web_app.state, "identity_options")
         assert isinstance(web_app.state.fastapi_users, FastAPIUsers)
     finally:
         asyncio.run(close_database(web_app.state.database))
@@ -1780,7 +1536,7 @@ def seed_identity_user(
 
         async with session_scope(web_app.state.database.session_factory) as session:
             manager = create_user_manager(
-                session, web_app.state.settings.identity_options
+                session, web_app.state.auth_settings.identity_options
             )
             user = await manager.create(
                 UserCreate(
@@ -2114,13 +1870,16 @@ def test_earlier_application_module_can_override_wevra_auth_identity_template(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
-            app_config=build_test_app_config(
-                tmp_path,
-                modules=(
-                    "identity_override_app",
-                    "wevra.web",
-                    "wevra.auth",
+            app_config=replace(
+                build_test_app_config(
+                    tmp_path,
+                    modules=(
+                        "identity_override_app",
+                        "wevra.web",
+                        "wevra.auth",
+                    ),
                 ),
+                database_url=SQLITE_MEMORY_DATABASE_URL,
             ),
         )
     )
