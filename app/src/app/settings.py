@@ -36,10 +36,16 @@ from wevra.db.urls import (
 )
 from wevra.web.security import CrossOriginOpenerPolicy
 
-from app.configuration import ConfigurationError
-from app.environment import (
+from app.config_definitions import (
+    APP_CONFIG_SECTION,
+    APP_STATIC_CONFIG_SECTION,
+    APP_TEMPLATES_CONFIG_SECTION,
     ENV_DATABASE_URL,
     SETTINGS_ENV_SETTINGS,
+    config_environment_names,
+)
+from app.configuration import ConfigurationError
+from app.environment import (
     load_environment,
 )
 
@@ -408,9 +414,9 @@ def _settings_kwargs_from_config(
     app_config: AppConfig,
     env: Env,
 ) -> dict[str, Any]:
-    app_values = dict(config.get_config("app") or {})
-    static_values = dict(config.get_config("app.static") or {})
-    template_values = dict(config.get_config("app.templates") or {})
+    app_values = dict(config.get_config(APP_CONFIG_SECTION) or {})
+    static_values = dict(config.get_config(APP_STATIC_CONFIG_SECTION) or {})
+    template_values = dict(config.get_config(APP_TEMPLATES_CONFIG_SECTION) or {})
     env_values = values_from_env_settings(env, SETTINGS_ENV_SETTINGS)
     auth_settings = load_auth_settings(
         app_config=app_config,
@@ -459,10 +465,7 @@ def _auth_database_environment(app_values: Mapping[str, Any]) -> dict[str, str]:
 
 
 def _environment_mapping(env: Env) -> dict[str, str]:
-    names = {
-        ENV_DATABASE_URL,
-        *(setting.name for setting in SETTINGS_ENV_SETTINGS),
-    }
+    names = config_environment_names()
     return {
         name: value
         for name in names
