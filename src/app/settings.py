@@ -17,13 +17,17 @@ from wevra.auth.settings import (
     load_auth_settings,
     merge_identity_options_with_environment,
 )
+from wevra.config import AppConfigSource, ConfigService
 from wevra.core.composition import (
+    APP_CONFIG_ENV,
+    DEFAULT_APP_CONFIG,
     AppConfig,
 )
 from wevra.core.diagnostics import wrapped_error
 from wevra.core.settings import (
     SettingsLoadError,
-    load_composed_settings,
+    load_composition_config_from_environment,
+    values_from_env_settings,
 )
 from wevra.db.urls import (
     SQLITE_ASYNC_DATABASE_URL_PREFIX,
@@ -373,35 +377,94 @@ def load_settings(
     """
     resolved_project_root = (project_root or DEFAULT_PROJECT_ROOT).resolve()
     try:
-        return load_composed_settings(
-            Settings,
-            environment_loader=load_environment,
-            env_settings=SETTINGS_ENV_SETTINGS,
-            app_config_value_loaders=(_settings_kwargs_from_app_config,),
+        env = load_environment(
             environ=environ,
             project_root=resolved_project_root,
             read_dotenv=read_dotenv,
+        )
+        app_config = load_composition_config_from_environment(
+            env,
+            project_root=resolved_project_root,
+            app_config_env=APP_CONFIG_ENV,
+            default_app_config=DEFAULT_APP_CONFIG,
             require_app_config=True,
         )
+        if app_config is None:  # pragma: no cover - require_app_config prevents this
+            raise ConfigurationError(
+                "Application config file could not be resolved; run from the "
+                f"app project or set {APP_CONFIG_ENV}."
+            )
+        config = ConfigService(
+            [AppConfigSource(app_config)],
+            environ=_environment_mapping(env),
+        )
+        return Settings(**_settings_kwargs_from_config(config, app_config, env))
     except SettingsLoadError as exc:
         raise wrapped_error(ConfigurationError, exc) from exc
 
 
-def _settings_kwargs_from_app_config(
+def _settings_kwargs_from_config(
+    config: ConfigService,
     app_config: AppConfig,
     env: Env,
 ) -> dict[str, Any]:
-    environ: dict[str, str] = {}
-    if env.is_set(ENV_DATABASE_URL):
-        database_url = env.get(ENV_DATABASE_URL)
-        if database_url is not None:
-            environ[ENV_DATABASE_URL] = database_url
-    auth_settings = load_auth_settings(app_config=app_config, environ=environ)
-    return {
-        "database_url": auth_settings.database_url,
+    app_values = dict(config.get_config("app") or {})
+    static_values = dict(config.get_config("app.static") or {})
+    template_values = dict(config.get_config("app.templates") or {})
+    env_values = values_from_env_settings(env, SETTINGS_ENV_SETTINGS)
+    auth_settings = load_auth_settings(
+        app_config=app_config,
+        environ=_auth_database_environment(app_values),
+    )
+    settings_kwargs: dict[str, Any] = {
+        "project_root": app_config.project_root,
+        "app_config": app_config,
+        "database_url": app_values.get("database_url", auth_settings.database_url),
         "identity_options": merge_identity_options_with_environment(
             auth_settings.identity_options,
             app_config.auth,
             env,
         ),
+        "static_url_path": static_values.get("url_path", app_config.static.url_path),
+        "template_auto_reload": template_values.get(
+            "auto_reload",
+            app_config.templates.auto_reload,
+        ),
+        "template_cache_size": template_values.get(
+            "cache_size",
+            app_config.templates.cache_size,
+        ),
+    }
+    for field_name in (
+        "alembic_config",
+        "app_name",
+        "csrf_cookie_secure",
+        "csrf_token_secret",
+        "deployment_environment",
+        "migrations_root",
+    ):
+        if field_name in app_values:
+            settings_kwargs[field_name] = app_values[field_name]
+    if "root" in static_values:
+        settings_kwargs["static_root"] = static_values["root"]
+    if "root" in template_values:
+        settings_kwargs["template_root"] = template_values["root"]
+    settings_kwargs.update(env_values)
+    return settings_kwargs
+
+
+def _auth_database_environment(app_values: Mapping[str, Any]) -> dict[str, str]:
+    database_url = app_values.get("database_url")
+    return {ENV_DATABASE_URL: database_url} if isinstance(database_url, str) else {}
+
+
+def _environment_mapping(env: Env) -> dict[str, str]:
+    names = {
+        ENV_DATABASE_URL,
+        *(setting.name for setting in SETTINGS_ENV_SETTINGS),
+    }
+    return {
+        name: value
+        for name in names
+        if env.is_set(name) and (value := env.get(name)) is not None
     }
