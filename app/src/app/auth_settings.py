@@ -22,12 +22,19 @@ def load_app_auth_settings(settings: Settings) -> AuthSettings:
         load_auth_settings_from_config(
             ConfigService([AppConfigSource(settings.app_config)]),
             app_config=settings.app_config,
-            environ={DATABASE_URL_ENV: settings.database_url},
+            environ=_auth_settings_environ(settings),
         )
         if settings.app_config is not None
         else AuthSettings(database_url=settings.database_url)
     )
     return _normalise_app_auth_settings(settings, auth_settings)
+
+
+def _auth_settings_environ(settings: Settings) -> dict[str, str]:
+    if settings.database_url is None:
+        return {}
+
+    return {DATABASE_URL_ENV: settings.database_url}
 
 
 def _normalise_app_auth_settings(
