@@ -63,7 +63,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = app_settings
     app.state.static_mount_path = app_settings.static_mount_path
     app.state.database = create_database(app_settings)
-    if _identity_enabled(app_settings):
+    if app_settings.auth_enabled:
         _configure_identity(app, app_settings)
     csrf_cookie_secure = app_settings.csrf_cookie_secure
     if csrf_cookie_secure is None:  # pragma: no cover - Settings normalises this
@@ -110,23 +110,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     return app
 
 
-def _identity_enabled(settings: Settings) -> bool:
-    return settings.identity_enabled
-
-
 def _configure_identity(app: FastAPI, settings: Settings) -> None:
-    from wevra.auth import AuthSettings, load_auth_settings, validate_auth_settings
+    from wevra.auth import load_runtime_auth_settings
     from wevra.auth.delivery import NullIdentityDelivery
     from wevra.auth.sessions import create_fastapi_users
 
-    auth_settings = (
-        load_auth_settings(app_config=settings.app_config)
-        if settings.app_config is not None
-        else AuthSettings(database_url=settings.database_url)
-    )
-    validate_auth_settings(
-        auth_settings,
-        allow_local_secrets=settings.deployment_environment == "local",
+    auth_settings = load_runtime_auth_settings(
+        app_config=settings.app_config,
+        database_url=settings.database_url,
+        deployment_environment=settings.deployment_environment,
     )
     identity_options = auth_settings.identity_options
     app.state.auth_settings = auth_settings

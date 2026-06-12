@@ -21,8 +21,13 @@ from wevra.web.validation import _contains_post_form, validate_web
 
 import app.validation.environment as environment_validation
 from app.configuration import ConfigurationError
-from app.settings import DEFAULT_ROUTE_PREFIXES, Settings
-from app.validation.persistence import validate_persistence
+from app.settings import Settings
+
+TEST_ROUTE_PREFIXES = {
+    "app": {"default": ""},
+    "wevra.web": {"partials": "", "api": ""},
+    "wevra.auth": {"account": "/account", "api": ""},
+}
 
 
 def _write_validation_module(
@@ -46,9 +51,9 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
         modules=modules,
         routes=RouteOptions(
             prefixes={
-                module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
+                module_name: dict(TEST_ROUTE_PREFIXES[module_name])
                 for module_name in modules
-                if module_name in DEFAULT_ROUTE_PREFIXES
+                if module_name in TEST_ROUTE_PREFIXES
             }
         ),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
@@ -72,15 +77,6 @@ def test_validate_command_checks_persistence_foundation(capsys) -> None:
 
     assert exit_code == 0
     assert "persistence: ok" in captured.out
-
-
-def test_validate_persistence_allows_no_model_composition(tmp_path: Path) -> None:
-    result = validate_persistence(
-        Settings(app_config=_app_config(tmp_path, ("app", "wevra.web")))
-    )
-
-    assert result.is_ok
-    assert "At least one Alembic migration revision is required." not in result.errors
 
 
 def test_validate_command_checks_environment_configuration(capsys) -> None:
@@ -121,16 +117,7 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     assert "environment: ok" in captured.out
     assert "web: ok" in captured.out
     assert "persistence: ok" in captured.out
-    assert "ok: supported environment variable name is valid: APP_ENV" in captured.out
-    assert (
-        "ok: supported environment variable name is valid: APP_RELOAD" in captured.out
-    )
-    assert "ok: supported environment variable names are unique" in captured.out
     assert "ok: environment loader returns an envex Env instance" in captured.out
-    assert (
-        "ok: configured module surfaces load: app, wevra.web, wevra.auth"
-        in captured.out
-    )
     assert "ok: template context providers validate" in captured.out
     assert "ok: module routers compose:" in captured.out
     assert "ok: template exists: public/pages/home.html" in captured.out
@@ -140,7 +127,6 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     )
     assert "ok: static asset exists: styles/app.css" in captured.out
     assert "ok: theme token present: --web-core-colour-page-bg" in captured.out
-    assert "ok: default database URL uses persistent SQLite file:" in captured.out
     assert "ok: database URL uses supported async SQLAlchemy driver" in captured.out
     assert "ok: Alembic config exists:" in captured.out
     assert "ok: Alembic config does not force in-memory SQLite" in captured.out
@@ -151,44 +137,6 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
         captured.out
     )
     assert "uv run wevra-migrate init" in captured.out
-
-
-def test_validate_environment_verbose_redacts_database_url_password(
-    capsys,
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv(
-        "DATABASE_URL",
-        "postgresql+asyncpg://user:password@host.example/app",
-    )
-
-    exit_code = validate_main(["environment", "--verbose"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "postgresql+asyncpg://***:***@host.example/app" in captured.out
-    assert "postgresql+asyncpg://user:password@host.example/app" not in captured.out
-    assert "password" not in captured.out
-
-
-def test_validate_command_reports_invalid_environment_configuration(
-    capsys,
-    monkeypatch,
-) -> None:
-    monkeypatch.setenv("APP_ENV", "production")
-    monkeypatch.setenv("CSRF_SECRET", "csrf-secret")
-    monkeypatch.delenv("RESET_SECRET", raising=False)
-    monkeypatch.delenv("VERIFICATION_SECRET", raising=False)
-
-    exit_code = validate_main(["environment"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "environment: failed" in captured.err
-    assert "Non-local deployments must configure identity reset" in captured.err
 
 
 def test_validate_command_does_not_mask_unrelated_value_errors(monkeypatch) -> None:

@@ -6,9 +6,7 @@ from pathlib import Path
 from typing import Final, cast
 
 from envex import Env
-from wevra.auth.settings import IDENTITY_ENV_SETTINGS as wevra_identity_env_settings
 from wevra.core.composition import APP_CONFIG_ENV
-from wevra.core.settings import EnvironmentSetting
 
 from app.config_definitions import (
     ENV_ALEMBIC_CONFIG,
@@ -41,23 +39,17 @@ __all__ = (
     "ENV_STATIC_ROOT",
     "ENV_STATIC_URL",
     "ENV_TEMPLATE_ROOT",
-    "IDENTITY_ENV_SETTINGS",
     "SETTINGS_ENV_SETTINGS",
-    "SUPPORTED_ENV_VARS",
     "SUPPORTED_RUNSERVER_ENV_VARS",
     "SUPPORTED_SETTINGS_ENV_VARS",
     "load_environment",
 )
 
-IDENTITY_ENV_SETTINGS: Final[tuple[EnvironmentSetting, ...]] = (
-    *wevra_identity_env_settings,
-)
 SUPPORTED_SETTINGS_ENV_VARS: Final = tuple(
-    env_setting.name for env_setting in SETTINGS_ENV_SETTINGS + IDENTITY_ENV_SETTINGS
+    env_setting.name for env_setting in SETTINGS_ENV_SETTINGS
 ) + (ENV_APP_CONFIG,)
 
 SUPPORTED_RUNSERVER_ENV_VARS: Final = (ENV_APP_RELOAD,)
-SUPPORTED_ENV_VARS: Final = SUPPORTED_SETTINGS_ENV_VARS + SUPPORTED_RUNSERVER_ENV_VARS
 
 
 def load_environment(
