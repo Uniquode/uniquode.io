@@ -1,3 +1,4 @@
+import ast
 import asyncio
 import importlib
 import inspect
@@ -93,7 +94,6 @@ from app.environment import (
 )
 from app.routes.health import health
 from app.settings import (
-    DEFAULT_ROUTE_PREFIXES,
     SQLITE_MEMORY_DATABASE_URL,
     Settings,
     load_settings,
@@ -112,10 +112,37 @@ IDENTITY_TABLE_NAMES = frozenset(
         "identity_external_identity_link",
     },
 )
+TEST_ROUTE_PREFIXES = {
+    "app": {"default": ""},
+    "wevra.web": {"partials": "", "api": ""},
+    "wevra.auth": {"account": "/account", "api": ""},
+}
 
 
 def assert_identity_tables_present(table_names: set[str]) -> None:
     assert IDENTITY_TABLE_NAMES.issubset(table_names)
+
+
+def _imported_modules(path: Path) -> set[str]:
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    imported_modules = {
+        node.module
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+    }
+    imported_modules.update(
+        f"{node.module}.{alias.name}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+        for alias in node.names
+    )
+    imported_modules.update(
+        alias.name
+        for node in ast.walk(tree)
+        if isinstance(node, ast.Import)
+        for alias in node.names
+    )
+    return imported_modules
 
 
 def sqlite_file_url(path: Path) -> str:
@@ -149,9 +176,9 @@ def write_app_config(
     auth_options: dict[str, object] | None = None,
 ) -> Path:
     prefixes = {
-        module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
+        module_name: dict(TEST_ROUTE_PREFIXES[module_name])
         for module_name in modules
-        if module_name in DEFAULT_ROUTE_PREFIXES
+        if module_name in TEST_ROUTE_PREFIXES
     }
     if route_prefixes is not None:
         for module, labels in route_prefixes.items():
@@ -200,6 +227,7 @@ def write_app_config(
         export_root = {json.dumps(static_export_root)}
 
         [auth]
+        session_cookie_name = "test_session"
         session_cookie_force_secure = false
         {auth_config}
 
@@ -245,9 +273,9 @@ def build_test_app_config(
     route_prefixes: dict[str, dict[str, str]] | None = None,
 ) -> AppConfig:
     prefixes = {
-        module_name: dict(DEFAULT_ROUTE_PREFIXES[module_name])
+        module_name: dict(TEST_ROUTE_PREFIXES[module_name])
         for module_name in modules
-        if module_name in DEFAULT_ROUTE_PREFIXES
+        if module_name in TEST_ROUTE_PREFIXES
     }
     if route_prefixes is not None:
         for module, labels in route_prefixes.items():
@@ -260,6 +288,14 @@ def build_test_app_config(
         routes=RouteOptions(prefixes=prefixes),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         static=StaticOptions(url_path="/static/", export_root=Path("static")),
+        auth=(
+            {
+                "session_cookie_name": "test_session",
+                "session_cookie_force_secure": False,
+            }
+            if "wevra.auth" in modules
+            else None
+        ),
     )
 
 
@@ -328,6 +364,21 @@ def test_app_project_does_not_redeclare_wevra_operator_scripts() -> None:
     }
 
     assert scripts.keys().isdisjoint(wevra_operator_scripts)
+
+
+def test_app_runtime_does_not_import_wevra_owned_configuration_details() -> None:
+    app_root = Path(__file__).resolve().parents[1] / "src/app"
+    forbidden_imports = {
+        "wevra.auth.configuration",
+        "wevra.auth.settings",
+        "wevra.db.migrate",
+        "wevra.db.surfaces",
+    }
+    imported_modules = {
+        module for path in app_root.rglob("*.py") for module in _imported_modules(path)
+    }
+
+    assert imported_modules.isdisjoint(forbidden_imports)
 
 
 def test_migrate_upgrade_uses_settings_database_url(
@@ -997,31 +1048,6 @@ def test_create_app_applies_configured_route_prefixes(
         asyncio.run(close_database(web_app.state.database))
 
 
-def test_settings_route_prefixes_preserve_default_labels_when_config_omits_module(
-    tmp_path: Path,
-) -> None:
-    settings = Settings(
-        database_url=SQLITE_MEMORY_DATABASE_URL,
-        project_root=tmp_path,
-        app_config=AppConfig(
-            config_path=tmp_path / "app.toml",
-            project_root=tmp_path,
-            modules=("app", "wevra.auth"),
-            routes=RouteOptions(prefixes={}),
-            templates=TemplateOptions(auto_reload=True, cache_size=0),
-            static=StaticOptions(
-                url_path="/static/",
-                export_root=Path("static"),
-            ),
-        ),
-    )
-
-    assert settings.route_prefixes == {
-        "app": {"default": ""},
-        "wevra.auth": {"account": "/account", "api": ""},
-    }
-
-
 def test_create_app_registers_routes_only_from_configured_modules(
     tmp_path: Path,
 ) -> None:
@@ -1124,7 +1150,9 @@ def test_settings_default_resource_roots_are_not_filesystem_overrides(
     settings = Settings(project_root=tmp_path)
 
     assert settings.app_config is None
-    assert settings.modules == ("app", "wevra.web", "wevra.auth")
+    assert settings.auth_enabled is False
+    assert settings.modules == ()
+    assert settings.route_prefixes == {}
     assert settings.database_url == (
         f"sqlite+aiosqlite:///{(tmp_path / 'app.sqlite3').resolve().as_posix()}"
     )
@@ -1439,9 +1467,27 @@ def test_non_local_settings_skip_identity_policy_when_wevra_auth_is_omitted(
         ),
     )
 
-    assert settings.identity_enabled is False
     assert settings.modules == ("app", "wevra.web")
+    assert settings.auth_enabled is False
     assert settings.csrf_cookie_secure is True
+
+
+def test_settings_auth_enabled_uses_configured_auth_module(
+    tmp_path: Path,
+) -> None:
+    settings = Settings(
+        app_config=AppConfig(
+            config_path=(tmp_path / "app.toml").resolve(),
+            project_root=tmp_path.resolve(),
+            modules=("app", "wevra.web", "wevra.auth"),
+            routes=RouteOptions(prefixes={}),
+            templates=TemplateOptions(auto_reload=True, cache_size=0),
+            static=StaticOptions(url_path="/static/", export_root=Path("static")),
+            auth={},
+        )
+    )
+
+    assert settings.auth_enabled is True
 
 
 def test_non_local_settings_require_configured_csrf_token_secret() -> None:

@@ -1,3 +1,3 @@
-from wevra.auth.configuration import ConfigurationError
+from wevra.core.exceptions import ConfigurationError
 
 __all__ = ("ConfigurationError",)

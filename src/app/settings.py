@@ -6,6 +6,7 @@ from secrets import token_urlsafe
 from typing import Any, Final, Literal, cast, get_args
 
 from envex import Env
+from wevra.auth import AUTH_SETTINGS_OWNER
 from wevra.config import AppConfigSource, ConfigService
 from wevra.core.composition import (
     APP_CONFIG_ENV,
@@ -41,8 +42,6 @@ __all__ = (
     "DEFAULT_ALEMBIC_CONFIG",
     "DEFAULT_DATABASE_FILE",
     "DEFAULT_DATABASE_URL",
-    "DEFAULT_MODULES",
-    "DEFAULT_ROUTE_PREFIXES",
     "ALLOWED_DEPLOYMENT_ENVIRONMENTS",
     "ConfigurationError",
     "DEPLOYMENT_ENVIRONMENT_ERROR",
@@ -70,12 +69,6 @@ DEFAULT_DATABASE_FILE = Path("app.sqlite3")
 DEFAULT_DATABASE_URL = (
     f"{SQLITE_ASYNC_DATABASE_URL_PREFIX}{DEFAULT_DATABASE_FILE.as_posix()}"
 )
-DEFAULT_MODULES: Final = ("app", "wevra.web", "wevra.auth")
-DEFAULT_ROUTE_PREFIXES: Final[dict[str, dict[str, str]]] = {
-    "app": {"default": ""},
-    "wevra.web": {"partials": "", "api": ""},
-    "wevra.auth": {"account": "/account", "api": ""},
-}
 CSRF_TOKEN_SECRET_BYTES = 32
 _GENERATE_LOCAL_CSRF_SECRET = "__generate-local-csrf-secret__"
 
@@ -261,29 +254,23 @@ class Settings:
     @property
     def modules(self) -> tuple[str, ...]:
         if self.app_config is None:
-            return DEFAULT_MODULES
+            return ()
 
         return self.app_config.modules
 
     @property
     def route_prefixes(self) -> dict[str, dict[str, str]]:
-        prefixes = {
-            module: dict(DEFAULT_ROUTE_PREFIXES[module])
-            for module in self.modules
-            if module in DEFAULT_ROUTE_PREFIXES
-        }
-        if self.app_config is not None:
-            for module, configured_prefixes in self.app_config.routes.prefixes.items():
-                prefixes[module] = {
-                    **prefixes.get(module, {}),
-                    **configured_prefixes,
-                }
+        if self.app_config is None:
+            return {}
 
-        return prefixes
+        return {
+            module: dict(prefixes)
+            for module, prefixes in self.app_config.routes.prefixes.items()
+        }
 
     @property
-    def identity_enabled(self) -> bool:
-        return "wevra.auth" in self.modules
+    def auth_enabled(self) -> bool:
+        return AUTH_SETTINGS_OWNER in self.modules
 
 
 def load_settings(
