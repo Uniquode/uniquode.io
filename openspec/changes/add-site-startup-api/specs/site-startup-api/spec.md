@@ -18,23 +18,29 @@ Wevra SHALL provide a public startup entry point that composes configured Wevra 
 - **THEN** startup fails with an actionable configuration error
 - **AND** it does not continue by applying hidden built-in app defaults
 
-### Requirement: Site exposes public module capabilities
-The `Site` object SHALL expose configured module capabilities and helpers through explicit public APIs rather than requiring host apps to construct Wevra internals.
+### Requirement: Site exposes type-keyed capabilities
+The `Site` object SHALL expose configured module capabilities and helpers through explicit type-keyed public APIs rather than requiring host apps to construct Wevra internals.
 
 #### Scenario: App asks for module capability
-- **WHEN** a host app needs a Wevra-owned helper such as an auth dependency or route helper
-- **THEN** it obtains that helper through the `Site` API or a module-owned capability returned by `Site`
-- **AND** it does not instantiate the module's internal runtime objects directly
+- **WHEN** a host app or module needs a Wevra-owned helper such as an auth dependency, database session, or route helper
+- **THEN** it obtains that helper by requiring the public capability type from `Site`
+- **AND** it does not instantiate the provider module's internal runtime objects directly
 
 #### Scenario: Missing capability is explicit
-- **WHEN** a host app requests a capability that is not configured or not provided
+- **WHEN** a host app or module requires a capability type that is not provided
 - **THEN** the `Site` API fails with an explicit error
-- **AND** the failure identifies the missing owner or capability without exposing secret values
+- **AND** the failure identifies the missing capability type without exposing secret values
 
-#### Scenario: Capability ownership is preserved
-- **WHEN** a capability belongs to a configured Wevra module
-- **THEN** the owning module defines the public capability surface
-- **AND** host apps consume that surface without inspecting module-private settings or state
+#### Scenario: Capability provider is replaceable
+- **WHEN** a module provides an implementation for a public capability type
+- **THEN** consumers request the capability by type rather than provider module name
+- **AND** a different configured module can provide the same public capability type without changing consumers
+
+
+#### Scenario: Duplicate capability provider fails
+- **WHEN** more than one module attempts to provide the same capability type
+- **THEN** startup fails with an explicit duplicate capability error
+- **AND** Wevra does not silently choose one provider
 
 ### Requirement: Wevra owns common initialisation
 Wevra startup SHALL own common framework initialisation for configured modules, including route registration, database wiring, module settings construction, auth composition, and Wevra runtime helpers.
@@ -47,11 +53,12 @@ Wevra startup SHALL own common framework initialisation for configured modules, 
 #### Scenario: Database is composed by Wevra
 - **WHEN** database configuration is available through the central config source
 - **THEN** Wevra startup initialises database wiring through Wevra-owned database APIs
+- **AND** Wevra provides a public database capability with session and transaction context managers
 - **AND** the host app does not duplicate database URL handling or session-factory setup
 
 #### Scenario: Routes are composed by configured modules
 - **WHEN** modules are configured for the site
-- **THEN** Wevra startup registers module routes using module-owned route declarations and configured route prefixes
+- **THEN** Wevra startup invokes module-owned `setup_site(site)` hooks that register routes using configured route prefixes
 - **AND** the host app does not hard-code Wevra route prefixes as fallback defaults
 
 ### Requirement: Host app remains product-focused
@@ -68,5 +75,5 @@ After Wevra startup, the host app SHALL only need to manage host-owned product r
 
 #### Scenario: App uses public auth dependencies
 - **WHEN** an app route needs login or superuser protection
-- **THEN** it uses a public auth dependency or helper exposed by Wevra through `Site`
+- **THEN** it uses a public auth capability required from `Site` by capability type
 - **AND** it does not inspect auth internals to build that protection
