@@ -6,7 +6,7 @@ Host applications currently carry Wevra boilerplate for framework, module, auth,
 
 ## What Changes
 
-- Add a public Wevra startup API shaped around `site = wevra.start(app, config_source=...)`, where the host app may still own the `FastAPI()` instance.
+- Add a public Wevra startup API shaped around `app = FastAPI(lifespan=wevra.start_site(config_source=...))`, where the host app may still own the `FastAPI()` instance.
 - Introduce a `Site` object returned from startup to expose safe public settings, module, dependency, and helper access without exposing Wevra internals.
 - Move common initialisation and setup concerns into Wevra, including module configuration, route registration, database wiring, module-owned settings construction, auth composition, and Wevra-specific runtime helpers.
 - Keep host applications focused on their own product routes, pages, templates, and user-facing behaviour once `app.toml` or another config source is provided.
@@ -29,7 +29,7 @@ Host applications currently carry Wevra boilerplate for framework, module, auth,
 
 ## Impact
 
-- Affected Wevra APIs: new `wevra.start(...)` or equivalent public startup entry point, new `Site` type, module composition hooks, settings access, route registration, auth composition, and database setup.
+- Affected Wevra APIs: new `wevra.start_site(...)` public startup entry point, new `Site` type, module composition hooks, settings access, route registration, auth composition, and database setup.
 - Affected host app code: remove Wevra-specific FastAPI startup boilerplate and replace it with a single startup call plus explicit use of public Site/module helpers.
 - Affected configuration: existing `app.toml` or other config sources remain the driver for modules, routes, database, auth, and module settings.
 - Affected tests: Wevra gains coverage for startup composition and Site access; host app tests should cover only app-owned behaviour and integration with the public startup API.

@@ -18,24 +18,25 @@
 
 ## 3. Module setup lifecycle
 
-- [x] 3.1 Define `setup_site(site)` as the only configured module setup hook.
+- [x] 3.1 Define async `setup_site(site)` as the only configured module setup hook.
 - [x] 3.2 Discover `setup_site` on configured module package roots.
-- [x] 3.3 Invoke `setup_site(site)` in configured module order during `wevra.start(...)`.
+- [x] 3.3 Invoke async `setup_site(site)` hooks in configured module order during Wevra startup.
 - [x] 3.4 Ignore modules that do not expose `setup_site`.
 - [x] 3.5 Fail startup clearly when `setup_site` exists but is not callable.
-- [x] 3.6 Fail startup clearly when a module setup hook raises.
-- [x] 3.7 Add Wevra tests for setup order, no-hook modules, invalid hooks, and hook failures.
+- [x] 3.6 Fail startup clearly when `setup_site` exists but is not async.
+- [x] 3.7 Fail startup clearly when a module setup hook raises.
+- [x] 3.8 Add Wevra tests for setup order, no-hook modules, invalid hooks, sync-hook rejection, and hook failures.
 
 ## 4. Database capability
 
-- [ ] 4.1 Define a public `DatabaseCapability` protocol or class.
-- [ ] 4.2 Provide `session(name="default")` as an async context manager for clean sessions.
-- [ ] 4.3 Provide `transaction(name="default")` as an async context manager for transactional work.
-- [ ] 4.4 Model named connections for `default`, `reader`, and `writer`, initially mapping names to one configured database when only one URL exists.
-- [ ] 4.5 Fail clearly for unknown connection names.
-- [ ] 4.6 Register `DatabaseCapability` from `wevra.db.setup_site(site)`.
+- [x] 4.1 Define a public `DatabaseCapability` protocol or class.
+- [x] 4.2 Provide `session(name="default")` as an async context manager for clean sessions.
+- [x] 4.3 Provide `transaction(name="default")` as an async context manager for transactional work.
+- [x] 4.4 Model named connections for `default`, `reader`, and `writer`, initially mapping names to one configured database when only one URL exists.
+- [x] 4.5 Fail clearly for unknown connection names.
+- [x] 4.6 Register `DatabaseCapability` from `wevra.db.setup_site(site)`.
 - [ ] 4.7 Move Wevra-owned database runtime setup out of the host app.
-- [ ] 4.8 Add Wevra tests for capability registration, session isolation, transaction commit/rollback, and unknown connection names.
+- [x] 4.8 Add Wevra tests for capability registration, session isolation, transaction commit/rollback, and unknown connection names.
 
 ## 5. Auth capability
 
@@ -60,7 +61,7 @@
 
 ## 7. Host app migration
 
-- [ ] 7.1 Update the host app to construct its FastAPI instance and call `site = wevra.start(app, config_source=...)`.
+- [ ] 7.1 Update the host app to construct its FastAPI instance with `lifespan=wevra.start_site(config_source=...)`.
 - [ ] 7.2 Remove app-side Wevra database setup.
 - [ ] 7.3 Remove app-side Wevra auth setup.
 - [ ] 7.4 Remove app-side Wevra route discovery/setup.
@@ -78,7 +79,7 @@
 
 ## 9. Documentation and examples
 
-- [ ] 9.1 Document the startup shape: `app = FastAPI(...)` then `site = wevra.start(app, config_source="app.toml")`.
+- [ ] 9.1 Document the startup shape: `app = FastAPI(lifespan=wevra.start_site(config_source="app.toml"))`.
 - [ ] 9.2 Document `setup_site(site)` for modules.
 - [ ] 9.3 Document type-keyed capabilities with `DatabaseCapability` and `AuthCapability` examples.
 - [ ] 9.4 Document host-owned versus Wevra-owned boundaries.

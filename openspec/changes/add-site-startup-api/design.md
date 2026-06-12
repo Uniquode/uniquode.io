@@ -26,39 +26,39 @@ This change builds on the central configuration service and module-owned setting
 
 ## Decisions
 
-### `start()` composes an existing FastAPI app
+### `start_site()` starts Wevra through FastAPI lifespan
 
 Wevra will expose a startup entry point shaped like:
 
 ```python
-site = wevra.start(app, config_source="app.toml")
+app = FastAPI(lifespan=wevra.start_site(config_source="app.toml"))
 ```
 
-The host app keeps ownership of the `FastAPI()` object. This preserves control over app metadata, middleware, exception handlers, lifespan, docs URLs, instrumentation, and deployment wrappers.
+The host app keeps ownership of the `FastAPI()` object and passes Wevra startup into FastAPI lifespan. This preserves control over app metadata, middleware, exception handlers, lifespan, docs URLs, instrumentation, and deployment wrappers.
 
 Alternative considered: `app = wevra.create_app(...)`. This is useful as a convenience later, but it makes Wevra the owner of the FastAPI constructor and reduces host flexibility. The primary API should accept an existing app.
 
 ### Startup returns a `Site` object
 
-`start()` will return a `Site` object rather than a raw settings object or an unstructured runtime dictionary. `Site` represents the configured Wevra-backed web site and is the public place for host code and modules to access public type-keyed capabilities.
+`start_site()` will store a `Site` object on `app.state.site` during lifespan startup rather than a raw settings object or an unstructured runtime dictionary. `Site` represents the configured Wevra-backed web site and is the public place for host code and modules to access public type-keyed capabilities.
 
 Alternative considered: returning `AppSettings`. That would invite host apps to inspect central settings and make cross-module decisions themselves, recreating the boundary problem.
 
 ### Modules own their settings and capabilities
 
-Configured modules will expose one setup hook, `setup_site(site)`, and public capabilities through Wevra-owned interfaces. Auth, database, routes, and module settings remain owned by their modules. The host app asks `Site` for public capabilities rather than constructing or mutating those internals.
+Configured modules will expose one async setup hook, `async setup_site(site)`, and public capabilities through Wevra-owned interfaces. Auth, database, routes, and module settings remain owned by their modules. The host app asks `Site` for public capabilities rather than constructing or mutating those internals.
 
 Alternative considered: keeping helper construction in the host app and only centralising config. That still requires every app to repeat framework startup code and understand Wevra internals.
 
 ### Config source is injected into startup
 
-The app or CLI resolves the config source before calling Wevra startup. `start()` accepts that explicit source and constructs the central configuration service from it.
+The app or CLI resolves the config source before calling Wevra startup. `start_site()` accepts that explicit source and constructs the central configuration service from it.
 
 CLI arguments that affect FastAPI constructor options remain host-owned because they are needed before the `FastAPI()` instance exists. CLI arguments that represent config overrides are passed to Wevra startup as explicit config inputs.
 
 ### Module setup uses `setup_site(site)` only
 
-Wevra startup calls a single optional module-root hook named `setup_site(site)` in configured module order. Modules without the hook are ignored, and invalid hooks fail startup clearly. There are no alternate hook names, compatibility aliases, or legacy startup paths.
+Wevra startup calls a single optional module-root hook named `setup_site(site)` in configured module order and requires it to be async. Modules without the hook are ignored, and invalid hooks fail startup clearly. There are no alternate hook names, compatibility aliases, or legacy startup paths.
 
 ### Capabilities are keyed by type
 
@@ -68,18 +68,18 @@ Wevra startup calls a single optional module-root hook named `setup_site(site)` 
 
 - [Risk] Moving composition into Wevra creates a larger public API surface. → Mitigation: keep `Site` small, typed, and capability-oriented; avoid exposing internal state directly.
 - [Risk] Capability lookup could become a service locator. → Mitigation: key capabilities by public type, keep capability objects intentionally small, and use them only for module-owned runtime services.
-- [Risk] Host apps may still need specialised startup hooks. → Mitigation: allow the host to own `FastAPI()` and provide app-owned routes or middleware before or after `start()`.
+- [Risk] Host apps may still need specialised startup hooks. → Mitigation: allow the host to own `FastAPI()` and provide app-owned routes or middleware before or around Wevra lifespan startup.
 - [Risk] Module composition ordering can become implicit. → Mitigation: derive ordering from the configured module list and document module hook execution semantics.
 - [Risk] Existing app tests may duplicate Wevra behaviour during migration. → Mitigation: move framework semantics into Wevra tests and keep app tests focused on app-owned integration.
 - [Risk] Removing app-side initialisation is a breaking change. → Mitigation: this product is unreleased, so remove old ownership directly rather than carrying compatibility code.
 
 ## Migration Plan
 
-1. Add the Wevra `start()` entry point and `Site` type.
+1. Add the Wevra `start_site()` entry point and `Site` type.
 2. Add the type-keyed capability registry.
 3. Add the `setup_site(site)` module lifecycle.
 4. Move database, auth, route, template, and static initialisation behind Wevra startup.
-5. Update the host app to construct `FastAPI()` and call `site = wevra.start(...)`.
+5. Update the host app to construct `FastAPI()` and configure `lifespan=wevra.start_site(...)`.
 6. Remove old app-side Wevra initialisation and tests that assert removed internals.
 7. Add Wevra tests for startup composition and host app tests for public startup integration.
 
