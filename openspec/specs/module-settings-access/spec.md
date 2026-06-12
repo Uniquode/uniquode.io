@@ -66,4 +66,3 @@ The system SHALL test module-owned settings semantics in the owning module's tes
 #### Scenario: Host app tests cover wiring outcomes
 - **WHEN** the host app composes module settings during startup
 - **THEN** host app tests assert wiring and integration outcomes without duplicating dependency settings semantics
-

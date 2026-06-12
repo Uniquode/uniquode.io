@@ -17,6 +17,6 @@
 
 <!-- User-facing, operational, migration, security, dependency, or compatibility impact. State "None" if there is no notable impact. -->
 
-## Optional Notes
+## Notes
 
 <!-- Reviewer focus, known trade-offs, follow-up work, or validation commands. Remove this section if not needed. -->

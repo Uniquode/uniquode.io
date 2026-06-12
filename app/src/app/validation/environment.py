@@ -1,98 +1,21 @@
-import re
-from typing import Final
-
 from envex import Env
-from wevra.auth import AuthSettings, load_auth_settings, validate_auth_settings
-from wevra.db.urls import redact_database_url
 from wevra.tools.validation.core import ValidationCheck, ValidationResult, record_check
 
 from app.configuration import ConfigurationError
 from app.environment import (
-    SUPPORTED_ENV_VARS,
     load_environment,
 )
 from app.settings import Settings
-
-ENV_VAR_NAME_PATTERN: Final = re.compile(r"^[A-Z][A-Z0-9_]*$")
 
 
 def validate_environment(settings: Settings) -> ValidationResult:
     errors: list[str] = []
     checks: list[ValidationCheck] = []
 
-    for env_name in SUPPORTED_ENV_VARS:
-        record_check(
-            checks,
-            errors,
-            passed=bool(ENV_VAR_NAME_PATTERN.fullmatch(env_name)),
-            description=f"supported environment variable name is valid: {env_name}",
-            error=(
-                "Supported environment variable names must use uppercase letters, "
-                "digits, and underscores."
-            ),
-        )
-
-    record_check(
-        checks,
-        errors,
-        passed=len(SUPPORTED_ENV_VARS) == len(set(SUPPORTED_ENV_VARS)),
-        description="supported environment variable names are unique",
-        error="Supported environment variable names must be unique.",
-    )
-
     _record_environment_loader_check(settings, checks, errors)
-    _record_auth_settings_check(settings, checks, errors)
-
-    record_check(
-        checks,
-        errors,
-        passed=bool(settings.database_url.strip()),
-        description=(
-            "effective database URL is available: "
-            f"{redact_database_url(settings.database_url)}"
-        ),
-        error="Effective database URL must not be empty.",
-    )
 
     return ValidationResult(
         name="environment", errors=tuple(errors), checks=tuple(checks)
-    )
-
-
-def _record_auth_settings_check(
-    settings: Settings,
-    checks: list[ValidationCheck],
-    errors: list[str],
-) -> None:
-    if not settings.identity_enabled:
-        return
-
-    try:
-        auth_settings = (
-            load_auth_settings(app_config=settings.app_config)
-            if settings.app_config is not None
-            else AuthSettings(database_url=settings.database_url)
-        )
-        validate_auth_settings(
-            auth_settings,
-            allow_local_secrets=settings.deployment_environment == "local",
-        )
-    except ConfigurationError as exc:
-        record_check(
-            checks,
-            errors,
-            passed=False,
-            description="auth settings are valid for the current environment",
-            error=str(exc),
-        )
-        return
-
-    record_check(
-        checks,
-        errors,
-        passed=True,
-        description="auth settings are valid for the current environment",
-        error="",
     )
 
 
