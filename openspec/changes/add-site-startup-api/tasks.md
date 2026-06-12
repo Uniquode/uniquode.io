@@ -18,13 +18,13 @@
 
 ## 3. Module setup lifecycle
 
-- [ ] 3.1 Define `setup_site(site)` as the only configured module setup hook.
-- [ ] 3.2 Discover `setup_site` on configured module package roots.
-- [ ] 3.3 Invoke `setup_site(site)` in configured module order during `wevra.start(...)`.
-- [ ] 3.4 Ignore modules that do not expose `setup_site`.
-- [ ] 3.5 Fail startup clearly when `setup_site` exists but is not callable.
-- [ ] 3.6 Fail startup clearly when a module setup hook raises.
-- [ ] 3.7 Add Wevra tests for setup order, no-hook modules, invalid hooks, and hook failures.
+- [x] 3.1 Define `setup_site(site)` as the only configured module setup hook.
+- [x] 3.2 Discover `setup_site` on configured module package roots.
+- [x] 3.3 Invoke `setup_site(site)` in configured module order during `wevra.start(...)`.
+- [x] 3.4 Ignore modules that do not expose `setup_site`.
+- [x] 3.5 Fail startup clearly when `setup_site` exists but is not callable.
+- [x] 3.6 Fail startup clearly when a module setup hook raises.
+- [x] 3.7 Add Wevra tests for setup order, no-hook modules, invalid hooks, and hook failures.
 
 ## 4. Database capability
 
