@@ -14,7 +14,7 @@ This change builds on the central configuration service and module-owned setting
 - Return a `Site` object that exposes safe public settings and module capabilities.
 - Move common module, auth, database, route, settings, and helper initialisation into Wevra.
 - Keep app code free of Wevra-owned manipulation, defaults, environment handling, and runtime object construction.
-- Preserve host-app control over FastAPI construction and app-owned routes.
+- Preserve host app control over FastAPI construction and app-owned routes.
 
 **Non-Goals:**
 
@@ -77,7 +77,7 @@ Wevra startup determines what to compose from central config and module-owned co
 5. Replace app-side Wevra helper construction with `Site` access where the app needs public dependencies or helpers.
 6. Remove app tests that assert Wevra internals and add Wevra tests for startup composition.
 
-Rollback is to restore the previous host-app startup wiring and remove the `Site` API usage from the host app. Because this change is explicitly breaking, rollback should happen as a normal code revert rather than by keeping compatibility initialisation paths.
+Rollback is to restore the previous host app startup wiring and remove the `Site` API usage from the host app. Because this change is explicitly breaking, rollback should happen as a normal code revert rather than by keeping compatibility initialisation paths.
 
 ## Open Questions
 

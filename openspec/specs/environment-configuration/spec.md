@@ -189,4 +189,3 @@ by app startup or CLI entrypoints.
 - **WHEN** a file-backed source can identify where a value or diagnostic came
   from
 - **THEN** it can include file, line, or column metadata
-

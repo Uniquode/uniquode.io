@@ -13,7 +13,7 @@ Host applications currently carry Wevra boilerplate for framework, module, auth,
 - Remove the need for host apps to manipulate Wevra-owned concerns such as auth settings, auth runtime state, FastAPI Users objects, database setup, route-prefix defaults, module route discovery, or environment-backed Wevra configuration.
 - Preserve flexibility for host apps that need to construct `FastAPI()` directly so they can control app metadata, middleware, exception handlers, lifespan, docs URLs, instrumentation, and deployment-specific integration.
 - Make Wevra-specific dependencies and helpers available through explicit public APIs, for example login-required dependencies, settings access, route/view definitions, and module capabilities.
-- **BREAKING**: Existing host-app composition code that manually initialises Wevra auth, database, module routes, or Wevra runtime state will be replaced by the central startup API.
+- **BREAKING**: Existing host app composition code that manually initialises Wevra auth, database, module routes, or Wevra runtime state will be replaced by the central startup API.
 
 ## Capabilities
 

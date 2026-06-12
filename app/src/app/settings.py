@@ -270,10 +270,7 @@ class Settings:
 
     @property
     def auth_enabled(self) -> bool:
-        return (
-            self.app_config is not None
-            and AUTH_SETTINGS_OWNER in self.app_config.modules
-        )
+        return AUTH_SETTINGS_OWNER in self.modules
 
 
 def load_settings(
