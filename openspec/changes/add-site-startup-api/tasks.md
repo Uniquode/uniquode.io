@@ -1,13 +1,13 @@
 ## 1. Public startup API
 
-- [ ] 1.1 Define the public Wevra startup entry point that accepts an existing FastAPI app and explicit config source input.
-- [ ] 1.2 Define the public `Site` type returned by startup.
-- [ ] 1.3 Add startup error handling for missing or failed config sources using existing configuration error types.
-- [ ] 1.4 Export the startup API and `Site` type from the intended public Wevra package path.
+- [x] 1.1 Define the public Wevra startup entry point that accepts an existing FastAPI app and explicit config source input.
+- [x] 1.2 Define the public `Site` type returned by startup.
+- [x] 1.3 Add startup error handling for missing or failed config sources using existing configuration error types.
+- [x] 1.4 Export the startup API and `Site` type from the intended public Wevra package path.
 
 ## 2. Site capabilities and settings access
 
-- [ ] 2.1 Add `Site` accessors for configured module presence without requiring host apps to inspect raw config internals.
+- [x] 2.1 Add `Site` accessors for configured module presence without requiring host apps to inspect raw config internals.
 - [ ] 2.2 Add typed settings access or settings-backed capability access keyed by explicit owner identifiers.
 - [ ] 2.3 Ensure settings returned through `Site` preserve module ownership and public immutability boundaries.
 - [ ] 2.4 Add explicit failure behaviour for missing owners, missing settings, or missing capabilities.
@@ -36,7 +36,7 @@
 
 ## 6. Tests and validation
 
-- [ ] 6.1 Add Wevra tests for startup composition with an existing FastAPI app.
+- [x] 6.1 Add Wevra tests for startup composition with an existing FastAPI app.
 - [ ] 6.2 Add Wevra tests for `Site` settings and capability access.
 - [ ] 6.3 Add Wevra tests for auth, database, and route composition through startup.
 - [ ] 6.4 Remove or rewrite host app tests that duplicate Wevra-owned auth, database, settings, or route composition semantics.
