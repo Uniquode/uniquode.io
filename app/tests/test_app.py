@@ -131,6 +131,12 @@ def _imported_modules(path: Path) -> set[str]:
         if isinstance(node, ast.ImportFrom) and node.module is not None
     }
     imported_modules.update(
+        f"{node.module}.{alias.name}"
+        for node in ast.walk(tree)
+        if isinstance(node, ast.ImportFrom) and node.module is not None
+        for alias in node.names
+    )
+    imported_modules.update(
         alias.name
         for node in ast.walk(tree)
         if isinstance(node, ast.Import)
