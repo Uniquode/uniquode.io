@@ -20,21 +20,12 @@ import wevra.tools.runserver as runserver_module
 from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
-from fastapi_users import FastAPIUsers
 from sqlalchemy import inspect as sqlalchemy_inspect
-from sqlalchemy import select
 from starlette.staticfiles import StaticFiles
-from wevra.auth.accounts.schemas import UserCreate
+from wevra import get_site
+from wevra.auth import AuthCapability
 from wevra.auth.models import (
-    AccessToken,
-    Base,
     User,
-)
-from wevra.auth.sessions import (
-    create_user_manager,
-)
-from wevra.auth.settings import (
-    AuthSettings,
 )
 from wevra.core.composition import (
     AppConfig,
@@ -42,15 +33,14 @@ from wevra.core.composition import (
     StaticOptions,
     TemplateOptions,
 )
+from wevra.db import DatabaseCapability
 from wevra.db.migration_metadata import (
     MigrationConfigError,
 )
 from wevra.db.persistence import (
-    Database,
     close_database,
     create_database_engine,
     is_supported_database_url,
-    session_scope,
     sqlite_database_path,
 )
 from wevra.tools.project import (
@@ -70,7 +60,6 @@ from wevra.web.forms.csrf import (
 )
 from wevra.web.routes.contracts import _normalise_path_prefix
 from wevra.web.security import COOP_HEADER_NAME
-from wevra.web.staticfiles import ComposedStaticFiles, NoStaticFiles
 
 import app.asgi as asgi_module
 import app.environment as environment_module
@@ -115,6 +104,7 @@ IDENTITY_TABLE_NAMES = frozenset(
 TEST_ROUTE_PREFIXES = {
     "app": {"default": ""},
     "wevra.web": {"partials": "", "api": ""},
+    "wevra.db": {},
     "wevra.auth": {"account": "/account", "api": ""},
 }
 
@@ -168,7 +158,7 @@ def write_wevra_tool_config(path: Path) -> Path:
 def write_app_config(
     path: Path,
     *,
-    modules: tuple[str, ...] = ("app", "wevra.web", "wevra.auth"),
+    modules: tuple[str, ...] = ("app", "wevra.web", "wevra.db", "wevra.auth"),
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_export_root: str = "static",
@@ -332,9 +322,18 @@ def test_create_app_returns_fresh_app_with_baseline_routes() -> None:
     assert isinstance(first, FastAPI)
     assert isinstance(second, FastAPI)
     assert first is not second
+
+
+def test_create_app_uses_wevra_lifespan_startup_for_configured_routes() -> None:
+    with TestClient(create_app()) as client:
+        login_response = client.get("/account/login")
+        static_response = client.get("/static/styles/app.css")
+
+    assert login_response.status_code == 200
+    assert static_response.status_code == 200
     assert any(
         isinstance(route, APIRoute) and route.path == "/health"
-        for route in first.routes
+        for route in client.app.routes
     )
 
 
@@ -937,15 +936,23 @@ def test_load_environment_wraps_loader_failures_without_raw_detail(
     assert "DATABASE_URL" not in str(excinfo.value)
 
 
-def test_create_app_mounts_configurable_static_files() -> None:
+def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     settings = Settings(
+        database_url=SQLITE_MEMORY_DATABASE_URL,
+        project_root=tmp_path,
         static_root=Path("src/test-static"),
         static_url_path="/assets/",
+        app_config=build_test_app_config(tmp_path, modules=("wevra.web",)),
     )
 
     web_app = create_app(settings)
 
-    static_routes = [r for r in web_app.routes if getattr(r, "name", None) == "static"]
+    with TestClient(web_app):
+        static_routes = [
+            route
+            for route in web_app.routes
+            if getattr(route, "name", None) == "static"
+        ]
     assert len(static_routes) == 1
 
     static_route = static_routes[0]
@@ -957,13 +964,8 @@ def test_create_app_mounts_configurable_static_files() -> None:
 
 
 def test_create_app_serves_static_files_from_configured_modules() -> None:
-    web_app = create_app()
-
-    static_routes = [r for r in web_app.routes if getattr(r, "name", None) == "static"]
-    assert len(static_routes) == 1
-    assert isinstance(static_routes[0].app, ComposedStaticFiles)
-
-    response = TestClient(web_app).get("/static/styles/app.css")
+    with TestClient(create_app()) as client:
+        response = client.get("/static/styles/app.css")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/css")
@@ -973,7 +975,7 @@ def test_create_app_serves_static_files_from_configured_modules() -> None:
 def test_create_app_omitting_wevra_web_mounts_empty_static_route(
     tmp_path: Path,
 ) -> None:
-    web_app = create_app(
+    app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
@@ -981,24 +983,12 @@ def test_create_app_omitting_wevra_web_mounts_empty_static_route(
         )
     )
 
-    try:
-        static_routes = [
-            route
-            for route in web_app.routes
-            if getattr(route, "name", None) == "static"
-        ]
-        response = TestClient(web_app).get("/static/styles/app.css")
+    with TestClient(app) as client:
+        response = client.get("/static/styles/app.css")
 
-        assert len(static_routes) == 1
-        assert isinstance(static_routes[0].app, NoStaticFiles)
-        assert str(web_app.url_path_for("static", path="/styles/app.css")) == (
-            "/static/styles/app.css"
-        )
-        assert response.status_code == 404
-        assert response.headers["content-type"].startswith("text/plain")
-        assert "--web-core-colour-page-bg" not in response.text
-    finally:
-        asyncio.run(close_database(web_app.state.database))
+    assert response.status_code == 404
+    assert response.headers["content-type"].startswith("application/json")
+    assert "--web-core-colour-page-bg" not in response.text
 
 
 def test_create_app_applies_configured_route_prefixes(
@@ -1027,53 +1017,38 @@ def test_create_app_applies_configured_route_prefixes(
     )
     monkeypatch.syspath_prepend(str(tmp_path))
     importlib.invalidate_caches()
-    web_app = create_app(
+    app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
             app_config=build_test_app_config(
                 tmp_path,
-                modules=("prefixed_route_app",),
+                modules=("prefixed_route_app", "wevra.web"),
                 route_prefixes={"prefixed_route_app": {"default": "/tools"}},
             ),
         )
     )
 
-    try:
-        client = TestClient(web_app)
-
+    with TestClient(app) as client:
         assert client.get("/tools/ping").text == "prefixed"
         assert client.get("/ping").status_code == 404
-    finally:
-        asyncio.run(close_database(web_app.state.database))
 
 
 def test_create_app_registers_routes_only_from_configured_modules(
     tmp_path: Path,
 ) -> None:
-    web_app = create_app(
+    app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
             project_root=tmp_path,
-            app_config=build_test_app_config(tmp_path, modules=("app",)),
+            app_config=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
         )
     )
 
-    try:
-        route_names = {
-            route.name
-            for route in web_app.routes
-            if isinstance(route, APIRoute) and route.name is not None
-        }
-
-        assert "public:home" in route_names
-        assert "auth:login" not in route_names
-        assert "health" in route_names
-        assert not hasattr(web_app.state, "identity_options")
-        assert not hasattr(web_app.state, "identity_delivery")
-        assert not hasattr(web_app.state, "fastapi_users")
-    finally:
-        asyncio.run(close_database(web_app.state.database))
+    with TestClient(app) as client:
+        assert client.get("/").status_code == 200
+        assert client.get("/account/login").status_code == 404
+        assert client.get("/health").status_code == 200
 
 
 def test_create_app_honours_explicit_template_root_with_module_templates(
@@ -1097,19 +1072,16 @@ def test_create_app_honours_explicit_template_root_with_module_templates(
         )
     )
 
-    try:
-        response = TestClient(web_app).get("/")
+    with TestClient(web_app) as client:
+        response = client.get("/")
 
-        assert response.status_code == 200
-        assert response.text == "filesystem template override"
-    finally:
-        asyncio.run(close_database(web_app.state.database))
+    assert response.status_code == 200
+    assert response.text == "filesystem template override"
 
 
 def test_missing_static_asset_does_not_render_html_error_page() -> None:
-    client = TestClient(create_app(), raise_server_exceptions=False)
-
-    response = client.get("/static/missing.css")
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        response = client.get("/static/missing.css")
 
     assert response.status_code == 404
     assert response.headers["content-type"].startswith("text/plain")
@@ -1117,31 +1089,37 @@ def test_missing_static_asset_does_not_render_html_error_page() -> None:
     assert response.text == "Not Found"
 
 
-def test_create_app_applies_default_cross_origin_opener_policy() -> None:
-    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
-
-    try:
-        response = TestClient(web_app).get("/")
-
-        assert response.headers[COOP_HEADER_NAME] == "same-origin"
-    finally:
-        asyncio.run(close_database(web_app.state.database))
-
-
-def test_create_app_can_disable_cross_origin_opener_policy() -> None:
+def test_create_app_applies_default_cross_origin_opener_policy(
+    tmp_path: Path,
+) -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
-            cross_origin_opener_policy=None,
+            project_root=tmp_path,
+            app_config=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
         )
     )
 
-    try:
-        response = TestClient(web_app).get("/")
+    with TestClient(web_app) as client:
+        response = client.get("/")
 
-        assert COOP_HEADER_NAME not in response.headers
-    finally:
-        asyncio.run(close_database(web_app.state.database))
+    assert response.headers[COOP_HEADER_NAME] == "same-origin"
+
+
+def test_create_app_can_disable_cross_origin_opener_policy(tmp_path: Path) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            cross_origin_opener_policy=None,
+            app_config=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
+        )
+    )
+
+    with TestClient(web_app) as client:
+        response = client.get("/")
+
+    assert COOP_HEADER_NAME not in response.headers
 
 
 def test_settings_default_resource_roots_are_not_filesystem_overrides(
@@ -1150,7 +1128,6 @@ def test_settings_default_resource_roots_are_not_filesystem_overrides(
     settings = Settings(project_root=tmp_path)
 
     assert settings.app_config is None
-    assert settings.auth_enabled is False
     assert settings.modules == ()
     assert settings.route_prefixes == {}
     assert settings.database_url == (
@@ -1229,7 +1206,7 @@ def test_load_settings_rejects_missing_default_app_toml(tmp_path) -> None:
 def test_load_settings_reads_default_app_toml(tmp_path) -> None:
     config_path = write_app_config(
         tmp_path / "app.toml",
-        modules=("app", "wevra.auth"),
+        modules=("app", "wevra.db", "wevra.auth"),
         static_url_path="/assets/",
         database_url="sqlite+aiosqlite:///identity.sqlite3",
     )
@@ -1239,7 +1216,7 @@ def test_load_settings_reads_default_app_toml(tmp_path) -> None:
     assert settings.app_config is not None
     assert settings.app_config.config_path == config_path.resolve()
     assert settings.app_config.database_url == "sqlite+aiosqlite:///identity.sqlite3"
-    assert settings.modules == ("app", "wevra.auth")
+    assert settings.modules == ("app", "wevra.db", "wevra.auth")
     assert settings.template_auto_reload is True
     assert settings.template_cache_size == 0
     assert settings.template_root is None
@@ -1468,18 +1445,15 @@ def test_non_local_settings_skip_identity_policy_when_wevra_auth_is_omitted(
     )
 
     assert settings.modules == ("app", "wevra.web")
-    assert settings.auth_enabled is False
     assert settings.csrf_cookie_secure is True
 
 
-def test_settings_auth_enabled_uses_configured_auth_module(
-    tmp_path: Path,
-) -> None:
+def test_settings_preserves_configured_auth_module(tmp_path: Path) -> None:
     settings = Settings(
         app_config=AppConfig(
             config_path=(tmp_path / "app.toml").resolve(),
             project_root=tmp_path.resolve(),
-            modules=("app", "wevra.web", "wevra.auth"),
+            modules=("app", "wevra.web", "wevra.db", "wevra.auth"),
             routes=RouteOptions(prefixes={}),
             templates=TemplateOptions(auto_reload=True, cache_size=0),
             static=StaticOptions(url_path="/static/", export_root=Path("static")),
@@ -1487,7 +1461,7 @@ def test_settings_auth_enabled_uses_configured_auth_module(
         )
     )
 
-    assert settings.auth_enabled is True
+    assert settings.modules == ("app", "wevra.web", "wevra.db", "wevra.auth")
 
 
 def test_non_local_settings_require_configured_csrf_token_secret() -> None:
@@ -1517,15 +1491,19 @@ def test_non_local_settings_require_configured_csrf_token_secret() -> None:
 
 
 def test_create_app_configures_database_and_identity_boundaries() -> None:
-    web_app = create_app()
+    with TestClient(create_app()) as client:
+        site = get_site(client.app)
+        database = site.require_capability(DatabaseCapability)
+        auth = site.require_capability(AuthCapability)
 
-    try:
-        assert isinstance(web_app.state.database, Database)
-        assert isinstance(web_app.state.auth_settings, AuthSettings)
-        assert not hasattr(web_app.state, "identity_options")
-        assert isinstance(web_app.state.fastapi_users, FastAPIUsers)
-    finally:
-        asyncio.run(close_database(web_app.state.database))
+        assert database is site.require_capability(DatabaseCapability)
+        assert auth is site.require_capability(AuthCapability)
+        assert callable(database.session)
+        assert callable(database.transaction)
+        assert callable(auth.login_required)
+
+    assert not hasattr(client.app.state, "database")
+    assert not hasattr(client.app.state, "identity_options")
 
 
 def test_create_app_without_explicit_settings_uses_environment(
@@ -1538,11 +1516,9 @@ def test_create_app_without_explicit_settings_uses_environment(
 
     web_app = create_app()
 
-    try:
+    with TestClient(web_app):
         assert web_app.title == "environment-app"
         assert web_app.state.settings.database_url == database_url
-    finally:
-        asyncio.run(close_database(web_app.state.database))
 
 
 class CaptureIdentityDelivery:
@@ -1565,76 +1541,6 @@ class CaptureIdentityDelivery:
         request: Request | None = None,
     ) -> None:
         self.verification_tokens.append((user.email, token))
-
-
-def seed_identity_user(
-    web_app: FastAPI,
-    *,
-    email: str = "person@example.com",
-    password: str = "correct horse",
-    is_active: bool = True,
-    is_verified: bool = False,
-    expires_at: float | None = None,
-) -> None:
-    async def seed_user() -> None:
-        async with web_app.state.database.engine.begin() as connection:
-            await connection.run_sync(Base.metadata.create_all)
-
-        async with session_scope(web_app.state.database.session_factory) as session:
-            manager = create_user_manager(
-                session, web_app.state.auth_settings.identity_options
-            )
-            user = await manager.create(
-                UserCreate(
-                    email=email,
-                    password=password,
-                    is_active=is_active,
-                    is_verified=is_verified,
-                ),
-                safe=False,
-            )
-            if expires_at is not None:
-                user.expires_at = expires_at
-                await session.commit()
-
-    asyncio.run(seed_user())
-
-
-def update_identity_user(
-    web_app: FastAPI,
-    *,
-    email: str,
-    **values: object,
-) -> None:
-    async def update_user() -> None:
-        async with session_scope(web_app.state.database.session_factory) as session:
-            user = (
-                await session.execute(select(User).where(User.email == email))
-            ).scalar_one()
-            for field_name, field_value in values.items():
-                setattr(user, field_name, field_value)
-            await session.commit()
-
-    asyncio.run(update_user())
-
-
-def identity_user_hashed_password(web_app: FastAPI, *, email: str) -> str:
-    async def load_hashed_password() -> str:
-        async with session_scope(web_app.state.database.session_factory) as session:
-            user = (
-                await session.execute(select(User).where(User.email == email))
-            ).scalar_one()
-            return user.hashed_password
-
-    return asyncio.run(load_hashed_password())
-
-
-def identity_access_token_values(web_app: FastAPI) -> list[str]:
-    async def load_tokens() -> list[str]:
-        async with session_scope(web_app.state.database.session_factory) as session:
-            return list(await session.scalars(select(AccessToken.token)))
-
-    return asyncio.run(load_tokens())
 
 
 def csrf_token_from(response) -> str:
@@ -1693,9 +1599,8 @@ def test_route_contract_rejects_empty_or_root_prefixes(prefix: str) -> None:
 
 
 def test_home_page_renders_full_html_document() -> None:
-    client = TestClient(create_app())
-
-    response = client.get("/")
+    with TestClient(create_app()) as client:
+        response = client.get("/")
 
     assert response.status_code == 200
     assert "<!doctype html>" in response.text.lower()
@@ -1707,19 +1612,18 @@ def test_home_page_renders_full_html_document() -> None:
 
 
 def test_api_route_stays_machine_oriented() -> None:
-    client = TestClient(create_app())
-
-    response = client.get("/api/web/theme")
+    with TestClient(create_app()) as client:
+        response = client.get("/api/web/theme")
 
     assert response.status_code == 200
     assert response.json() == {"theme_mode": "auto"}
 
 
 def test_theme_preference_cookie_drives_page_rendering() -> None:
-    client = TestClient(create_app())
-    client.cookies.set("theme_mode", "dark")
+    with TestClient(create_app()) as client:
+        client.cookies.set("theme_mode", "dark")
 
-    response = client.get("/")
+        response = client.get("/")
 
     assert response.status_code == 200
     assert 'data-theme="dark"' in response.text
@@ -1727,14 +1631,14 @@ def test_theme_preference_cookie_drives_page_rendering() -> None:
 
 
 def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
-    client = TestClient(create_app())
-    home_page = client.get("/")
+    with TestClient(create_app()) as client:
+        home_page = client.get("/")
 
-    response = client.post(
-        "/partials/theme-mode",
-        data=csrf_data(home_page, {"theme_mode": "light", "return_to": "/"}),
-        headers={"HX-Request": "true"},
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            data=csrf_data(home_page, {"theme_mode": "light", "return_to": "/"}),
+            headers={"HX-Request": "true"},
+        )
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "light"
@@ -1749,14 +1653,14 @@ def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
 
 
 def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
-    client = TestClient(create_app())
-    home_page = client.get("/")
+    with TestClient(create_app()) as client:
+        home_page = client.get("/")
 
-    response = client.post(
-        "/partials/theme-mode",
-        data=csrf_data(home_page, {"theme_mode": "neon", "return_to": "/"}),
-        headers={"HX-Request": "true"},
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            data=csrf_data(home_page, {"theme_mode": "neon", "return_to": "/"}),
+            headers={"HX-Request": "true"},
+        )
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "auto"
@@ -1771,13 +1675,13 @@ def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
 
 
 def test_theme_mode_route_redirects_without_htmx() -> None:
-    client = TestClient(create_app(), follow_redirects=False)
-    home_page = client.get("/")
+    with TestClient(create_app(), follow_redirects=False) as client:
+        home_page = client.get("/")
 
-    response = client.post(
-        "/partials/theme-mode",
-        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": "/"}),
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            data=csrf_data(home_page, {"theme_mode": "dark", "return_to": "/"}),
+        )
 
     assert response.status_code == 303
     assert response.headers["location"] == "/"
@@ -1796,13 +1700,13 @@ def test_theme_mode_route_redirects_without_htmx() -> None:
 def test_theme_mode_route_normalises_unsafe_redirect_return_to(
     return_to: str,
 ) -> None:
-    client = TestClient(create_app(), follow_redirects=False)
-    home_page = client.get("/")
+    with TestClient(create_app(), follow_redirects=False) as client:
+        home_page = client.get("/")
 
-    response = client.post(
-        "/partials/theme-mode",
-        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
+        )
 
     assert response.status_code == 303
     assert response.headers["location"] == "/"
@@ -1810,15 +1714,15 @@ def test_theme_mode_route_normalises_unsafe_redirect_return_to(
 
 
 def test_theme_mode_route_normalises_unsafe_htmx_return_to() -> None:
-    client = TestClient(create_app())
-    home_page = client.get("/")
-    return_to = "https://evil.example/theme"
+    with TestClient(create_app()) as client:
+        home_page = client.get("/")
+        return_to = "https://evil.example/theme"
 
-    response = client.post(
-        "/partials/theme-mode",
-        data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
-        headers={"HX-Request": "true"},
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            data=csrf_data(home_page, {"theme_mode": "dark", "return_to": return_to}),
+            headers={"HX-Request": "true"},
+        )
 
     assert response.status_code == 200
     assert return_to not in response.text
@@ -1827,31 +1731,30 @@ def test_theme_mode_route_normalises_unsafe_htmx_return_to() -> None:
 
 
 def test_theme_mode_route_handles_malformed_form_body_with_csrf_header() -> None:
-    client = TestClient(create_app(), raise_server_exceptions=False)
-    home_page = client.get("/")
+    with TestClient(create_app(), raise_server_exceptions=False) as client:
+        home_page = client.get("/")
 
-    response = client.post(
-        "/partials/theme-mode",
-        content=b"--broken\r\nnot-form-data",
-        headers={
-            "HX-Request": "true",
-            CSRF_HEADER_NAME: csrf_token_from(home_page),
-            "content-type": "multipart/form-data; boundary=broken",
-        },
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            content=b"--broken\r\nnot-form-data",
+            headers={
+                "HX-Request": "true",
+                CSRF_HEADER_NAME: csrf_token_from(home_page),
+                "content-type": "multipart/form-data; boundary=broken",
+            },
+        )
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "auto"
 
 
 def test_theme_mode_route_requires_csrf() -> None:
-    client = TestClient(create_app())
-
-    response = client.post(
-        "/partials/theme-mode",
-        data={"theme_mode": "dark", "return_to": "/"},
-        headers={"HX-Request": "true"},
-    )
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/partials/theme-mode",
+            data={"theme_mode": "dark", "return_to": "/"},
+            headers={"HX-Request": "true"},
+        )
 
     assert response.status_code == 403
     assert "Invalid CSRF token." in response.text
@@ -1859,35 +1762,35 @@ def test_theme_mode_route_requires_csrf() -> None:
 
 
 def test_theme_mode_route_accepts_csrf_header() -> None:
-    client = TestClient(create_app())
-    home_page = client.get("/")
+    with TestClient(create_app()) as client:
+        home_page = client.get("/")
 
-    response = client.post(
-        "/partials/theme-mode",
-        data={"theme_mode": "dark", "return_to": "/"},
-        headers={
-            "HX-Request": "true",
-            CSRF_HEADER_NAME: csrf_token_from(home_page),
-        },
-    )
+        response = client.post(
+            "/partials/theme-mode",
+            data={"theme_mode": "dark", "return_to": "/"},
+            headers={
+                "HX-Request": "true",
+                CSRF_HEADER_NAME: csrf_token_from(home_page),
+            },
+        )
 
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "dark"
 
 
 def test_theme_mode_route_rejects_csrf_header_without_cookie() -> None:
-    token_client = TestClient(create_app())
-    home_page = token_client.get("/")
+    with TestClient(create_app()) as token_client:
+        home_page = token_client.get("/")
 
-    client = TestClient(create_app())
-    response = client.post(
-        "/partials/theme-mode",
-        data={"theme_mode": "dark", "return_to": "/"},
-        headers={
-            "HX-Request": "true",
-            CSRF_HEADER_NAME: csrf_token_from(home_page),
-        },
-    )
+    with TestClient(create_app()) as client:
+        response = client.post(
+            "/partials/theme-mode",
+            data={"theme_mode": "dark", "return_to": "/"},
+            headers={
+                "HX-Request": "true",
+                CSRF_HEADER_NAME: csrf_token_from(home_page),
+            },
+        )
 
     assert response.status_code == 403
     assert "theme_mode" not in response.cookies
@@ -1922,6 +1825,7 @@ def test_earlier_application_module_can_override_wevra_auth_identity_template(
                     modules=(
                         "identity_override_app",
                         "wevra.web",
+                        "wevra.db",
                         "wevra.auth",
                     ),
                 ),
@@ -1930,18 +1834,18 @@ def test_earlier_application_module_can_override_wevra_auth_identity_template(
         )
     )
 
-    try:
-        response = TestClient(web_app).get("/account/login")
+    with TestClient(web_app) as client:
+        response = client.get("/account/login")
 
-        assert response.status_code == 200
-        assert "Overridden login" in response.text
-        assert 'autocomplete="email"' not in response.text
-    finally:
-        asyncio.run(close_database(web_app.state.database))
+    assert response.status_code == 200
+    assert "Overridden login" in response.text
+    assert 'autocomplete="email"' not in response.text
 
 
 def test_create_app_applies_configured_template_cache_options() -> None:
-    renderer = create_app().state.renderer
+    app = create_app()
+    with TestClient(app):
+        renderer = app.state.renderer
 
     assert renderer.auto_reload is True
     assert renderer.cache_size == 0

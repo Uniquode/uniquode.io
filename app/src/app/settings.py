@@ -6,7 +6,6 @@ from secrets import token_urlsafe
 from typing import Any, Final, Literal, cast, get_args
 
 from envex import Env
-from wevra.auth import AUTH_SETTINGS_OWNER
 from wevra.config import AppConfigSource, ConfigService
 from wevra.core.composition import (
     APP_CONFIG_ENV,
@@ -267,10 +266,6 @@ class Settings:
             module: dict(prefixes)
             for module, prefixes in self.app_config.routes.prefixes.items()
         }
-
-    @property
-    def auth_enabled(self) -> bool:
-        return AUTH_SETTINGS_OWNER in self.modules
 
 
 def load_settings(

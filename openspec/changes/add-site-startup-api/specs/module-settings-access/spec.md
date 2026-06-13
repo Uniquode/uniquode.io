@@ -1,17 +1,17 @@
 ## ADDED Requirements
 
-### Requirement: Site provides typed settings access
-The `Site` object SHALL provide a public way to obtain typed settings or settings-backed capabilities owned by configured modules.
+### Requirement: Site provides type-keyed capability access
+The `Site` object SHALL provide public type-keyed capabilities that expose typed settings or settings-backed helpers owned by configured modules.
 
 #### Scenario: App requests app-usable module settings
-- **WHEN** a host app needs a documented setting owned by a configured module
-- **THEN** it obtains that setting through `Site` or a module-owned public capability
-- **AND** the returned object is the owning module's public typed settings or protocol
+- **WHEN** a host app or module needs a documented setting owned by a configured module
+- **THEN** it obtains a public capability from `Site` by capability type
+- **AND** the returned object exposes the owning module's public typed settings or protocol
 
-#### Scenario: Settings owner is explicit
-- **WHEN** a caller requests typed settings through `Site`
-- **THEN** the request identifies the settings owner
-- **AND** the owner identifier is not treated as a raw config section name
+#### Scenario: Capability type is explicit
+- **WHEN** a caller requests settings-backed access through `Site`
+- **THEN** the request identifies the public capability type
+- **AND** the caller does not depend on provider module names or raw config section names
 
 #### Scenario: Settings access preserves immutability
 - **WHEN** `Site` returns module-owned settings

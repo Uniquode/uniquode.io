@@ -14,8 +14,10 @@ The host application SHALL use the public Wevra site startup API for Wevra-owned
 
 #### Scenario: Host app keeps product routes
 - **WHEN** product-specific pages or routes are required
-- **THEN** they remain in the host app or host-owned modules
-- **AND** they use Wevra through public startup, dependency, and helper APIs only
+- **THEN** their handlers, views, and route-surface declarations remain in the host app or host-owned modules
+- **AND** Wevra discovers and registers those route surfaces from the configured module list
+- **AND** the host app does not call route discovery or registration boilerplate itself
+- **AND** route handlers use Wevra through public startup and type-keyed capability APIs only
 
 ### Requirement: App tests respect Wevra ownership
 The host application test suite SHALL cover app-owned integration with the Wevra site startup API without duplicating Wevra module internals.
