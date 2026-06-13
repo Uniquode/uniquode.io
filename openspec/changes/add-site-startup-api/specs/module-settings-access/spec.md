@@ -1,6 +1,6 @@
 ## ADDED Requirements
 
-### Requirement: Site provides typed settings access
+### Requirement: Site provides type-keyed capability access
 The `Site` object SHALL provide public type-keyed capabilities that expose typed settings or settings-backed helpers owned by configured modules.
 
 #### Scenario: App requests app-usable module settings

@@ -1496,8 +1496,13 @@ def test_create_app_configures_database_and_identity_boundaries() -> None:
         database = site.require_capability(DatabaseCapability)
         auth = site.require_capability(AuthCapability)
 
-    assert isinstance(database, DatabaseCapability)
-    assert isinstance(auth, AuthCapability)
+        assert database is site.require_capability(DatabaseCapability)
+        assert auth is site.require_capability(AuthCapability)
+        assert callable(database.session)
+        assert callable(database.transaction)
+        assert callable(auth.login_required)
+
+    assert not hasattr(client.app.state, "database")
     assert not hasattr(client.app.state, "identity_options")
 
 
