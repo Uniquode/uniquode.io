@@ -21,18 +21,11 @@ from fastapi import FastAPI, Request
 from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect as sqlalchemy_inspect
-from sqlalchemy import select
 from starlette.staticfiles import StaticFiles
 from wevra import get_site
 from wevra.auth import AuthCapability
-from wevra.auth.accounts.schemas import UserCreate
 from wevra.auth.models import (
-    AccessToken,
-    Base,
     User,
-)
-from wevra.auth.sessions import (
-    create_user_manager,
 )
 from wevra.core.composition import (
     AppConfig,
@@ -943,10 +936,13 @@ def test_load_environment_wraps_loader_failures_without_raw_detail(
     assert "DATABASE_URL" not in str(excinfo.value)
 
 
-def test_create_app_mounts_configurable_static_files() -> None:
+def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     settings = Settings(
+        database_url=SQLITE_MEMORY_DATABASE_URL,
+        project_root=tmp_path,
         static_root=Path("src/test-static"),
         static_url_path="/assets/",
+        app_config=build_test_app_config(tmp_path, modules=("wevra.web",)),
     )
 
     web_app = create_app(settings)
@@ -1093,8 +1089,16 @@ def test_missing_static_asset_does_not_render_html_error_page() -> None:
     assert response.text == "Not Found"
 
 
-def test_create_app_applies_default_cross_origin_opener_policy() -> None:
-    web_app = create_app(Settings(database_url=SQLITE_MEMORY_DATABASE_URL))
+def test_create_app_applies_default_cross_origin_opener_policy(
+    tmp_path: Path,
+) -> None:
+    web_app = create_app(
+        Settings(
+            database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
+            app_config=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
+        )
+    )
 
     with TestClient(web_app) as client:
         response = client.get("/")
@@ -1102,11 +1106,13 @@ def test_create_app_applies_default_cross_origin_opener_policy() -> None:
     assert response.headers[COOP_HEADER_NAME] == "same-origin"
 
 
-def test_create_app_can_disable_cross_origin_opener_policy() -> None:
+def test_create_app_can_disable_cross_origin_opener_policy(tmp_path: Path) -> None:
     web_app = create_app(
         Settings(
             database_url=SQLITE_MEMORY_DATABASE_URL,
+            project_root=tmp_path,
             cross_origin_opener_policy=None,
+            app_config=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
         )
     )
 
@@ -1530,81 +1536,6 @@ class CaptureIdentityDelivery:
         request: Request | None = None,
     ) -> None:
         self.verification_tokens.append((user.email, token))
-
-
-def seed_identity_user(
-    web_app: FastAPI,
-    *,
-    email: str = "person@example.com",
-    password: str = "correct horse",
-    is_active: bool = True,
-    is_verified: bool = False,
-    expires_at: float | None = None,
-) -> None:
-    async def seed_user() -> None:
-        database = get_site(web_app).require_capability(DatabaseCapability)
-        auth = get_site(web_app).require_capability(AuthCapability)
-        async with database.transaction() as session:
-            await session.run_sync(
-                lambda sync_session: Base.metadata.create_all(
-                    bind=sync_session.get_bind()
-                )
-            )
-            manager = create_user_manager(session, auth.settings.identity_options)
-            user = await manager.create(
-                UserCreate(
-                    email=email,
-                    password=password,
-                    is_active=is_active,
-                    is_verified=is_verified,
-                ),
-                safe=False,
-            )
-            if expires_at is not None:
-                user.expires_at = expires_at
-                await session.commit()
-
-    asyncio.run(seed_user())
-
-
-def update_identity_user(
-    web_app: FastAPI,
-    *,
-    email: str,
-    **values: object,
-) -> None:
-    async def update_user() -> None:
-        database = get_site(web_app).require_capability(DatabaseCapability)
-        async with database.transaction() as session:
-            user = (
-                await session.execute(select(User).where(User.email == email))
-            ).scalar_one()
-            for field_name, field_value in values.items():
-                setattr(user, field_name, field_value)
-            await session.commit()
-
-    asyncio.run(update_user())
-
-
-def identity_user_hashed_password(web_app: FastAPI, *, email: str) -> str:
-    async def load_hashed_password() -> str:
-        database = get_site(web_app).require_capability(DatabaseCapability)
-        async with database.session() as session:
-            user = (
-                await session.execute(select(User).where(User.email == email))
-            ).scalar_one()
-            return user.hashed_password
-
-    return asyncio.run(load_hashed_password())
-
-
-def identity_access_token_values(web_app: FastAPI) -> list[str]:
-    async def load_tokens() -> list[str]:
-        database = get_site(web_app).require_capability(DatabaseCapability)
-        async with database.session() as session:
-            return list(await session.scalars(select(AccessToken.token)))
-
-    return asyncio.run(load_tokens())
 
 
 def csrf_token_from(response) -> str:
