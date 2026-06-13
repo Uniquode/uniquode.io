@@ -3,12 +3,10 @@ from typing import Any
 
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
-from starlette.types import ASGIApp
 from wevra import start_site
 from wevra.config import MappingConfigSource
 from wevra.web.forms.csrf import CsrfProtector
 from wevra.web.security import SecurityHeaderOptions
-from wevra.web.staticfiles import NoStaticFiles
 
 from app.settings import Settings, load_settings
 
@@ -43,7 +41,7 @@ def _config_source(settings: Settings) -> MappingConfigSource:
         "app": {
             "config_path": _config_path(settings),
             "project_root": settings.project_root,
-            "modules": _startup_modules(settings),
+            "modules": settings.modules,
             "database_url": settings.database_url,
         },
         "app.routes": {"prefixes": settings.route_prefixes},
@@ -53,7 +51,9 @@ def _config_source(settings: Settings) -> MappingConfigSource:
         },
         "app.static": {
             "url_path": settings.static_url_path,
-            "export_root": _static_export_root(settings),
+            "export_root": settings.app_config.static.export_root
+            if settings.app_config is not None
+            else settings.project_root,
         },
     }
     if settings.app_config is not None and settings.app_config.auth:
@@ -62,16 +62,11 @@ def _config_source(settings: Settings) -> MappingConfigSource:
     return MappingConfigSource(values, source="app-settings")
 
 
-def _static_app(
-    settings: Settings,
-) -> ASGIApp:
-    if settings.uses_filesystem_static_root:
-        static_root = settings.static_root
-        if static_root is None:  # pragma: no cover - Settings normalises this
-            raise RuntimeError("Filesystem static root was not normalised.")
-        return StaticFiles(directory=static_root, check_dir=False)
-
-    return NoStaticFiles()
+def _static_app(settings: Settings) -> StaticFiles:
+    static_root = settings.static_root
+    if static_root is None:  # pragma: no cover - Settings normalises this
+        raise RuntimeError("Filesystem static root was not normalised.")
+    return StaticFiles(directory=static_root, check_dir=False)
 
 
 def _config_path(settings: Settings) -> Path:
@@ -79,17 +74,3 @@ def _config_path(settings: Settings) -> Path:
         return settings.app_config.config_path
 
     return settings.project_root / "app.toml"
-
-
-def _startup_modules(settings: Settings) -> tuple[str, ...]:
-    if settings.app_config is None:
-        return ("app", "wevra.web")
-
-    return settings.modules
-
-
-def _static_export_root(settings: Settings) -> Path:
-    if settings.app_config is not None:
-        return settings.app_config.static.export_root
-
-    return Path("static")
