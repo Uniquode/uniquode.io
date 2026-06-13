@@ -46,9 +46,9 @@
 - [x] 5.4 Initialise auth runtime settings, identity delivery, and FastAPI Users integration inside Wevra auth.
 - [x] 5.5 Register `AuthCapability` from auth setup.
 - [x] 5.6 Expose public auth helpers such as login-required and superuser dependencies through `AuthCapability`.
-- [x] 5.7 Move auth route setup into Wevra auth.
+- [x] 5.7 Move auth route setup into Wevra startup composition.
 - [x] 5.8 Remove host app `_configure_identity` and direct auth runtime construction.
-- [x] 5.9 Add tests for auth setup with DB capability, missing DB capability failure, omitted auth module, and login route availability.
+- [x] 5.9 Add tests for auth setup with DB capability, missing DB capability failure, omitted auth module, and login route availability through unified web composition.
 
 ## 6. Route, template, and static setup
 
@@ -84,3 +84,18 @@
 - [x] 9.3 Document type-keyed capabilities with `DatabaseCapability` and `AuthCapability` examples.
 - [x] 9.4 Document host-owned versus Wevra-owned boundaries.
 - [x] 9.5 Document that legacy app-side Wevra startup is not supported.
+
+## 10. Configured module surface composition correction
+
+- [x] 10.1 Remove the host-route-module exclusion marker and any host route registration escape hatch added during implementation.
+- [x] 10.2 Make Wevra discover and register `module_routers` for every configured module in `modules` order.
+- [x] 10.3 Move auth route registration out of `wevra.auth.setup_site(site)` or otherwise ensure auth routes participate in the single configured route composition pass.
+- [x] 10.4 Change route composition from fatal duplicate detection to first-module-wins duplicate handling for normalised method/full-path collisions.
+- [x] 10.5 Log a structured warning when a later route is skipped because an earlier configured module already owns the method/full-path pair.
+- [x] 10.6 Confirm template and static composition use first-module-wins precedence and document any existing shadow diagnostics.
+- [x] 10.7 Remove app-side `register_routes(app)` startup calls; the app should expose route surfaces only.
+- [x] 10.8 Add Wevra tests for configured module route order, app-overrides-Wevra route shadowing, duplicate-route warning, and auth routes through the unified route composition pass.
+- [x] 10.9 Update host app tests to assert public behaviour from module-order composition rather than manual route registration.
+- [x] 10.10 Treat `[app.routes]` as the publication allow-list for route surfaces, so unlisted discovered `module_routers` labels are not registered.
+- [x] 10.11 Keep unknown configured route surface labels as explicit route composition errors.
+- [x] 10.12 Add Wevra tests for unpublished route surfaces, unpublished modules, and unknown published route labels.

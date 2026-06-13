@@ -14,7 +14,8 @@ This change builds on the central configuration service and module-owned setting
 - Return a `Site` object that exposes safe public type-keyed capabilities.
 - Move common module, auth, database, route, settings, and helper initialisation into Wevra.
 - Keep app code free of Wevra-owned manipulation, defaults, environment handling, and runtime object construction.
-- Preserve host app control over FastAPI construction and app-owned routes.
+- Preserve host app control over FastAPI construction and app-owned route
+  definitions while Wevra owns configured route discovery and registration.
 
 **Non-Goals:**
 
@@ -60,6 +61,35 @@ CLI arguments that affect FastAPI constructor options remain host-owned because 
 
 Wevra startup calls a single optional module-root hook named `setup_site(site)` in configured module order and requires it to be async. Modules without the hook are ignored, and invalid hooks fail startup clearly. There are no alternate hook names, compatibility aliases, or legacy startup paths.
 
+### Configured module order drives route, template, and static composition
+
+The configured `modules` list is the source of truth for composition order.
+Wevra discovers conventional module surfaces, including
+`<module>.routes.module_routers`, package templates, package static assets, and
+context providers, in that order. Host applications define their own route
+handlers and module surfaces, but they do not register those surfaces manually.
+Route configuration is a publication allow-list: if a module exposes multiple
+`module_routers` labels, Wevra registers only the labels listed for that module
+under `[app.routes]`. Unlisted route surfaces remain unpublished, which allows
+an app to disable a route surface such as admin without changing Python code.
+
+Template and static lookup use first-module-wins precedence: earlier modules in
+the configured list shadow later module resources. Route registration follows
+the same override principle, with the additional constraint that FastAPI routes
+must be concrete behavioural endpoints. When a later module declares a route
+with the same normalised method and full path as an earlier module, Wevra skips
+the later route and logs a structured warning rather than failing startup.
+
+This lets a host app or earlier module intentionally replace default Wevra
+behaviour, such as an auth page or web partial, without importing or mutating
+Wevra internals. Duplicate route names should also be treated as a collision for
+diagnostics, but method/path collision is the primary behavioural override rule.
+
+Alternative considered: keeping host route registration in the host app while
+Wevra registers only Wevra-owned module routes. That still leaves boilerplate in
+every app and makes the configured module order incomplete as the composition
+source of truth.
+
 ### Capabilities are keyed by type
 
 `Site` capabilities are looked up by public capability type rather than provider module name. Consumers request the contract they need, such as `DatabaseCapability` or `AuthCapability`, and do not care which module provided it. Missing or duplicate capabilities fail clearly. Optional behaviour uses `has_capability(...)` followed by `require_capability(...)`.
@@ -68,8 +98,9 @@ Wevra startup calls a single optional module-root hook named `setup_site(site)` 
 
 - [Risk] Moving composition into Wevra creates a larger public API surface. → Mitigation: keep `Site` small, typed, and capability-oriented; avoid exposing internal state directly.
 - [Risk] Capability lookup could become a service locator. → Mitigation: key capabilities by public type, keep capability objects intentionally small, and use them only for module-owned runtime services.
-- [Risk] Host apps may still need specialised startup hooks. → Mitigation: allow the host to own `FastAPI()` and provide app-owned routes or middleware before or around Wevra lifespan startup.
+- [Risk] Host apps may still need specialised startup hooks. → Mitigation: allow the host to own `FastAPI()` and define app-owned route surfaces, middleware, or state before Wevra lifespan startup.
 - [Risk] Module composition ordering can become implicit. → Mitigation: derive ordering from the configured module list and document module hook execution semantics.
+- [Risk] First-wins route overrides can hide later module routes. → Mitigation: log structured warnings for skipped duplicate routes, including the winning owner and shadowed owner.
 - [Risk] Existing app tests may duplicate Wevra behaviour during migration. → Mitigation: move framework semantics into Wevra tests and keep app tests focused on app-owned integration.
 - [Risk] Removing app-side initialisation is a breaking change. → Mitigation: this product is unreleased, so remove old ownership directly rather than carrying compatibility code.
 
@@ -79,13 +110,14 @@ Wevra startup calls a single optional module-root hook named `setup_site(site)` 
 2. Add the type-keyed capability registry.
 3. Add the `setup_site(site)` module lifecycle.
 4. Move database, auth, route, template, and static initialisation behind Wevra startup.
-5. Update the host app to construct `FastAPI()` and configure `lifespan=wevra.start_site(...)`.
-6. Remove old app-side Wevra initialisation and tests that assert removed internals.
-7. Add Wevra tests for startup composition and host app tests for public startup integration.
+5. Make route/template/static composition use configured module order with first-module-wins precedence.
+6. Update the host app to construct `FastAPI()` and configure `lifespan=wevra.start_site(...)`.
+7. Remove old app-side Wevra initialisation and tests that assert removed internals.
+8. Add Wevra tests for startup composition and host app tests for public startup integration.
 
 Rollback is a normal code revert. No compatibility path or legacy fallback is kept.
 
 ## Open Questions
 
 - Should `DatabaseCapability` be a runtime-checkable protocol or a concrete abstract base class for stricter runtime validation?
-- Which route/template/static setup pieces belong in `wevra.web.setup_site(site)` versus generic Wevra startup?
+- Should duplicate route-name collisions be skipped with warnings in the same way as duplicate method/path collisions, or should route names remain fatal because they affect URL generation?

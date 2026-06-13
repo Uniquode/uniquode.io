@@ -58,16 +58,41 @@ Wevra startup SHALL own common framework initialisation for configured modules, 
 
 #### Scenario: Routes are composed by configured modules
 - **WHEN** modules are configured for the site
-- **THEN** Wevra startup invokes module-owned `setup_site(site)` hooks that register routes using configured route prefixes
+- **THEN** Wevra startup discovers route surfaces from configured modules in module-list order
+- **AND** registers only route surfaces explicitly published in route configuration
+- **AND** uses configured route prefixes for published route surfaces
 - **AND** the host app does not hard-code Wevra route prefixes as fallback defaults
+
+#### Scenario: Route configuration is a publication allow-list
+- **WHEN** a configured module exposes multiple route surfaces
+- **AND** route configuration lists only some of those route surface labels
+- **THEN** Wevra registers only the listed route surfaces
+- **AND** leaves unlisted route surfaces unpublished
+
+#### Scenario: Unknown published route surface fails clearly
+- **WHEN** route configuration references a route surface label that the configured module does not expose
+- **THEN** Wevra startup fails with an explicit route composition error
+- **AND** the error identifies the configured module and unknown route surface label
+
+#### Scenario: Earlier module routes override later module routes
+- **WHEN** an earlier configured module and a later configured module expose the same normalised HTTP method and full route path
+- **THEN** Wevra registers the earlier module's route
+- **AND** skips the later duplicate route
+- **AND** logs a structured warning identifying the winning module route and the skipped module route
+
+#### Scenario: Module resources use first-module-wins precedence
+- **WHEN** configured modules expose template or static resources with the same logical path
+- **THEN** Wevra resolves the resource from the earliest configured module that provides it
+- **AND** later resources remain shadowed without failing startup
 
 ### Requirement: Host app remains product-focused
 After Wevra startup, the host app SHALL only need to manage host-owned product routes, pages, templates, and behaviour.
 
-#### Scenario: App adds product routes
-- **WHEN** Wevra startup has completed
-- **THEN** the host app can register its own user-facing routes and pages
-- **AND** those routes may use public dependencies or helpers exposed through `Site`
+#### Scenario: App exposes product route surfaces
+- **WHEN** the host app has product routes or pages
+- **THEN** it exposes those routes through the configured module route surface
+- **AND** Wevra discovers and registers those routes during startup according to module-list order
+- **AND** app route handlers may use public dependencies or helpers exposed through `Site`
 
 #### Scenario: App avoids Wevra configuration manipulation
 - **WHEN** host app code is inspected after migration

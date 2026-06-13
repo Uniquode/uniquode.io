@@ -1,4 +1,4 @@
-from fastapi import APIRouter, FastAPI, Request
+from fastapi import APIRouter, Request
 from wevra.web.rendering import render_page
 
 from app.routes.health import router as health_router
@@ -21,7 +21,3 @@ router.include_router(health_router)
 module_routers = {
     "default": router,
 }
-
-
-def register_routes(app: FastAPI) -> None:
-    app.include_router(router)

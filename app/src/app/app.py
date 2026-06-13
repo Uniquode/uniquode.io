@@ -6,12 +6,10 @@ from fastapi.staticfiles import StaticFiles
 from starlette.types import ASGIApp
 from wevra import start_site
 from wevra.config import MappingConfigSource
-from wevra.web import HOST_ROUTE_MODULES_STATE_ATTRIBUTE
 from wevra.web.forms.csrf import CsrfProtector
 from wevra.web.security import SecurityHeaderOptions
 from wevra.web.staticfiles import NoStaticFiles
 
-from app.routes import register_routes
 from app.settings import Settings, load_settings
 
 
@@ -33,12 +31,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.security_header_options = SecurityHeaderOptions(
         cross_origin_opener_policy=app_settings.cross_origin_opener_policy,
     )
-    setattr(app.state, HOST_ROUTE_MODULES_STATE_ATTRIBUTE, ("app",))
     if app_settings.uses_filesystem_template_root:
         app.state.template_root = app_settings.template_root
     if app_settings.uses_filesystem_static_root:
         app.state.static_app = _static_app(app_settings)
-    register_routes(app)
     return app
 
 
