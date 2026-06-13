@@ -35,52 +35,52 @@
 - [x] 4.4 Model named connections for `default`, `reader`, and `writer`, initially mapping names to one configured database when only one URL exists.
 - [x] 4.5 Fail clearly for unknown connection names.
 - [x] 4.6 Register `DatabaseCapability` from `wevra.db.setup_site(site)`.
-- [ ] 4.7 Move Wevra-owned database runtime setup out of the host app.
+- [x] 4.7 Move Wevra-owned database runtime setup out of the host app.
 - [x] 4.8 Add Wevra tests for capability registration, session isolation, transaction commit/rollback, and unknown connection names.
 
 ## 5. Auth capability
 
-- [ ] 5.1 Define a public `AuthCapability` protocol or class.
-- [ ] 5.2 Implement `wevra.auth.setup_site(site)`.
-- [ ] 5.3 Require `DatabaseCapability` from auth setup.
-- [ ] 5.4 Initialise auth runtime settings, identity delivery, and FastAPI Users integration inside Wevra auth.
-- [ ] 5.5 Register `AuthCapability` from auth setup.
-- [ ] 5.6 Expose public auth helpers such as login-required and superuser dependencies through `AuthCapability`.
-- [ ] 5.7 Move auth route setup into Wevra auth.
-- [ ] 5.8 Remove host app `_configure_identity` and direct auth runtime construction.
-- [ ] 5.9 Add tests for auth setup with DB capability, missing DB capability failure, omitted auth module, and login route availability.
+- [x] 5.1 Define a public `AuthCapability` protocol or class.
+- [x] 5.2 Implement `wevra.auth.setup_site(site)`.
+- [x] 5.3 Require `DatabaseCapability` from auth setup.
+- [x] 5.4 Initialise auth runtime settings, identity delivery, and FastAPI Users integration inside Wevra auth.
+- [x] 5.5 Register `AuthCapability` from auth setup.
+- [x] 5.6 Expose public auth helpers such as login-required and superuser dependencies through `AuthCapability`.
+- [x] 5.7 Move auth route setup into Wevra auth.
+- [x] 5.8 Remove host app `_configure_identity` and direct auth runtime construction.
+- [x] 5.9 Add tests for auth setup with DB capability, missing DB capability failure, omitted auth module, and login route availability.
 
 ## 6. Route, template, and static setup
 
-- [ ] 6.1 Move configured module route registration behind Wevra startup.
-- [ ] 6.2 Move route-prefix handling for Wevra modules into Wevra startup.
-- [ ] 6.3 Remove host app Wevra route discovery and route-prefix fallback code.
-- [ ] 6.4 Move common template/static package-resource composition into Wevra where it is framework-owned.
-- [ ] 6.5 Keep host app route/template/static behaviour only where it is product-owned.
-- [ ] 6.6 Add tests for configured route registration, omitted modules, route prefixes, and resource composition.
+- [x] 6.1 Move configured module route registration behind Wevra startup.
+- [x] 6.2 Move route-prefix handling for Wevra modules into Wevra startup.
+- [x] 6.3 Remove host app Wevra route discovery and route-prefix fallback code.
+- [x] 6.4 Move common template/static package-resource composition into Wevra where it is framework-owned.
+- [x] 6.5 Keep host app route/template/static behaviour only where it is product-owned.
+- [x] 6.6 Add tests for configured route registration, omitted modules, route prefixes, and resource composition.
 
 ## 7. Host app migration
 
-- [ ] 7.1 Update the host app to construct its FastAPI instance with `lifespan=wevra.start_site(config_source=...)`.
-- [ ] 7.2 Remove app-side Wevra database setup.
-- [ ] 7.3 Remove app-side Wevra auth setup.
-- [ ] 7.4 Remove app-side Wevra route discovery/setup.
-- [ ] 7.5 Replace app access to Wevra internals with public capabilities.
-- [ ] 7.6 Keep app-owned pages, routes, and product behaviour in the app.
-- [ ] 7.7 Add host app integration tests for startup, app-owned routes, configured auth login route, and static/template behaviour.
+- [x] 7.1 Update the host app to construct its FastAPI instance with `lifespan=wevra.start_site(config_source=...)`.
+- [x] 7.2 Remove app-side Wevra database setup.
+- [x] 7.3 Remove app-side Wevra auth setup.
+- [x] 7.4 Remove app-side Wevra route discovery/setup.
+- [x] 7.5 Replace app access to Wevra internals with public capabilities.
+- [x] 7.6 Keep app-owned pages, routes, and product behaviour in the app.
+- [x] 7.7 Add host app integration tests for startup, app-owned routes, configured auth login route, and static/template behaviour.
 
 ## 8. Test ownership cleanup
 
 - [x] 8.1 Add initial Wevra tests for startup composition with an existing FastAPI app.
-- [ ] 8.2 Move framework startup semantics tests into Wevra tests.
-- [ ] 8.3 Remove host app tests that assert Wevra auth/database/route internals.
-- [ ] 8.4 Keep host app tests focused on app-owned behaviour and public startup integration.
-- [ ] 8.5 Remove tests for old startup paths rather than preserving compatibility expectations.
+- [x] 8.2 Move framework startup semantics tests into Wevra tests.
+- [x] 8.3 Remove host app tests that assert Wevra auth/database/route internals.
+- [x] 8.4 Keep host app tests focused on app-owned behaviour and public startup integration.
+- [x] 8.5 Remove tests for old startup paths rather than preserving compatibility expectations.
 
 ## 9. Documentation and examples
 
-- [ ] 9.1 Document the startup shape: `app = FastAPI(lifespan=wevra.start_site(config_source="app.toml"))`.
-- [ ] 9.2 Document `setup_site(site)` for modules.
-- [ ] 9.3 Document type-keyed capabilities with `DatabaseCapability` and `AuthCapability` examples.
-- [ ] 9.4 Document host-owned versus Wevra-owned boundaries.
-- [ ] 9.5 Document that legacy app-side Wevra startup is not supported.
+- [x] 9.1 Document the startup shape: `app = FastAPI(lifespan=wevra.start_site(config_source="app.toml"))`.
+- [x] 9.2 Document `setup_site(site)` for modules.
+- [x] 9.3 Document type-keyed capabilities with `DatabaseCapability` and `AuthCapability` examples.
+- [x] 9.4 Document host-owned versus Wevra-owned boundaries.
+- [x] 9.5 Document that legacy app-side Wevra startup is not supported.
