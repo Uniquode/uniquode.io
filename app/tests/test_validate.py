@@ -181,10 +181,11 @@ def test_validation_targets_are_discovered_from_configured_modules(
     monkeypatch.syspath_prepend(str(tmp_path))
 
     targets = discover_validation_targets(
-        ("first_validation_module", "second_validation_module")
+        ("app", "first_validation_module", "second_validation_module")
     )
 
-    assert tuple(targets) == ("first", "second")
+    assert tuple(targets) == ("app", "first", "second")
+    assert isinstance(targets["app"](Settings()), ValidationResult)
     assert isinstance(targets["first"](Settings()), ValidationResult)
 
 
@@ -280,6 +281,7 @@ def test_validate_app_checks_home_health_template_and_static_assets() -> None:
     result = validate_app(Settings())
 
     assert result.is_ok
+    assert result.name == "app"
     descriptions = {check.description for check in result.checks}
     assert "home route exists: /" in descriptions
     assert "health route exists: /health" in descriptions
