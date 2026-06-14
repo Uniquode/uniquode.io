@@ -1,0 +1,7 @@
+.hero {
+  padding-block: clamp(3rem, 8vw, 6rem);
+}
+
+.hero h1 {
+  letter-spacing: -0.04em;
+}

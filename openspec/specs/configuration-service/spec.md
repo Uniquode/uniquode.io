@@ -161,4 +161,3 @@ The central configuration loaded during Wevra startup SHALL drive configured mod
 - **WHEN** a module consumes loaded config during startup
 - **THEN** the module's settings loader performs coercion, validation, defaults, and policy interpretation
 - **AND** host app code does not perform that interpretation for Wevra-owned sections
-

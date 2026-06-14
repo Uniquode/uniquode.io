@@ -1,9 +1,9 @@
-from typing import Any
-
 from fastapi import Request
+from wevra.web.rendering import render_page
 
 
-def build_home_context(_request: Request) -> dict[str, Any]:
-    return {
-        "page_title": "uniquode",
-    }
+async def home(request: Request):
+    return render_page(
+        request,
+        "public/pages/home.html",
+    )

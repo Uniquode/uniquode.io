@@ -7,7 +7,6 @@ authors = [
 ]
 requires-python = ">=3.13"
 dependencies = [
-    "envex>=5.0.0",
     "fastapi>=0.136.3",
     "starlette>=1.2.1",
     "wevra",
@@ -21,10 +20,6 @@ build-backend = "uv_build"
 module-name = ["app"]
 
 [tool.wevra]
-settings_loader = "app.settings:load_settings"
-configuration_error = "app.configuration:ConfigurationError"
-environment_loader = "app.environment:load_environment"
-database_url_env = "DATABASE_URL"
 runserver_reload_env = "APP_RELOAD"
 runserver_app = "app.asgi:app"
 
