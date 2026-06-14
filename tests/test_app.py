@@ -302,6 +302,14 @@ def test_create_app_returns_fresh_app_with_baseline_routes() -> None:
     assert first is not second
 
 
+def test_create_app_requires_config_source_with_explicit_settings() -> None:
+    with pytest.raises(
+        ValueError,
+        match="config_source is required when explicit settings are passed",
+    ):
+        create_app(settings=Settings())
+
+
 def test_create_app_uses_wevra_lifespan_startup_for_configured_routes() -> None:
     with TestClient(create_app()) as client:
         login_response = client.get("/account/login")

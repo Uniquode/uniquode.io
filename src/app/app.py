@@ -8,8 +8,10 @@ from app.settings import Settings
 def create_app(
     settings: Settings | None = None,
     *,
-    config_source: SettingsConfigSource = None,
+    config_source: SettingsConfigSource | None = None,
 ) -> FastAPI:
+    if settings is not None and config_source is None:
+        raise ValueError("config_source is required when explicit settings are passed.")
     app_settings = settings or load_configured_settings(
         Settings,
         config_source=config_source,
