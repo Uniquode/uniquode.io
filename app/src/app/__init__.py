@@ -1,5 +1,8 @@
-from app.config_definitions import module_config
+from importlib.metadata import version
 
-__version__ = "0.1.0"
+from app.app import setup_site
+from app.config import module_config
 
-__all__ = ("__version__", "module_config")
+__version__ = version("app")
+
+__all__ = ("__version__", "module_config", "setup_site")

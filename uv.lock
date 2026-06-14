@@ -71,7 +71,6 @@ name = "app"
 version = "0.1.0"
 source = { editable = "app" }
 dependencies = [
-    { name = "envex" },
     { name = "fastapi" },
     { name = "starlette" },
     { name = "wevra" },
@@ -88,7 +87,6 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "envex", specifier = ">=5.0.0" },
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "starlette", specifier = ">=1.2.1" },
     { name = "wevra", editable = "wevra" },

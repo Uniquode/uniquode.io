@@ -576,4 +576,3 @@ The host application test suite SHALL cover app-owned integration with the Wevra
 - **WHEN** framework startup composition semantics are tested
 - **THEN** those tests live in the Wevra project or Wevra-owned test suite
 - **AND** the host app tests only rely on the documented public API
-

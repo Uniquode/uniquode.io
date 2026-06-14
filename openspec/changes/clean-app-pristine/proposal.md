@@ -4,6 +4,8 @@ The host app still contains leftover framework/configuration/environment scaffol
 
 This change makes the app pristine: anything not genuinely app-specific is either moved into the owning Wevra module/platform API or removed completely.
 
+[UT-240](https://linear.app/uniquode/issue/UT-240/clean-app-pristine)
+
 ## What Changes
 
 - Audit current app files and remove or relocate leftover Wevra scaffolding, with immediate focus on:

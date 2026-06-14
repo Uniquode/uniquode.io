@@ -104,4 +104,3 @@ After Wevra startup, the host app SHALL only need to manage host-owned product r
 - **WHEN** an app route needs login or superuser protection
 - **THEN** it uses a public auth capability required from `Site` by capability type
 - **AND** it does not inspect auth internals to build that protection
-

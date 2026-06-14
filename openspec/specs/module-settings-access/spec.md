@@ -97,4 +97,3 @@ The host app SHALL NOT aggregate Wevra-owned module settings into its own settin
 - **WHEN** database settings are needed during startup or by module code
 - **THEN** they are loaded and exposed by Wevra database composition through the site boundary
 - **AND** the host app does not duplicate database URL interpretation for Wevra modules
-
