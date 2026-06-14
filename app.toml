@@ -1,4 +1,5 @@
 [app]
+name = "uniquode"
 database_url = "sqlite+aiosqlite:///app.sqlite3"
 modules = [
   "app",

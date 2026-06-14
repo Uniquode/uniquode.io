@@ -5,12 +5,14 @@ import click
 import pytest
 import wevra.tools.validate as validate_module
 from click.testing import CliRunner
+from fastapi.routing import APIRoute, APIRouter
 from wevra.core.composition import (
     AppConfig,
     RouteOptions,
     StaticOptions,
     TemplateOptions,
 )
+from wevra.tools.settings import ProjectSettings
 from wevra.tools.validate import main as validate_main
 from wevra.tools.validation.core import ValidationResult
 from wevra.tools.validation.registry import (
@@ -19,9 +21,8 @@ from wevra.tools.validation.registry import (
 )
 from wevra.web.validation import _contains_post_form, validate_web
 
-import app.validation.environment as environment_validation
-from app.configuration import ConfigurationError
 from app.settings import Settings
+from app.validation import validate_app
 
 TEST_ROUTE_PREFIXES = {
     "app": {"default": ""},
@@ -57,7 +58,11 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
             }
         ),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
-        static=StaticOptions(url_path="/static/", export_root=Path("static")),
+        static=StaticOptions(
+            url_path="/static/",
+            root=None,
+            export_root=Path("static"),
+        ),
     )
 
 
@@ -79,22 +84,12 @@ def test_validate_command_checks_persistence_foundation(capsys) -> None:
     assert "persistence: ok" in captured.out
 
 
-def test_validate_command_checks_environment_configuration(capsys) -> None:
-    exit_code = validate_main(["environment"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "environment: ok" in captured.out
-
-
 def test_validate_command_default_runs_registered_targets(capsys) -> None:
     exit_code = validate_main([])
 
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "environment: ok" in captured.out
     assert "web: ok" in captured.out
     assert "persistence: ok" in captured.out
 
@@ -114,10 +109,8 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "environment: ok" in captured.out
     assert "web: ok" in captured.out
     assert "persistence: ok" in captured.out
-    assert "ok: environment loader returns an envex Env instance" in captured.out
     assert "ok: template context providers validate" in captured.out
     assert "ok: module routers compose:" in captured.out
     assert "ok: template exists: public/pages/home.html" in captured.out
@@ -146,42 +139,7 @@ def test_validate_command_does_not_mask_unrelated_value_errors(monkeypatch) -> N
     monkeypatch.setattr(validate_module, "_build_settings", raise_unrelated_value_error)
 
     with pytest.raises(ValueError, match="programmer error"):
-        validate_module.main(["environment"])
-
-
-def test_validate_environment_loader_error_does_not_emit_exception_detail(
-    monkeypatch,
-) -> None:
-    def raise_sensitive_error(**_kwargs: object) -> None:
-        raise ConfigurationError(
-            "Environment loader failed while initialising envex (RuntimeError)."
-        )
-
-    monkeypatch.setattr(
-        environment_validation, "load_environment", raise_sensitive_error
-    )
-
-    result = environment_validation.validate_environment(Settings())
-
-    assert not result.is_ok
-    assert result.errors == (
-        "Environment loader failed while initialising envex (RuntimeError).",
-    )
-    assert "secret" not in "\n".join(result.errors)
-    assert "DATABASE_URL" not in "\n".join(result.errors)
-
-
-def test_validate_environment_reports_wrong_loader_return_type(monkeypatch) -> None:
-    monkeypatch.setattr(
-        environment_validation,
-        "load_environment",
-        lambda **_kwargs: object(),
-    )
-
-    result = environment_validation.validate_environment(Settings())
-
-    assert not result.is_ok
-    assert result.errors == ("Environment loader returned object; expected envex Env.",)
+        validate_module.main(["web"])
 
 
 def test_resolve_targets_raises_domain_error_for_unknown_targets() -> None:
@@ -189,7 +147,7 @@ def test_resolve_targets_raises_domain_error_for_unknown_targets() -> None:
         validate_module.UnknownValidationTargetError,
         match="Unknown validation target\\(s\\): foo",
     ):
-        validate_module._resolve_targets(("foo",), ("web", "environment"))
+        validate_module._resolve_targets(("foo",), ("web",))
 
 
 def test_validation_targets_are_discovered_from_configured_modules(
@@ -223,10 +181,11 @@ def test_validation_targets_are_discovered_from_configured_modules(
     monkeypatch.syspath_prepend(str(tmp_path))
 
     targets = discover_validation_targets(
-        ("first_validation_module", "second_validation_module")
+        ("app", "first_validation_module", "second_validation_module")
     )
 
-    assert tuple(targets) == ("first", "second")
+    assert tuple(targets) == ("app", "first", "second")
+    assert isinstance(targets["app"](Settings()), ValidationResult)
     assert isinstance(targets["first"](Settings()), ValidationResult)
 
 
@@ -304,7 +263,7 @@ def test_validate_command_runs_discovered_module_targets(
     monkeypatch.setattr(
         validate_module,
         "_build_settings",
-        lambda _overrides: Settings(
+        lambda _overrides: ProjectSettings(
             project_root=tmp_path,
             app_config=_app_config(tmp_path, ("command_validation_module",)),
         ),
@@ -316,6 +275,58 @@ def test_validate_command_runs_discovered_module_targets(
     assert exit_code == 0
     assert captured.out == "command-target: ok\n"
     assert captured.err == ""
+
+
+def test_validate_app_checks_home_health_template_and_static_assets() -> None:
+    result = validate_app(Settings())
+
+    assert result.is_ok
+    assert result.name == "app"
+    descriptions = {check.description for check in result.checks}
+    assert "home route exists: /" in descriptions
+    assert "health route exists: /health" in descriptions
+    assert "home page template exists: public/pages/home.html" in descriptions
+    assert "home page static asset exists: styles/home.css" in descriptions
+
+
+def test_validate_app_reports_missing_home_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    router = APIRouter()
+
+    @router.get("/health")
+    async def health() -> dict[str, str]:
+        return {"status": "ok"}
+
+    monkeypatch.setattr(
+        "app.validation._app_routes",
+        lambda: tuple(route for route in router.routes if isinstance(route, APIRoute)),
+    )
+
+    result = validate_app(Settings())
+
+    assert not result.is_ok
+    assert "Missing home route: /" in result.errors
+
+
+def test_validate_app_reports_missing_health_route(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    router = APIRouter()
+
+    @router.get("/", name="public:home")
+    async def home() -> str:
+        return "home"
+
+    monkeypatch.setattr(
+        "app.validation._app_routes",
+        lambda: tuple(route for route in router.routes if isinstance(route, APIRoute)),
+    )
+
+    result = validate_app(Settings())
+
+    assert not result.is_ok
+    assert "Missing health route: /health" in result.errors
 
 
 def test_validate_command_reports_malformed_validation_surface(
@@ -334,7 +345,7 @@ def test_validate_command_reports_malformed_validation_surface(
     monkeypatch.setattr(
         validate_module,
         "_build_settings",
-        lambda _overrides: Settings(
+        lambda _overrides: ProjectSettings(
             project_root=tmp_path,
             app_config=_app_config(tmp_path, ("command_malformed_validation_module",)),
         ),
@@ -399,14 +410,14 @@ def test_validate_command_rejects_blank_static_url_path(capsys) -> None:
 
     assert exit_code == 1
     assert captured.out == ""
-    assert "Static URL path must not be empty." in captured.err
+    assert "static_url_path must not be blank." in captured.err
 
 
 def test_validate_web_omitting_wevra_web_does_not_use_default_static_root(
     tmp_path: Path,
 ) -> None:
     result = validate_web(
-        Settings(
+        ProjectSettings(
             project_root=tmp_path,
             app_config=_app_config(tmp_path, ("app",)),
         )
@@ -435,7 +446,7 @@ def test_validate_post_form_detection_accepts_html_attribute_variants() -> None:
 
 
 def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
-    settings = Settings(
+    settings = ProjectSettings(
         project_root=tmp_path,
         app_config=AppConfig(
             config_path=tmp_path / "app.toml",
@@ -443,7 +454,11 @@ def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
             modules=("missing_validation_app",),
             routes=RouteOptions(prefixes={}),
             templates=TemplateOptions(auto_reload=True, cache_size=0),
-            static=StaticOptions(url_path="/static/", export_root=Path("static")),
+            static=StaticOptions(
+                url_path="/static/",
+                root=None,
+                export_root=Path("static"),
+            ),
         ),
     )
 
@@ -555,19 +570,17 @@ def test_validate_command_reports_missing_alembic_structure(tmp_path, capsys) ->
 
 
 def test_validate_command_reports_missing_templates(tmp_path, capsys) -> None:
-    settings = Settings(
-        template_root=tmp_path / "templates",
-        static_root=tmp_path / "static",
-    )
-    settings.static_root.mkdir()
+    template_root = tmp_path / "templates"
+    static_root = tmp_path / "static"
+    static_root.mkdir()
 
     exit_code = validate_main(
         [
             "web",
             "--template-root",
-            str(settings.template_root),
+            str(template_root),
             "--static-root",
-            str(settings.static_root),
+            str(static_root),
         ]
     )
 
