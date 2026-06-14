@@ -16,7 +16,6 @@ import wevra.db.migrate as data_migrate_module
 import wevra.tools.migrate as migrate_module
 import wevra.tools.runserver as runserver_module
 from fastapi import FastAPI, Request
-from fastapi.routing import APIRoute
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect as sqlalchemy_inspect
 from starlette.staticfiles import StaticFiles
@@ -307,13 +306,11 @@ def test_create_app_uses_wevra_lifespan_startup_for_configured_routes() -> None:
     with TestClient(create_app()) as client:
         login_response = client.get("/account/login")
         static_response = client.get("/static/styles/app.css")
+        health_response = client.get("/health")
 
     assert login_response.status_code == 200
     assert static_response.status_code == 200
-    assert any(
-        isinstance(route, APIRoute) and route.path == "/health"
-        for route in client.app.routes
-    )
+    assert health_response.status_code == 200
 
 
 def test_baseline_route_handlers_are_async() -> None:

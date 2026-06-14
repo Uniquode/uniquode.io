@@ -45,7 +45,7 @@ The transform receives the resolved parsed value and returns the typed or normal
 
 Transforms are ordinary callables, so modules can use constructors such as `Path`, shared helpers such as boolean normalisers, or `functools.partial` for root-aware path resolution. Invalid transform input fails configuration loading with field context instead of forcing startup code to duplicate parsing and validation.
 
-Alternative considered: keep field names, defaults, and environment bindings as separate mappings on `ConfigSection`. That creates avoidable drift checks and hides the full declaration of a field, so it is rejected.
+Alternative considered: keep field names, defaults, and environment bindings as separate mappings on `ConfigGroup`. That creates avoidable drift checks and hides the full declaration of a field, so it is rejected.
 
 ### App config declarations are separate from app settings classes
 

@@ -53,7 +53,7 @@ Config definitions SHALL declare ordered `ConfigField` values. Each field SHALL 
 #### Scenario: Field declares default and environment binding together
 - **WHEN** a module declares a configurable field
 - **THEN** the field name, default value, environment binding, and transform are declared on the same `ConfigField`
-- **AND** `ConfigSection` does not use parallel default or environment mappings
+- **AND** `ConfigGroup` does not use parallel default or environment mappings
 
 #### Scenario: Field transform normalises environment values
 - **WHEN** a field declares a transform
