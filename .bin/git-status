@@ -1,0 +1,6 @@
+#!/bin/sh
+echo ===== Project root =====
+git status
+echo ===== Wevra project =====
+git -C wevra status
+
