@@ -135,4 +135,3 @@ The host app SHALL NOT expose Wevra-owned module settings as app settings fields
 - **WHEN** a configured module provides the same public capability shape as a Wevra module
 - **THEN** app code can depend on the capability shape rather than the concrete Wevra module name
 - **AND** startup does not force the Wevra implementation as fallback
-

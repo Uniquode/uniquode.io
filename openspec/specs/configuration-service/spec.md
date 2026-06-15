@@ -231,4 +231,3 @@ Config definitions SHALL declare ordered `ConfigField` values. Each field SHALL 
 - **WHEN** a transform rejects the resolved value
 - **THEN** configuration loading fails with a config error that identifies the section and field
 - **AND** module startup code does not need to repeat that parsing error handling
-
