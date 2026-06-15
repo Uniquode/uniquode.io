@@ -3,6 +3,7 @@ name = "uniquode"
 database_url = "sqlite+aiosqlite:///app.sqlite3"
 modules = [
   "app",
+  "wevra.widgets",
   "wevra.web",
   "wevra.db",
   "wevra.auth",
@@ -10,8 +11,11 @@ modules = [
 
 [app.routes]
 app = { default = "" }
-wevra-web = { partials = "", api = "" }
+wevra-widgets = { partials = "", api = "" }
 wevra-auth = { account = "/account", api = "" }
+
+[wevra.widgets]
+features = ["theme"]
 
 [app.templates]
 auto_reload = true
