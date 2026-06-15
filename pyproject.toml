@@ -19,10 +19,6 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = ["app"]
 
-[tool.wevra]
-runserver_reload_env = "APP_RELOAD"
-runserver_app = "app.asgi:app"
-
 [dependency-groups]
 dev = [
     "httpx2>=2.3.0",
