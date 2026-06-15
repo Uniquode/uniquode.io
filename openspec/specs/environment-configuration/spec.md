@@ -88,56 +88,69 @@ values.
   values
 
 ### Requirement: Application config boundary
-The system SHALL require a resolved application config file for normal
-environment/project configuration loading used by default app startup and
-package-owned project commands.
+
+The system SHALL require a resolved application config file for normal environment/project configuration loading used by default app startup and package-owned project commands.
 
 #### Scenario: APP_CONFIG selects app configuration
+
 - **WHEN** `APP_CONFIG` names an application config file
-- **THEN** normal project command and default app startup configuration loading
-  uses that file as the application config boundary
+- **THEN** normal project command and default app startup configuration loading uses that file as the application config boundary
+- **AND** relative `APP_CONFIG` values are resolved from the effective project root
+- **AND** `APP_CONFIG` does not change the effective project root
 
 #### Scenario: Project app config is discovered
-- **WHEN** no `APP_CONFIG` is set and a Wevra host project with `app.toml` can
-  be resolved
-- **THEN** normal project command and default app startup configuration loading
-  uses that `app.toml` as the application config boundary
+
+- **WHEN** no `APP_CONFIG` is set and a Wevra host project with `app.toml` can be resolved
+- **THEN** normal project command and default app startup configuration loading uses that `app.toml` as the application config boundary
+- **AND** the effective project root is the runtime project root used to locate that default config file
+
+#### Scenario: Explicit project root wins
+
+- **WHEN** startup supplies an explicit project root through `--project` or `APP_ROOT`
+- **THEN** normal project command and default app startup configuration loading uses that project root for relative path resolution
+- **AND** the config file path does not replace the explicit project root
 
 #### Scenario: Missing app config fails fast
-- **WHEN** no `APP_CONFIG` or project `app.toml` can be resolved for normal
-  project command or default app startup configuration loading
-- **THEN** configuration loading fails with an actionable error instead of
-  constructing application settings from built-in defaults
+
+- **WHEN** no `APP_CONFIG` or project `app.toml` can be resolved for normal project command or default app startup configuration loading
+- **THEN** configuration loading fails with an actionable error instead of constructing application settings from built-in defaults
 
 #### Scenario: Explicit settings construction remains available
-- **WHEN** tests or specialised callers construct settings explicitly without
-  using environment/project config loading
-- **THEN** those explicit settings remain usable without requiring an
-  application config file
+
+- **WHEN** tests or specialised callers construct settings explicitly without using environment/project config loading
+- **THEN** those explicit settings remain usable without requiring an application config file
 
 ### Requirement: Application database environment precedence
-The system SHALL resolve application database URL values in a deterministic
-order when loading settings from application config.
+
+The system SHALL resolve application database URL values in a deterministic order when loading settings from application config.
+
+#### Scenario: CLI database override wins
+
+- **WHEN** startup supplies an explicit database URL override
+- **THEN** the application database URL comes from that startup override
+- **AND** database, auth, validation, and migration consumers observe the same effective value
 
 #### Scenario: Shared database override wins
+
 - **WHEN** `DATABASE_URL` is set during application or auth settings loading
+- **AND** no startup database URL override was supplied
 - **THEN** the application database URL comes from `DATABASE_URL`
 
 #### Scenario: Auth-specific database override is not supported
-- **WHEN** `AUTH_DATABASE_URL` is set and `DATABASE_URL` is not set during auth
-  settings loading
+
+- **WHEN** `AUTH_DATABASE_URL` is set and `DATABASE_URL` is not set during auth settings loading
 - **THEN** the application database URL does not come from `AUTH_DATABASE_URL`
 
 #### Scenario: Application database config is default
-- **WHEN** `DATABASE_URL` is not set during application or auth settings
-  loading
-- **THEN** the application database URL comes from `database_url` in the
-  resolved `[app]` config table
 
-#### Scenario: Relative database paths are app-relative
-- **WHEN** `[app].database_url` contains a relative SQLite file path
-- **THEN** the path is resolved relative to the directory containing the loaded
-  application config file
+- **WHEN** no startup database override or `DATABASE_URL` is set during application or auth settings loading
+- **THEN** the application database URL comes from `database_url` in the resolved `[app]` config table
+
+#### Scenario: Relative database paths use effective project root
+
+- **WHEN** the effective application database URL contains a relative SQLite file path
+- **THEN** the path is resolved relative to the effective project root
+- **AND** it is not resolved relative to the Wevra package root or an accidental process current directory
 
 ### Requirement: Environment source adapter
 The system SHALL provide one environment-backed source adapter that can feed
@@ -189,3 +202,47 @@ by app startup or CLI entrypoints.
 - **WHEN** a file-backed source can identify where a value or diagnostic came
   from
 - **THEN** it can include file, line, or column metadata
+
+### Requirement: Environment loading is Wevra-owned for generated and basic sites
+A generated or basic Wevra site SHALL NOT require host-app environment loader code. Wevra SHALL provide the environment source loading, optional dotenv loading, and typed raw-value parsing needed by the configuration service and Wevra-owned commands.
+
+#### Scenario: Host app has no environment loader module
+- **WHEN** a basic Wevra site is generated or cleaned
+- **THEN** no app-owned `environment.py` module is required for startup or Wevra CLI commands
+
+#### Scenario: Dotenv support is centralised
+- **WHEN** local dotenv loading is required
+- **THEN** Wevra loads it through a Wevra-owned environment source
+- **AND** host apps do not wrap dotenv loading themselves
+
+#### Scenario: Env parsing remains minimal
+- **WHEN** Wevra parses environment-backed values
+- **THEN** it exposes only required behaviours such as lookup, presence checks, bool/int coercion, path handling, and secret-safe diagnostics
+- **AND** additional environment framework complexity is not exposed to host apps
+
+### Requirement: Envex is not an app-facing requirement
+If `envex` remains in use, it SHALL be encapsulated inside Wevra-owned environment/configuration code and SHALL NOT be required as an app-facing integration layer.
+
+#### Scenario: Envex remains internally useful
+- **WHEN** Wevra uses `envex` for required dotenv or parsing behaviour
+- **THEN** app code imports Wevra environment/config APIs rather than `envex` or app-owned wrappers around `envex`
+
+#### Scenario: Envex behaviour is unnecessary
+- **WHEN** Wevra only needs simple environment lookup and coercion that can be provided directly
+- **THEN** the implementation may simplify or remove `envex` usage rather than preserving it by default
+
+### Requirement: Deployment environment startup override
+
+The system SHALL allow runserver startup to override the effective application deployment environment through the `--deploy` option.
+
+#### Scenario: CLI deployment override wins
+
+- **WHEN** startup supplies a deployment environment through `--deploy`
+- **THEN** the effective application deployment environment comes from that startup override
+- **AND** auth, CSRF, validation, and other deployment-policy consumers observe the same effective value
+
+#### Scenario: Config deployment value is default
+
+- **WHEN** no startup deployment override is supplied
+- **THEN** the effective application deployment environment comes from configured application/environment sources
+
