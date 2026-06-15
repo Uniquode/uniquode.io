@@ -30,6 +30,10 @@ members = [
     "wevra",
 ]
 
+[tool.wevra]
+runserver_reload_env = "APP_RELOAD"
+runserver_app = "app.asgi:app"
+
 [tool.ruff]
 line-length = 88
 src = [

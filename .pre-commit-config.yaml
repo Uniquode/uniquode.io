@@ -38,7 +38,7 @@ repos:
 
       - id: validate-app
         name: validate app
-        entry: uv --directory app run wevra-validate
+        entry: uv run wevra-validate
         language: system
         pass_filenames: false
         always_run: true

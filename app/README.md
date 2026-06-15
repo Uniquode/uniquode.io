@@ -56,7 +56,7 @@ such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET`, `CSRF_SECURE`, `RESET_SECRET`,
 `app.settings` owns this application's concrete settings fields, defaults,
 deployment policy, CSRF policy, and identity policy adapter.
 
-Application composition is loaded from [app.toml](app.toml) in the project root,
+Application composition is loaded from `app.toml` in the project root,
 or from the path named by `APP_CONFIG`. This file is the shared source for
 configured modules and web resource defaults used by runtime startup, Alembic,
 validation, and future project tooling. `wevra.db` discovers model metadata

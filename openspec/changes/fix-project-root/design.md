@@ -10,10 +10,11 @@ Current startup behaviour is split across `wevra-runserver`, ASGI app loading, `
 
 - Make effective project-root resolution deterministic.
 - Keep cwd/runtime project root as the normal default when default `app.toml` discovery is used.
-- Allow explicit config-file selection to establish the app boundary when supplied through CLI or `APP_CONFIG`.
-- Allow `--project` to override the effective project root explicitly.
+- Allow explicit config-file selection through CLI or `APP_CONFIG` without changing the effective project root.
+- Allow `--project` / `APP_ROOT` to override the effective project root explicitly.
 - Allow `--database-url` to override configured database URLs for local runtime testing.
-- Pass runserver startup overrides through a Wevra-owned channel read by ASGI startup.
+- Allow `--deploy` to override the effective deployment environment without using the longer `--deployment-environment` flag or ambiguous `--environment` wording.
+- Pass runserver startup overrides through the existing startup environment channel read by ASGI startup.
 - Keep host app code free of Wevra startup/config plumbing.
 
 **Non-Goals:**
@@ -22,20 +23,21 @@ Current startup behaviour is split across `wevra-runserver`, ASGI app loading, `
 - Do not make host apps manipulate Wevra database/auth settings directly.
 - Do not add compatibility shims for old startup behaviour.
 - Do not introduce a generic `--set section.key=value` override surface in this change.
+- Do not add static-root or template-root runserver flags in this change.
 
 ## Decisions
 
 ### Decision: Effective project root is explicit startup state
 
-The effective project root is a startup-level value. It defaults from the runtime project root when default config discovery is used. If an explicit config path is supplied and no project root override is supplied, the config file location can establish the project root. If `--project` is supplied, it wins.
+The effective project root is a startup-level value. It defaults from the runtime project root when default config discovery is used. `--project` / `APP_ROOT` is the only mechanism that changes the effective project root. `--config` / `APP_CONFIG` selects the config file and does not change root.
 
-Alternative considered: always resolve relative paths from the config file directory. This was rejected because app packages can be configured from workspace metadata or module composition, and working files do not belong inside Python module package directories by default.
+Alternative considered: resolving relative paths from the config file directory. This was rejected because app packages can be configured from workspace metadata or module composition, and working files do not belong inside Python module package directories by default.
 
-### Decision: Runserver writes a Wevra-owned startup channel
+### Decision: Runserver uses the existing startup environment channel
 
-`wevra-runserver` will serialise startup override values into a private Wevra-owned channel that the imported ASGI app startup code reads before calling `start_site()`. This avoids app-owned boilerplate and avoids trying to pass Python objects through Uvicorn's import boundary.
+`wevra-runserver` will set normal startup environment values before invoking Uvicorn: `APP_ROOT`, `APP_CONFIG`, `DATABASE_URL`, and `APP_ENV`. This gives the desired precedence of CLI flags over environment variables over defaults, and it works with Uvicorn import/reload semantics without host-app boilerplate.
 
-Alternative considered: mutate generic process environment variables such as `APP_CONFIG` and `DATABASE_URL` only. This is too imprecise because those variables have broader semantics and do not carry the effective project root as one coherent startup decision.
+Alternative considered: a private serialised startup payload. This was rejected because the existing environment channel is simpler, visible, and already maps to the required values. A Wevra factory remains the likely future direction, but it is not required for this change.
 
 ### Decision: Database URL overrides remain config inputs
 
@@ -43,8 +45,14 @@ Alternative considered: mutate generic process environment variables such as `AP
 
 Alternative considered: make runserver patch database setup directly. This was rejected because runserver should not know database/auth internals.
 
+### Decision: Deployment environment override uses `--deploy`
+
+`--deploy` will set the effective `[app].deployment_environment` value for startup. The longer `--deployment-environment` spelling is unnecessarily verbose for a common command-line option, and `--environment` is ambiguous because it could mean dotenv loading, process environment, deployment stage, or app mode.
+
+Static-root and template-root flags are intentionally deferred. Static handling belongs with the planned collect command, and template root override does not currently solve a concrete runtime testing problem.
+
 ## Risks / Trade-offs
 
 - [Risk] Existing local databases may appear to move when the corrected root rule is applied. -> Mitigation: document the effective root rule and require explicit `--project` or database URL when the location matters.
 - [Risk] CLI and ASGI startup can diverge if only one path reads the startup channel. -> Mitigation: centralise startup override parsing in Wevra and cover runserver/startup with tests.
-- [Risk] `APP_CONFIG` semantics can be confused with project-root semantics. -> Mitigation: treat `APP_CONFIG` as config file selection only; project root is a separate effective startup value.
+- [Risk] `APP_CONFIG` semantics can be confused with project-root semantics. -> Mitigation: treat `APP_CONFIG` as config file selection only; `APP_ROOT` / `--project` is the separate effective startup root value.
