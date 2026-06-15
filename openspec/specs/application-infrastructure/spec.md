@@ -664,4 +664,3 @@ Wevra SHALL own reusable template request context setup and runtime static file 
 - **WHEN** a host app exposes its ASGI application
 - **THEN** the app entry point delegates common loading and configuration-error reporting to Wevra
 - **AND** the app entry point contains only app-factory import and the Wevra loader call
-

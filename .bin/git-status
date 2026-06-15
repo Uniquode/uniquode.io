@@ -6,4 +6,3 @@ git status
 echo
 echo ===== Wevra project ===== $(git -C wevra branch --show-current)
 git -C wevra status
-

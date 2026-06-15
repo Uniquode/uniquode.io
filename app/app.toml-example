@@ -15,7 +15,7 @@ wevra-widgets = { partials = "", api = "" }
 wevra-auth = { account = "/account", api = "" }
 
 [wevra.widgets]
-features = ["theme"]
+features = ["theme", "login"]
 
 [app.templates]
 auto_reload = true

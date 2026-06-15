@@ -245,4 +245,3 @@ The system SHALL allow runserver startup to override the effective application d
 
 - **WHEN** no startup deployment override is supplied
 - **THEN** the effective application deployment environment comes from configured application/environment sources
-

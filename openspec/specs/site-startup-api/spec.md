@@ -137,4 +137,3 @@ Wevra startup SHALL read the effective startup environment selected by runserver
 - **WHEN** a test or embedded caller passes explicit startup inputs directly to `start()` or `start_site()`
 - **THEN** Wevra uses those direct inputs
 - **AND** it does not override them with values from the process environment channel unless that environment was explicitly supplied by the caller
-
