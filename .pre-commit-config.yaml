@@ -31,14 +31,14 @@ repos:
 
       - id: pytest-app
         name: pytest app
-        entry: uv --directory app run pytest -q
+        entry: uv run pytest app/tests -q
         language: system
         pass_filenames: false
         types: [python]
 
       - id: validate-app
         name: validate app
-        entry: uv --directory app run wevra-validate
+        entry: uv run wevra-validate
         language: system
         pass_filenames: false
         always_run: true

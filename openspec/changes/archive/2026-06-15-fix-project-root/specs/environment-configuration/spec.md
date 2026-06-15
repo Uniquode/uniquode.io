@@ -9,6 +9,7 @@ The system SHALL require a resolved application config file for normal environme
 - **WHEN** `APP_CONFIG` names an application config file
 - **THEN** normal project command and default app startup configuration loading uses that file as the application config boundary
 - **AND** relative `APP_CONFIG` values are resolved from the effective project root
+- **AND** `APP_CONFIG` does not change the effective project root
 
 #### Scenario: Project app config is discovered
 
@@ -16,15 +17,9 @@ The system SHALL require a resolved application config file for normal environme
 - **THEN** normal project command and default app startup configuration loading uses that `app.toml` as the application config boundary
 - **AND** the effective project root is the runtime project root used to locate that default config file
 
-#### Scenario: Explicit config file can establish project root
-
-- **WHEN** a startup CLI option supplies an explicit config file path
-- **AND** no explicit project root override is supplied
-- **THEN** the effective project root is the directory containing that config file
-
 #### Scenario: Explicit project root wins
 
-- **WHEN** startup supplies an explicit project root
+- **WHEN** startup supplies an explicit project root through `--project` or `APP_ROOT`
 - **THEN** normal project command and default app startup configuration loading uses that project root for relative path resolution
 - **AND** the config file path does not replace the explicit project root
 
@@ -69,3 +64,20 @@ The system SHALL resolve application database URL values in a deterministic orde
 - **WHEN** the effective application database URL contains a relative SQLite file path
 - **THEN** the path is resolved relative to the effective project root
 - **AND** it is not resolved relative to the Wevra package root or an accidental process current directory
+
+## ADDED Requirements
+
+### Requirement: Deployment environment startup override
+
+The system SHALL allow runserver startup to override the effective application deployment environment through the `--deploy` option.
+
+#### Scenario: CLI deployment override wins
+
+- **WHEN** startup supplies a deployment environment through `--deploy`
+- **THEN** the effective application deployment environment comes from that startup override
+- **AND** auth, CSRF, validation, and other deployment-policy consumers observe the same effective value
+
+#### Scenario: Config deployment value is default
+
+- **WHEN** no startup deployment override is supplied
+- **THEN** the effective application deployment environment comes from configured application/environment sources

@@ -7,10 +7,13 @@ Runtime testing exposed that Wevra startup does not have a clear enough contract
 - Define an explicit effective project-root rule for Wevra startup and project tools.
 - Keep `app.toml` as the default application config filename.
 - Treat the current/runtime project directory as the default root when using default `app.toml` discovery.
-- Treat an explicit config file supplied by CLI or `APP_CONFIG` as a startup boundary that can establish the project root from the config file location unless `--project` overrides it.
-- Add `wevra-runserver` options for startup overrides, including `--project`, `--config`, and `--database-url`.
-- Add a Wevra-owned startup config channel that lets `wevra-runserver` pass those overrides into the ASGI app startup path without app-owned boilerplate.
+- Add `wevra-runserver` options for startup overrides, including `--project`, `--config`, `--database-url`, and `--deploy`.
+- Use the existing startup environment channel so runserver CLI values override environment values, and environment values override defaults.
+- `--project` maps to `APP_ROOT`, `--config` maps to `APP_CONFIG`, `--database-url` maps to `DATABASE_URL`, and `--deploy` maps to `APP_ENV`.
+- Ensure `APP_CONFIG` selects the config file only and does not override project root.
 - Ensure runtime database URL resolution, validation, and migration tooling use the same effective project root.
+- Keep static and template root override flags out of scope; static collection is handled by the separate collect work, and template roots are not a current runtime override requirement.
+- Note that a Wevra factory may replace the environment bridge later, but this change keeps the implementation small and compatible with Uvicorn import/reload semantics.
 
 ## Capabilities
 
