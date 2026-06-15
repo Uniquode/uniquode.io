@@ -30,7 +30,7 @@ decision about whether content needs domain-owned records with slugs.
 
 ### Modified Capabilities
 
-- `html-ui-foundation`: Extend page conventions for public-facing content and
+- `web-foundation`: Extend page conventions for public-facing content and
   template usage.
 - `module-web-composition`: Ensure public page modules can publish routes and
   template resources consistently when that composition change is implemented.

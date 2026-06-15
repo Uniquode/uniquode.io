@@ -83,7 +83,7 @@ code, runtime-only settings, or identity-specific application state.
 
 ### Modified Capabilities
 
-- `html-ui-foundation`: Replace the single physical template/static-root
+- `web-foundation`: Replace the single physical template/static-root
   assumption with logical namespaces backed by configured module package
   sources.
 - `fastapi-users-auth-ext`: Allow `auth_ext` to publish identity route

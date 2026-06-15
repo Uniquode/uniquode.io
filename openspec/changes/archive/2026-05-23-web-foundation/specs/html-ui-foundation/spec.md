@@ -1,7 +1,7 @@
 ## ADDED Requirements
 
 ### Requirement: Global web resource roots
-The system SHALL provide one global template root, one global static asset root, and one static route prefix for the HTML-first UI foundation, with all three values configurable through project settings.
+The system SHALL provide one global template root, one global static asset root, and one static route prefix for the web foundation, with all three values configurable through project settings.
 
 #### Scenario: Global template root has a settings-backed default
 - **WHEN** a developer inspects the project settings or rendering configuration

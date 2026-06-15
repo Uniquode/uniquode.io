@@ -1,7 +1,7 @@
-# html-ui-foundation Specification
+# web-foundation Specification
 
 ## Purpose
-Define the baseline HTML-first UI foundation for server-rendered pages, shared templates, semantic theming, and progressive enhancement in the `uniquode` application.
+Define the baseline web foundation for server-rendered pages, shared templates, semantic theming, and progressive enhancement in the `uniquode` application.
 ## Requirements
 ### Requirement: Module-owned web resources
 The system SHALL load template and static resources from configured modules
@@ -104,7 +104,11 @@ The system SHALL provide the initial CSS and dynamic-enhancement baseline withou
 - **THEN** those styles are layered separately from the baseline Pico CSS resource
 
 ### Requirement: Theme-aware styling is semantic across templates
-The system SHALL apply theme-aware styling through semantic design roles and tokens across the HTML foundation rather than through template-local light or dark colour assumptions.
+The system SHALL apply theme-aware styling through semantic design roles and
+tokens across the HTML foundation rather than through template-local light or
+dark colour assumptions. The HTML foundation SHALL own semantic theme behaviour
+and token expectations, while optional theme-selection UI belongs to composed UI
+support modules such as `wevra.widgets`.
 
 #### Scenario: Base templates consume semantic styling roles
 - **WHEN** a developer inspects the base page templates and shared components
@@ -117,6 +121,11 @@ The system SHALL apply theme-aware styling through semantic design roles and tok
 #### Scenario: Project CSS defines mode-aware semantic tokens
 - **WHEN** a developer inspects the project-specific stylesheet layer
 - **THEN** the stylesheet defines semantic theme tokens or equivalent variables that support `auto`, `light`, and `dark` behaviour for the shared HTML foundation
+
+#### Scenario: Theme selector UI is not owned by the web foundation
+- **WHEN** a developer inspects the low-level web foundation templates and routes
+- **THEN** the optional `auto`/`light`/`dark` selector UI is not implemented as a core `wevra.web` concern
+- **AND** selector UI behaviour is provided by a composed UI support module when enabled
 
 ### Requirement: Web-structure validation is available
 The system SHALL provide an initial validation surface for the web foundation that can detect structural errors before runtime.

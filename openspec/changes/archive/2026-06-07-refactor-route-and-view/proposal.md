@@ -57,7 +57,7 @@ None.
 
 ### Modified Capabilities
 
-- `html-ui-foundation`: Refactor module route declaration and composition to
+- `web-foundation`: Refactor module route declaration and composition to
   use FastAPI `APIRouter` objects, configured router prefixes, FastAPI route
   decorators, FastAPI method dispatch, and FastAPI/Starlette exception handling
   conventions.

@@ -25,7 +25,7 @@ The project also needs clear conventions for where templates and static assets l
 
 ## Decision
 
-Use a server-rendered HTML-first UI architecture.
+Use a server-rendered web foundation architecture.
 
 Use Jinja2 templates as the primary UI rendering mechanism for full-page responses.
 
