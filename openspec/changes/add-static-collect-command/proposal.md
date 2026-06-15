@@ -21,7 +21,7 @@ Static assets should be deliverable efficiently outside the ASGI application whe
 
 ### Modified Capabilities
 
-- `html-ui-foundation`: Static asset delivery gains an offline collection path aligned with the runtime static files served by Wevra web.
+- `web-foundation`: Static asset delivery gains an offline collection path aligned with the runtime static files served by Wevra web.
 
 ## Impact
 

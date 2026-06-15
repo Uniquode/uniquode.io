@@ -32,7 +32,7 @@ planned move into the named `wevra` framework namespace.
   the host application package separate from reusable framework packages.
 - `environment-configuration`: move reusable settings-loading mechanics from
   the temporary web core package into the `wevra` namespace.
-- `html-ui-foundation`: move reusable web runtime, route, renderer, template,
+- `web-foundation`: move reusable web runtime, route, renderer, template,
   static, theme, error, CSRF, and web-validation contracts into `wevra`.
 - `development-database`: move reusable SQLAlchemy, database URL, session, and
   Alembic migration infrastructure into `wevra`.

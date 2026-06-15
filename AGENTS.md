@@ -34,8 +34,21 @@ Use `.agents/steering/` or `~/.agents/steering` on demand; start with
 Use Linear issue keys in branch names and pull request titles so Linear's GitHub integration can
 associate work automatically.
 
-When creating a new OpenSpec proposal, create a corresponding issue in Linear using the
-same issue title as the OpenSpec change, and cross-reference the issue in the OpenSpec change.
+OpenSpec changes are asynchronous planning/specification artefacts. Creating a
+new OpenSpec change does not interrupt, replace, or retarget the current Guide
+workflow issue or phase. When asked to create a new OpenSpec change, do not
+create a Linear issue, do not update `.guide.yaml`, and do not change the
+current Guide phase unless the user explicitly asks for those actions.
+
+Create the corresponding Linear issue only after the OpenSpec change is fully
+formed with all `4/4` artefacts complete. Do not create Linear tracking while a
+change is still being discussed or while the proposal/design/spec/tasks may
+still change scope or name. Before creating the Linear issue, use the completed
+OpenSpec artefacts as the source for the issue title and description.
+
+Only create or link Linear earlier when the user explicitly asks for early
+tracking, or when the current Guide-tracked issue already provides that
+tracking context.
 
 Prefer branch names like `feature/UT-123-short-description` and PR titles prefixed with `UT-123`.
 Pull request descriptions should follow the repository PR template structure:

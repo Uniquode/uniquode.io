@@ -16,7 +16,7 @@ current shell.
 
 ## What Changes
 
-- Define foundational error-handling requirements under `html-ui-foundation`.
+- Define foundational error-handling requirements under `web-foundation`.
 - Require explicit handling for common HTTP errors, including `404` and `500`,
   with generic fallback behaviour for other known HTTP status codes.
 - Define route-surface-aware error representation so page routes, partial routes,
@@ -28,7 +28,7 @@ current shell.
 ## Capabilities
 
 ### Modified Capabilities
-- `html-ui-foundation`: Extend the HTML-first UI foundation to include explicit
+- `web-foundation`: Extend the web foundation to include explicit
   error-handling rules for page, partial, and API surfaces, plus generic known-code
   fallback behaviour and handling expectations for non-standard termination-style
   status codes.
@@ -39,4 +39,4 @@ current shell.
   surface policies.
 - Affected tests: page, partial, and API error-path coverage, including content
   negotiation and unhandled-server-error behaviour.
-- Affected specs: `html-ui-foundation`.
+- Affected specs: `web-foundation`.

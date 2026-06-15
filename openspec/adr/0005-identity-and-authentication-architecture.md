@@ -133,7 +133,7 @@ The project gets one canonical user model even when multiple login methods are a
 
 Account linking remains explicit, which reduces the risk of treating provider identities as the application's primary source of truth.
 
-Session-first browser authentication fits the HTML-first UI architecture and
+Session-first browser authentication fits the web foundation architecture and
 keeps ordinary user login flows straightforward once an authentication ceremony
 has completed. Using database-backed FastAPI Users session tokens keeps browser
 authentication state revocable server-side rather than relying on a purely

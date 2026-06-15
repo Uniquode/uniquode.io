@@ -83,7 +83,8 @@ IDENTITY_TABLE_NAMES = frozenset(
 )
 TEST_ROUTE_PREFIXES = {
     "app": {"default": ""},
-    "wevra.web": {"partials": "", "api": ""},
+    "wevra.widgets": {"partials": "", "api": ""},
+    "wevra.web": {},
     "wevra.db": {},
     "wevra.auth": {"account": "/account", "api": ""},
 }
@@ -134,7 +135,13 @@ def write_wevra_tool_config(path: Path) -> Path:
 def write_app_config(
     path: Path,
     *,
-    modules: tuple[str, ...] = ("app", "wevra.web", "wevra.db", "wevra.auth"),
+    modules: tuple[str, ...] = (
+        "app",
+        "wevra.widgets",
+        "wevra.web",
+        "wevra.db",
+        "wevra.auth",
+    ),
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_export_root: str = "static",
@@ -1146,7 +1153,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
     app_config = AppConfig(
         config_path=(tmp_path / "app.toml").resolve(),
         project_root=tmp_path.resolve(),
-        modules=("app", "wevra.web", "wevra.db", "wevra.auth"),
+        modules=("app", "wevra.widgets", "wevra.web", "wevra.db", "wevra.auth"),
         routes=RouteOptions(prefixes={}),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         static=StaticOptions(
@@ -1155,7 +1162,13 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
         auth={},
     )
 
-    assert app_config.modules == ("app", "wevra.web", "wevra.db", "wevra.auth")
+    assert app_config.modules == (
+        "app",
+        "wevra.widgets",
+        "wevra.web",
+        "wevra.db",
+        "wevra.auth",
+    )
 
 
 def test_create_app_configures_database_and_identity_boundaries() -> None:
@@ -1279,7 +1292,7 @@ def test_home_page_renders_full_html_document() -> None:
 
 def test_api_route_stays_machine_oriented() -> None:
     with TestClient(create_app()) as client:
-        response = client.get("/api/web/theme")
+        response = client.get("/api/widgets/theme")
 
     assert response.status_code == 200
     assert response.json() == {"theme_mode": "auto"}
