@@ -31,7 +31,7 @@ repos:
 
       - id: pytest-app
         name: pytest app
-        entry: uv --directory app run pytest -q
+        entry: uv run pytest app/tests -q
         language: system
         pass_filenames: false
         types: [python]

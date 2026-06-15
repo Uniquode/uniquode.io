@@ -42,4 +42,4 @@ jobs:
         run: uv --directory app run ty check src/
 
       - name: Test
-        run: uv --directory app run pytest -q
+        run: uv run pytest app/tests -q
