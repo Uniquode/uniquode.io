@@ -1537,6 +1537,8 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wevra_db(
     (package_root / "__init__.py").write_text(
         "from wevra.db import DatabaseCapability\n\n"
         "class CompatibleDatabaseCapability:\n"
+        "    def connection(self, name='default'):\n"
+        "        raise NotImplementedError\n"
         "    def session(self, name='default'):\n"
         "        raise NotImplementedError\n"
         "    def transaction(self, name='default'):\n"
