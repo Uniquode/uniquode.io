@@ -2,6 +2,8 @@
 
 Use OpenSpec. Before implementing, identify or create the relevant change and align work with its artifacts.
 
+Avoid creating package directories that only contain `__init__.py` and no other source modules. If a package has no nested public submodules, prefer a flat module file (for example `auth/models.py`, `web/rendering.py`, `media/models.py`, etc.) and keep imports pointed at that module path.
+
 Use [openspec/adr](openspec/adr) as the source of truth for accepted
 architecture and platform decisions. Update ADRs for any change that affects
 the architecture or platform. ADR documents are authoritative decision records,
