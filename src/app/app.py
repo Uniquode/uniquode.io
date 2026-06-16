@@ -1,6 +1,6 @@
 from fastapi import FastAPI
-from wevra import start_site
-from wevra.config import SettingsConfigSource, load_configured_settings
+from wybra import start_site
+from wybra.config import SettingsConfigSource, load_configured_settings
 
 from app.settings import Settings
 
@@ -27,7 +27,7 @@ def create_app(
 async def setup_site(_site: object) -> None:
     """Optional app startup hook.
 
-    Wevra calls this when the app module is listed in ``[app].modules``.
+    Wybra calls this when the app module is listed in ``[app].modules``.
     Keep app-specific capabilities, services, or lifecycle setup here. This
     generated stub can be removed when the app has no startup work.
     """

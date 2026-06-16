@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Final
 
-from wevra.config import ConfigDef, ConfigField, ConfigGroup
+from wybra.config import ConfigDef, ConfigField, ConfigGroup
 
 DEFAULT_APP_NAME: Final = "uniquode"
 

@@ -34,7 +34,7 @@ The current design direction is meant to:
 
 - Pico CSS is the current baseline CSS framework.
 - Pico is delivered by CDN rather than a local asset pipeline.
-- Reusable project CSS currently comes from `wevra.web` package static assets.
+- Reusable project CSS currently comes from `wybra.web` package static assets.
 - Application-specific CSS should live under an application-owned package
   static path only when a concrete application styling requirement appears.
 - The project should continue to prefer semantic HTML over dense utility-class
@@ -44,8 +44,8 @@ The current design direction is meant to:
 
 - Application templates live under `app/src/app/templates/`.
 - Reusable web templates, static assets, layout, error, form, and theme
-  defaults live under `wevra.web`.
-- Identity templates and related defaults live under `wevra.auth`.
+  defaults live under `wybra.web`.
+- Identity templates and related defaults live under `wybra.auth`.
 - Shared reusable template components live in the package that owns them.
 - Feature-specific templates should live under conventional subpaths such as
   `app/src/app/templates/public/`.
