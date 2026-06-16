@@ -52,6 +52,6 @@
 
 ## 6. Verification
 
-- [ ] 6.1 Run Wevra checks covering tests, linting, typing, validation, and dead-code checks.
-- [ ] 6.2 Run root application checks against the local workspace Wevra checkout; final root PR readiness still requires Wevra merged to `main`.
-- [ ] 6.3 Manually verify login widget rendering with profile absent, profile present without image, and profile present with media image where practical.
+- [x] 6.1 Run Wevra checks covering tests, linting, typing, validation, and dead-code checks.
+- [x] 6.2 Run root application checks against the local workspace Wevra checkout; final root PR readiness still requires Wevra merged to `main`.
+- [x] 6.3 Manually verify login widget rendering with profile absent, profile present without image, and profile present with media image where practical. Skipped by decision; fix later if breakage is found.
