@@ -9,8 +9,8 @@ The project SHALL perform a final operational review before submission.
 #### Scenario: Reviewer workflow is checked
 - **WHEN** a submission-readiness pass begins
 - **THEN** the documented workspace setup, development server, validation,
-  migration, route inspection, auth management, application test, Wevra test,
-  and cross-repository Wevra/app coordination workflows are checked against the
+  migration, route inspection, auth management, application test, Wybra test,
+  and cross-repository Wybra/app coordination workflows are checked against the
   implemented project
 
 #### Scenario: Repository hygiene is checked
@@ -47,7 +47,7 @@ with implemented behaviour.
 - **THEN** the README describes current architecture, assumptions, trade-offs,
   workspace setup, runtime configuration, development server commands,
   validation, migration, auth management, route inspection, cross-repository
-  Wevra/app workflow, and test commands
+  Wybra/app workflow, and test commands
 
 #### Scenario: Specs are reviewed
 - **WHEN** an operational polish pass reviews OpenSpec artefacts

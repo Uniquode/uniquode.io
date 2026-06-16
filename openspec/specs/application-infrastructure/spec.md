@@ -6,7 +6,7 @@ TBD - created by archiving change init-project. Update Purpose after archive.
 ### Requirement: Project metadata and toolchain
 The system SHALL define Python project metadata for a Python 3.13+ application
 managed by `uv`, with the repository root acting as a local workspace
-coordinator, `app` acting as the buildable application project, and Wevra
+coordinator, `app` acting as the buildable application project, and Wybra
 owning reusable operator command scripts.
 
 #### Scenario: Workspace metadata exists
@@ -20,12 +20,12 @@ owning reusable operator command scripts.
 - **THEN** it defines the `app` project name, Python 3.13+ requirement,
   `uv_build` build backend, runtime dependencies, development dependency
   groups, and application package build metadata
-- **AND** it does not need to re-declare Wevra-owned operator scripts
+- **AND** it does not need to re-declare Wybra-owned operator scripts
 
-#### Scenario: Wevra command scripts are package-owned and prefixed
-- **WHEN** a developer inspects `wevra/pyproject.toml`
-- **THEN** the package exposes `wevra-runserver`, `wevra-migrate`,
-  `wevra-routes`, `wevra-validate`, and `wevra-identitymgr`
+#### Scenario: Wybra command scripts are package-owned and prefixed
+- **WHEN** a developer inspects `wybra/pyproject.toml`
+- **THEN** the package exposes `wybra-runserver`, `wybra-migrate`,
+  `wybra-routes`, `wybra-validate`, and `wybra-identitymgr`
 - **AND** it does not expose unprefixed operator command names that are likely
   to collide with host application or environment-specific commands
 
@@ -46,15 +46,15 @@ owning reusable operator command scripts.
 
 #### Scenario: Workspace framework dependency is declared
 - **WHEN** a developer inspects application dependency metadata
-- **THEN** `wevra` is listed as a project dependency
-- **AND** the local workspace root may resolve `wevra` from a temporary ignored
+- **THEN** `wybra` is listed as a project dependency
+- **AND** the local workspace root may resolve `wybra` from a temporary ignored
   checkout while the framework is not yet available as a regular dependency
 
 #### Scenario: Shared lock controls local dependency resolution
-- **WHEN** a developer runs `uv` in the local workspace while `wevra/` is a
+- **WHEN** a developer runs `uv` in the local workspace while `wybra/` is a
   workspace member
 - **THEN** `uv` discovers the parent workspace
-- **AND** the application and local Wevra dependency source resolve dependency
+- **AND** the application and local Wybra dependency source resolve dependency
   versions from the parent `uv.lock`
 - **AND** member-local lock files are not used for coordinated workspace
   development
@@ -77,7 +77,7 @@ The system SHALL define `.gitignore` entries appropriate for the Python project 
 ### Requirement: Source package layout
 The system SHALL use a workspace layout with `app/src/app` as the concrete
 application package, while consuming reusable framework infrastructure from an
-explicit `wevra` workspace dependency.
+explicit `wybra` workspace dependency.
 
 #### Scenario: Package imports from source layout
 - **WHEN** the project is installed or run through `uv`
@@ -87,18 +87,18 @@ explicit `wevra` workspace dependency.
 - **WHEN** a developer inspects the `app` source tree
 - **THEN** reusable web infrastructure, data infrastructure, tooling, auth,
   model, migration, template, and static-resource framework code is not
-  vendored under `app/src/app`, `app/src/web_ext`, or `app/src/wevra` in the
+  vendored under `app/src/app`, `app/src/web_ext`, or `app/src/wybra` in the
   application project
 
-#### Scenario: Wevra is a workspace member during local development
+#### Scenario: Wybra is a workspace member during local development
 - **WHEN** a developer runs the application in the local development workspace
-- **THEN** the `wevra` package is provided by an adjacent workspace member
+- **THEN** the `wybra` package is provided by an adjacent workspace member
   dependency rather than by application-local source
 
 #### Scenario: Application package excludes framework source
 - **WHEN** the `app` project build metadata is inspected
 - **THEN** it builds the `app` application package and does not include
-  the `wevra` framework package as an application build module
+  the `wybra` framework package as an application build module
 
 #### Scenario: Web resources are module-owned
 - **WHEN** a developer inspects the source tree or workspace dependencies
@@ -110,15 +110,15 @@ explicit `wevra` workspace dependency.
 - **THEN** the module may live alongside `app/src/app` in the application
   project and integrate through the configured module boundaries
 
-### Requirement: Wevra framework namespace
+### Requirement: Wybra framework namespace
 The system SHALL move reusable framework infrastructure into an explicit
-`wevra` package namespace while keeping `app` as the concrete host
+`wybra` package namespace while keeping `app` as the concrete host
 application package.
 
 #### Scenario: Reusable infrastructure uses the framework namespace
 - **WHEN** the reusable web, data, settings, tooling, and auth infrastructure is
   inspected after the namespace refactor
-- **THEN** those reusable packages are imported through `wevra.*` package paths
+- **THEN** those reusable packages are imported through `wybra.*` package paths
   rather than temporary top-level infrastructure package names or the
   `uniquode` application package
 
@@ -185,7 +185,7 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 
 #### Scenario: Migration metadata is discovered from configured modules
 - **WHEN** Alembic migration metadata is built
-- **THEN** `wevra.db` derives conventional `<module>.models` packages from
+- **THEN** `wybra.db` derives conventional `<module>.models` packages from
   configured modules and reads their exported `metadata` objects
 
 #### Scenario: Optional package models are explicit
@@ -211,13 +211,13 @@ The system SHALL establish SQLAlchemy async persistence conventions with Alembic
 - **WHEN** application startup, migration tooling, validation, or tests need
   database URL parsing, database URL resolution, async engine creation, session
   factory creation, or session scope helpers
-- **THEN** those helpers are provided by `wevra.db` rather than by the
+- **THEN** those helpers are provided by `wybra.db` rather than by the
   `uniquode` application package
 
 #### Scenario: Migration command settings are injected
 - **WHEN** generic migration command infrastructure needs application settings,
   default modules, or the default database URL
-- **THEN** a host adapter supplies those values instead of `wevra.db` importing
+- **THEN** a host adapter supplies those values instead of `wybra.db` importing
   the `uniquode` application package
 
 #### Scenario: Module surface conventions are centralised
@@ -242,9 +242,9 @@ product-specific UI before requirements need it.
   such as `src/<module>/static/`
 
 #### Scenario: Omitted web core static defaults are not served
-- **WHEN** `wevra.web` is not included in the configured module list and no
+- **WHEN** `wybra.web` is not included in the configured module list and no
   explicit filesystem static root is configured
-- **THEN** application static serving does not fall back to `wevra.web` package
+- **THEN** application static serving does not fall back to `wybra.web` package
   assets
 
 #### Scenario: Empty static mount preserves URL generation
@@ -274,38 +274,38 @@ formatting, linting, type checking, and tests.
 #### Scenario: Application validation runs against workspace framework
 - **WHEN** a developer runs the application validation suite from the `app`
   member directory
-- **THEN** it imports `wevra` from the adjacent workspace member dependency and
+- **THEN** it imports `wybra` from the adjacent workspace member dependency and
   verifies application integration with that framework dependency
 
 #### Scenario: Framework tests are not duplicated in application
 - **WHEN** framework-specific web, data, auth, tooling, or namespace tests are
   inspected
-- **THEN** they live in the `wevra` project rather than in the `app`
+- **THEN** they live in the `wybra` project rather than in the `app`
   application test suite
 
 #### Scenario: Application repository does not validate framework internals
 - **WHEN** repository CI or pre-commit validation runs for `uniquode`
 - **THEN** it validates application formatting, linting, type checking, and
   tests
-- **AND** it does not run Wevra-owned tests, linting, type checks, or
+- **AND** it does not run Wybra-owned tests, linting, type checks, or
   package-build checks
 
 #### Scenario: Pre-commit runs application validation
 - **WHEN** pre-commit hooks run in the `uniquode` repository
-- **THEN** they include the `wevra-validate` command as a configuration and
+- **THEN** they include the `wybra-validate` command as a configuration and
   composition backstop
 - **AND** that hook runs with `app` as the host project directory
 
 #### Scenario: Application tests retain integration coverage
 - **WHEN** the `app` test suite is inspected
 - **THEN** it retains focused tests for application settings, startup,
-  configured module loading, app routes, app templates, and Wevra command
+  configured module loading, app routes, app templates, and Wybra command
   adapters used by the host project
 
 #### Scenario: OpenSpec remains application-owned
-- **WHEN** the `wevra` project is extracted into its own repository
+- **WHEN** the `wybra` project is extracted into its own repository
 - **THEN** OpenSpec artifacts remain in the `uniquode` repository
-- **AND** the `wevra` repository does not initialise or copy a separate
+- **AND** the `wybra` repository does not initialise or copy a separate
   OpenSpec change stream
 
 #### Scenario: Formatting check runs
@@ -392,45 +392,45 @@ The system SHALL protect all server-rendered form submissions with a shared CSRF
 
 ### Requirement: Local runtime command
 The system SHALL provide a package-owned runtime command named
-`wevra-runserver` for local execution of the configured host ASGI application
+`wybra-runserver` for local execution of the configured host ASGI application
 through `uv`.
 
 #### Scenario: Prefixed package script is defined
-- **WHEN** a developer inspects `wevra/pyproject.toml`
-- **THEN** the project metadata defines a `wevra-runserver` command
+- **WHEN** a developer inspects `wybra/pyproject.toml`
+- **THEN** the project metadata defines a `wybra-runserver` command
 
 #### Scenario: Host application supplies the stable ASGI app target
 - **WHEN** a developer runs the documented local server command
-- **THEN** Wevra resolves the host project metadata
+- **THEN** Wybra resolves the host project metadata
 - **AND** it starts Uvicorn against the configured host ASGI application target
 
 #### Scenario: Runtime command implementation is tool-owned
-- **WHEN** a developer inspects the `wevra-runserver` package script entry point
-- **THEN** the command wrapper is provided by `wevra.tools`
+- **WHEN** a developer inspects the `wybra-runserver` package script entry point
+- **THEN** the command wrapper is provided by `wybra.tools`
   while still targeting the configured host application
 
 #### Scenario: Runtime command is invoked through uv
 - **WHEN** local development instructions reference the server startup command
-- **THEN** they use `uv run wevra-runserver`
+- **THEN** they use `uv run wybra-runserver`
 
 ### Requirement: Local runtime defaults
 The system SHALL define the baseline local runtime behaviour of the
-`wevra-runserver` command for host, port, and reload operation.
+`wybra-runserver` command for host, port, and reload operation.
 
 #### Scenario: Local runtime uses development-oriented defaults
-- **WHEN** a developer runs `uv run wevra-runserver` without additional
+- **WHEN** a developer runs `uv run wybra-runserver` without additional
   arguments
 - **THEN** the application starts with the documented local host, port, and
   reload defaults
 
 #### Scenario: Local runtime accepts explicit overrides
-- **WHEN** a developer runs `uv run wevra-runserver` with supported host, port,
+- **WHEN** a developer runs `uv run wybra-runserver` with supported host, port,
   or reload command-line options
 - **THEN** the application starts with the supplied values instead of the
   baseline defaults
 
 #### Scenario: Reload falls back to environment configuration
-- **WHEN** a developer runs `uv run wevra-runserver` without `--reload` and
+- **WHEN** a developer runs `uv run wybra-runserver` without `--reload` and
   `APP_RELOAD` is set to a truthy value
 - **THEN** the application starts with reload enabled
 
@@ -447,35 +447,35 @@ The system SHALL provide focused validation that the local runtime command wirin
 - **THEN** at least one focused test or smoke check verifies the configured local runtime command or its equivalent startup contract
 
 ### Requirement: Runtime command Uvicorn pass-through
-The system SHALL allow the `wevra-runserver` command to forward additional
+The system SHALL allow the `wybra-runserver` command to forward additional
 command-line arguments to Uvicorn after a `--` separator while preserving the
 configured host ASGI target and local runtime defaults.
 
 #### Scenario: Uvicorn arguments are forwarded
 - **WHEN** a developer runs
-  `uv run wevra-runserver -- --forwarded-allow-ips 127.0.0.1`
+  `uv run wybra-runserver -- --forwarded-allow-ips 127.0.0.1`
 - **THEN** the command invokes Uvicorn for the configured host ASGI application
   with `--forwarded-allow-ips 127.0.0.1`
 
 #### Scenario: Project runtime options still apply
 - **WHEN** a developer runs
-  `uv run wevra-runserver --host 0.0.0.0 --port 9000 -- --proxy-headers`
+  `uv run wybra-runserver --host 0.0.0.0 --port 9000 -- --proxy-headers`
 - **THEN** the command applies the project `--host` and `--port` options and
   passes `--proxy-headers` through to Uvicorn
 
 #### Scenario: Application target remains project-owned
-- **WHEN** a developer runs `uv run wevra-runserver -- other.asgi:app`
+- **WHEN** a developer runs `uv run wybra-runserver -- other.asgi:app`
 - **THEN** the command rejects the extra application target instead of passing
   two positional application targets to Uvicorn
 
 #### Scenario: Reload environment fallback remains available
-- **WHEN** a developer runs `uv run wevra-runserver -- <uvicorn args>` without
+- **WHEN** a developer runs `uv run wybra-runserver -- <uvicorn args>` without
   the project `--reload` option and `APP_RELOAD` is set to a truthy value
 - **THEN** the command starts Uvicorn with reload enabled and preserves the
   supplied Uvicorn arguments
 
 #### Scenario: Reload environment fallback can be disabled explicitly
-- **WHEN** a developer runs `uv run wevra-runserver --no-reload` and
+- **WHEN** a developer runs `uv run wybra-runserver --no-reload` and
   `APP_RELOAD` is set to a truthy value
 - **THEN** the command starts Uvicorn without reload enabled
 
@@ -488,42 +488,42 @@ by this change while preserving their documented command interfaces.
 - **THEN** `pyproject.toml` lists Click as a direct runtime dependency
 
 #### Scenario: Validation command keeps existing behaviour
-- **WHEN** a developer runs `wevra-validate` with existing targets, verbosity,
+- **WHEN** a developer runs `wybra-validate` with existing targets, verbosity,
   or override options
 - **THEN** the command accepts the same options and reports the same validation
   outcomes and exit status as before the command-prefix change
 
 #### Scenario: Validation command implementation is tool-owned
-- **WHEN** a developer inspects the `wevra-validate` package script entry point
-- **THEN** the command wrapper is provided by `wevra.tools` and discovers
+- **WHEN** a developer inspects the `wybra-validate` package script entry point
+- **THEN** the command wrapper is provided by `wybra.tools` and discovers
   validation targets from configured modules
 
 ### Requirement: Project command configuration boundary
-The system SHALL make package-owned Wevra project commands resolve the concrete
+The system SHALL make package-owned Wybra project commands resolve the concrete
 host application project and application config before constructing normal
 runtime settings.
 
 #### Scenario: Command invoked from app project
-- **WHEN** an operator runs a package-owned Wevra project command from the host
+- **WHEN** an operator runs a package-owned Wybra project command from the host
   application project directory
 - **THEN** the command resolves that project and its `app.toml` as the
   application config boundary
 
 #### Scenario: Command invoked from workspace root
-- **WHEN** an operator runs a package-owned Wevra project command from a
-  workspace root that unambiguously contains one configured Wevra host
+- **WHEN** an operator runs a package-owned Wybra project command from a
+  workspace root that unambiguously contains one configured Wybra host
   application project
 - **THEN** the command resolves that host application project and its `app.toml`
   as the application config boundary
 
 #### Scenario: Command cannot resolve app config
-- **WHEN** a package-owned Wevra project command cannot resolve an application
+- **WHEN** a package-owned Wybra project command cannot resolve an application
   config file through `APP_CONFIG` or project discovery
 - **THEN** the command fails with an actionable configuration error
 - **AND** it does not continue with baked-in default settings
 
 #### Scenario: Host app remains separate from reusable package
-- **WHEN** Wevra project commands resolve the host application config
+- **WHEN** Wybra project commands resolve the host application config
 - **THEN** they use reusable project metadata and config-loading contracts
   rather than importing `uniquode.io` application modules directly
 
@@ -535,9 +535,9 @@ runtime settings.
 
 #### Scenario: Route module aliases are normalised
 - **WHEN** `[app.routes]` contains a module key with hyphens such as
-  `wevra-auth`
+  `wybra-auth`
 - **THEN** the route prefix mapping is applied to the dotted Python module name
-  `wevra.auth`
+  `wybra.auth`
 - **AND** route labels inside that module mapping are not normalised
 
 #### Scenario: Route module alias collisions are rejected
@@ -545,60 +545,60 @@ runtime settings.
   Python module name
 - **THEN** application config loading fails with a configuration error
 
-### Requirement: Host application uses Wevra site startup
-The host application SHALL use the public Wevra site startup API for Wevra-owned composition while retaining ownership of host-specific application behaviour.
+### Requirement: Host application uses Wybra site startup
+The host application SHALL use the public Wybra site startup API for Wybra-owned composition while retaining ownership of host-specific application behaviour.
 
-#### Scenario: Host startup delegates Wevra concerns
+#### Scenario: Host startup delegates Wybra concerns
 - **WHEN** the host ASGI application is constructed
 - **THEN** the host app creates or receives its FastAPI app instance
-- **AND** delegates Wevra module, route, auth, database, and settings composition to Wevra startup
+- **AND** delegates Wybra module, route, auth, database, and settings composition to Wybra startup
 
-#### Scenario: Host app excludes Wevra internals
+#### Scenario: Host app excludes Wybra internals
 - **WHEN** the host app source is inspected
-- **THEN** it does not construct Wevra auth runtime state, database runtime state, module route defaults, or module settings internals directly
+- **THEN** it does not construct Wybra auth runtime state, database runtime state, module route defaults, or module settings internals directly
 
 #### Scenario: Host app keeps product routes
 - **WHEN** product-specific pages or routes are required
 - **THEN** their handlers, views, and route-surface declarations remain in the host app or host-owned modules
-- **AND** Wevra discovers and registers those route surfaces from the configured module list
+- **AND** Wybra discovers and registers those route surfaces from the configured module list
 - **AND** the host app does not call route discovery or registration boilerplate itself
-- **AND** route handlers use Wevra through public startup and type-keyed capability APIs only
+- **AND** route handlers use Wybra through public startup and type-keyed capability APIs only
 
-### Requirement: App tests respect Wevra ownership
-The host application test suite SHALL cover app-owned integration with the Wevra site startup API without duplicating Wevra module internals.
+### Requirement: App tests respect Wybra ownership
+The host application test suite SHALL cover app-owned integration with the Wybra site startup API without duplicating Wybra module internals.
 
 #### Scenario: App tests startup integration
 - **WHEN** the host app test suite validates startup
-- **THEN** it asserts that app-owned routes and configuration integrate with the public Wevra startup API
-- **AND** it does not test Wevra auth, database, settings, or route composition semantics as if they were app-owned
+- **THEN** it asserts that app-owned routes and configuration integrate with the public Wybra startup API
+- **AND** it does not test Wybra auth, database, settings, or route composition semantics as if they were app-owned
 
-#### Scenario: Wevra tests framework composition
+#### Scenario: Wybra tests framework composition
 - **WHEN** framework startup composition semantics are tested
-- **THEN** those tests live in the Wevra project or Wevra-owned test suite
+- **THEN** those tests live in the Wybra project or Wybra-owned test suite
 - **AND** the host app tests only rely on the documented public API
 
 ### Requirement: Host app contains only app-owned site code
-The host app SHALL contain only app-specific startup, route surfaces, views, context, and product settings. Generic Wevra configuration, environment loading, validation, module setup, database/auth/web setup, route discovery, route registration, static composition, and template composition SHALL be owned by Wevra or by the configured module that owns the concern.
+The host app SHALL contain only app-specific startup, route surfaces, views, context, and product settings. Generic Wybra configuration, environment loading, validation, module setup, database/auth/web setup, route discovery, route registration, static composition, and template composition SHALL be owned by Wybra or by the configured module that owns the concern.
 
-#### Scenario: Basic app has no Wevra environment adapter
-- **WHEN** a basic Wevra host app is inspected
-- **THEN** it does not require an app-owned `environment.py` or equivalent wrapper to load Wevra configuration
-- **AND** Wevra-owned tools load environment/configuration through Wevra-owned sources or explicit configured module definitions
+#### Scenario: Basic app has no Wybra environment adapter
+- **WHEN** a basic Wybra host app is inspected
+- **THEN** it does not require an app-owned `environment.py` or equivalent wrapper to load Wybra configuration
+- **AND** Wybra-owned tools load environment/configuration through Wybra-owned sources or explicit configured module definitions
 
-#### Scenario: Basic app has no Wevra config aggregation file
-- **WHEN** a basic Wevra host app is inspected
-- **THEN** it does not require an app-owned `config_definitions.py` file for Wevra-owned settings
-- **AND** reusable configuration definitions are declared by Wevra or the owning module
+#### Scenario: Basic app has no Wybra config aggregation file
+- **WHEN** a basic Wybra host app is inspected
+- **THEN** it does not require an app-owned `config_definitions.py` file for Wybra-owned settings
+- **AND** reusable configuration definitions are declared by Wybra or the owning module
 
 #### Scenario: App can omit database and auth modules
-- **WHEN** app configuration omits `wevra.db` or `wevra.auth`
+- **WHEN** app configuration omits `wybra.db` or `wybra.auth`
 - **THEN** startup does not register database or auth capabilities for the omitted modules
 - **AND** startup does not synthesise fallback database or auth configuration
 
 #### Scenario: App tests cover app ownership only
 - **WHEN** app tests inspect startup and settings behaviour
 - **THEN** they assert app-owned route, view, context, and product settings outcomes
-- **AND** they do not duplicate Wevra-owned config, environment, auth, database, static, or template internals
+- **AND** they do not duplicate Wybra-owned config, environment, auth, database, static, or template internals
 
 ### Requirement: Basic app exposes app-owned route, view, context, and validation examples
 A cleaned basic app SHALL keep app-owned route assembly, view handlers, request context helpers, and product validation in small explicit modules without framework boilerplate packages.
@@ -615,7 +615,7 @@ A cleaned basic app SHALL keep app-owned route assembly, view handlers, request 
 #### Scenario: App validation is product-specific
 - **WHEN** the app exposes validation targets
 - **THEN** they validate app-owned product concerns such as the home route, health route, home page template, and static assets
-- **AND** they do not validate Wevra-owned environment, database, auth, static, template, or route composition internals
+- **AND** they do not validate Wybra-owned environment, database, auth, static, template, or route composition internals
 
 #### Scenario: Health endpoint is included in the basic app
 - **WHEN** a basic app route surface is generated or inspected
@@ -632,35 +632,35 @@ A cleaned basic app SHALL keep app-owned route assembly, view handlers, request 
 - **AND** it returns a new template context containing app-owned additions
 - **AND** it does not mutate a raw context dictionary in place
 
-### Requirement: Wevra owns reusable web request and static setup
-Wevra SHALL own reusable template request context setup and runtime static file serving for composed sites.
+### Requirement: Wybra owns reusable web request and static setup
+Wybra SHALL own reusable template request context setup and runtime static file serving for composed sites.
 
 #### Scenario: Request context is provided by default
-- **WHEN** Wevra web setup handles a template-rendering request
+- **WHEN** Wybra web setup handles a template-rendering request
 - **THEN** the immutable per-request template context includes the current request by default
 - **AND** templates can inspect request URL, path, and connection attributes
 
 #### Scenario: Template context providers accumulate immutably
-- **WHEN** Wevra assembles template context providers for a request
+- **WHEN** Wybra assembles template context providers for a request
 - **THEN** it initialises an empty `TemplateContext`
 - **AND** each provider receives the request and current `TemplateContext`
 - **AND** each provider returns a new `TemplateContext`
 - **AND** the final render boundary converts the accumulated context to a plain mapping for templates
 
 #### Scenario: Request context can be disabled
-- **WHEN** the Wevra web request-context setting is explicitly disabled
-- **THEN** Wevra does not inject the current request into template context
+- **WHEN** the Wybra web request-context setting is explicitly disabled
+- **THEN** Wybra does not inject the current request into template context
 
-#### Scenario: Filesystem static handling is Wevra-owned
+#### Scenario: Filesystem static handling is Wybra-owned
 - **WHEN** a static root is configured
-- **THEN** Wevra constructs the runtime static file ASGI app
+- **THEN** Wybra constructs the runtime static file ASGI app
 - **AND** the host app does not construct or inject `StaticFiles`
 
 #### Scenario: No static root means no filesystem static serving
 - **WHEN** no static root is configured
-- **THEN** Wevra does not enable filesystem static serving for the host app
+- **THEN** Wybra does not enable filesystem static serving for the host app
 
-#### Scenario: ASGI loading is delegated to Wevra
+#### Scenario: ASGI loading is delegated to Wybra
 - **WHEN** a host app exposes its ASGI application
-- **THEN** the app entry point delegates common loading and configuration-error reporting to Wevra
-- **AND** the app entry point contains only app-factory import and the Wevra loader call
+- **THEN** the app entry point delegates common loading and configuration-error reporting to Wybra
+- **AND** the app entry point contains only app-factory import and the Wybra loader call

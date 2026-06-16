@@ -1,46 +1,46 @@
 # auth-ext-package Specification
 
 ## Purpose
-Define the reusable `wevra.auth` identity and authentication package boundary for
+Define the reusable `wybra.auth` identity and authentication package boundary for
 local identity, FastAPI Users integration, storage portability, and future
 advanced authentication extension points.
 
 ## Requirements
 
-### Requirement: Reusable FastAPI `wevra.auth` package
-The system SHALL expand `wevra.auth` into a reusable identity and authentication
+### Requirement: Reusable FastAPI `wybra.auth` package
+The system SHALL expand `wybra.auth` into a reusable identity and authentication
 package that is independent of the `uniquode` application and suitable for use
 by other FastAPI applications.
 
 #### Scenario: Package is incubated in repository
-- **WHEN** `wevra.auth` is developed before standalone publication
+- **WHEN** `wybra.auth` is developed before standalone publication
 - **THEN** it can remain inside the current source tree while preserving an API
   shape suitable for later extraction as `fastapi-users-auth-ext`
 
 #### Scenario: Package does not import host application code
-- **WHEN** a developer inspects the `wevra.auth` package
+- **WHEN** a developer inspects the `wybra.auth` package
 - **THEN** it does not import from `uniquode` or depend on application
   templates, settings, models, persistence modules, or route modules
 
 #### Scenario: Package owns identity and authentication contracts
 - **WHEN** identity models, service APIs, options/config objects, or persistence
   protocols are needed
-- **THEN** those contracts are defined by `wevra.auth` rather than by the host
+- **THEN** those contracts are defined by `wybra.auth` rather than by the host
   application
 
 #### Scenario: Public API avoids adapter leakage
-- **WHEN** host applications import from the top-level `wevra.auth` package
+- **WHEN** host applications import from the top-level `wybra.auth` package
 - **THEN** the exported API favours host-facing, storage-agnostic concepts and
   does not expose SQLAlchemy-specific implementation details unless a current
   integration requirement forces that exposure
 
 #### Scenario: Host application integrates package
 - **WHEN** `uniquode` needs identity capabilities
-- **THEN** it imports and configures `wevra.auth` as a host application
+- **THEN** it imports and configures `wybra.auth` as a host application
   rather than being imported by the package
 
 ### Requirement: FastAPI Users integration boundary
-The `wevra.auth` package SHALL integrate with FastAPI Users through public route,
+The `wybra.auth` package SHALL integrate with FastAPI Users through public route,
 dependency, user-manager, and authentication-backend integration points.
 
 #### Scenario: Package uses FastAPI Users baseline primitives
@@ -50,31 +50,31 @@ dependency, user-manager, and authentication-backend integration points.
 
 #### Scenario: Package owns host-facing API
 - **WHEN** FastAPI Users provides lower-level primitives
-- **THEN** `wevra.auth` exposes stable host-facing services, options,
+- **THEN** `wybra.auth` exposes stable host-facing services, options,
   and integration helpers rather than requiring hosts to depend on private
   FastAPI Users details
 
 #### Scenario: Flow results are presentation-neutral
-- **WHEN** `wevra.auth` exposes flow helpers for authentication or account
+- **WHEN** `wybra.auth` exposes flow helpers for authentication or account
   lifecycle behaviour
 - **THEN** those helpers return package-owned outcomes or values that do not
   depend on templates, redirects, htmx, or JSON response formats
 
 #### Scenario: Route replacement is explicit
-- **WHEN** an `wevra.auth` flow must replace a FastAPI Users route such as
+- **WHEN** an `wybra.auth` flow must replace a FastAPI Users route such as
   login
 - **THEN** the host application includes the package router intentionally
   instead of registering duplicate method/path combinations that depend on
   route-order behaviour
 
 ### Requirement: Storage-portable identity core
-The `wevra.auth` package SHALL define async storage protocols and optional adapters
+The `wybra.auth` package SHALL define async storage protocols and optional adapters
 rather than coupling its core to a specific host application database module.
 
 #### Scenario: Identity stores are protocol-based
 - **WHEN** the package needs to persist users, sessions, OAuth links, TOTP,
   WebAuthn, recovery-code, or challenge state
-- **THEN** the package core depends on `wevra.auth` async protocols rather
+- **THEN** the package core depends on `wybra.auth` async protocols rather
   than host application database models
 
 #### Scenario: Storage adapters are optional
@@ -89,12 +89,12 @@ rather than coupling its core to a specific host application database module.
 
 #### Scenario: SQLAlchemy is not the core abstraction
 - **WHEN** package core code needs storage access
-- **THEN** it depends on narrow `wevra.auth` contracts where practical, while
+- **THEN** it depends on narrow `wybra.auth` contracts where practical, while
   SQLAlchemy-specific models and helpers remain in the SQLAlchemy adapter
   boundary
 
 ### Requirement: Advanced authentication extension points
-The `wevra.auth` package SHALL define extension points for MFA and advanced
+The `wybra.auth` package SHALL define extension points for MFA and advanced
 authentication without requiring those features in the first structural slice.
 
 #### Scenario: Authentication ceremony can remain incomplete
@@ -120,7 +120,7 @@ authentication without requiring those features in the first structural slice.
   application models
 
 ### Requirement: UI-independent flows
-The `wevra.auth` package SHALL avoid imposing product UI assumptions.
+The `wybra.auth` package SHALL avoid imposing product UI assumptions.
 
 #### Scenario: Package routes are presentation-neutral
 - **WHEN** the package exposes routes or flow helpers

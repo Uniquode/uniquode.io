@@ -1,29 +1,29 @@
 # web-widgets Specification
 
 ## Purpose
-Define reusable, module-composed UI widget support for Wevra sites, including
+Define reusable, module-composed UI widget support for Wybra sites, including
 widget feature configuration, widget-aware layouts, overridable partials,
 dynamic widget routes, and widget context providers.
 ## Requirements
 ### Requirement: Widgets module participates in site composition
-The system SHALL provide `wevra.widgets` as an optional Wevra module that
+The system SHALL provide `wybra.widgets` as an optional Wybra module that
 participates in normal site composition for templates, static resources, routes,
 and context providers.
 
 #### Scenario: Widgets module is included in module order
-- **WHEN** site configuration includes `wevra.widgets` in the configured module list
-- **THEN** Wevra composes its published templates, static resources, routes, and context providers according to normal module order
+- **WHEN** site configuration includes `wybra.widgets` in the configured module list
+- **THEN** Wybra composes its published templates, static resources, routes, and context providers according to normal module order
 
 #### Scenario: Widgets use normal override semantics
-- **WHEN** `wevra.widgets` and another configured module publish the same logical template or static resource path
-- **THEN** the resource from the earliest configured module wins according to existing Wevra resource precedence
+- **WHEN** `wybra.widgets` and another configured module publish the same logical template or static resource path
+- **THEN** the resource from the earliest configured module wins according to existing Wybra resource precedence
 
 #### Scenario: Widgets can supersede web defaults
-- **WHEN** `wevra.widgets` is ordered before `wevra.web` resource defaults in the effective template resolution order
-- **THEN** widget-aware templates can replace low-level `wevra.web` defaults without a separate override mechanism
+- **WHEN** `wybra.widgets` is ordered before `wybra.web` resource defaults in the effective template resolution order
+- **THEN** widget-aware templates can replace low-level `wybra.web` defaults without a separate override mechanism
 
 ### Requirement: Widget features are configuration controlled
-The system SHALL allow individual `wevra.widgets` features to be enabled or
+The system SHALL allow individual `wybra.widgets` features to be enabled or
 disabled through widget module configuration.
 
 #### Scenario: Enabled feature contributes web resources
@@ -32,11 +32,11 @@ disabled through widget module configuration.
 
 #### Scenario: Disabled feature is not published
 - **WHEN** a widget feature is disabled in configuration
-- **THEN** Wevra does not publish that feature's routes or context providers
+- **THEN** Wybra does not publish that feature's routes or context providers
 - **AND** widget-aware templates do not render that feature's partial by default
 
 #### Scenario: Unknown feature configuration fails clearly
-- **WHEN** widget configuration references a feature that `wevra.widgets` does not provide
+- **WHEN** widget configuration references a feature that `wybra.widgets` does not provide
 - **THEN** startup or validation fails with an explicit configuration error identifying the unknown widget feature
 
 ### Requirement: Widget layouts are overridable partial compositions
@@ -48,7 +48,7 @@ templates and partials rather than hidden page mutation.
 - **THEN** the widget-aware layout renders that feature through an overridable partial template
 
 #### Scenario: Application overrides widget layout
-- **WHEN** an earlier configured application module provides the same logical layout template as `wevra.widgets`
+- **WHEN** an earlier configured application module provides the same logical layout template as `wybra.widgets`
 - **THEN** the application layout is used instead of the widget layout
 
 #### Scenario: Application overrides one widget partial
@@ -56,7 +56,7 @@ templates and partials rather than hidden page mutation.
 - **THEN** the application partial is used while other widget layout behaviour remains available
 
 ### Requirement: Widgets use capability-based dependencies
-Widget features SHALL consume data from other Wevra modules through public site
+Widget features SHALL consume data from other Wybra modules through public site
 capabilities, request context, or explicitly contributed context providers rather
 than importing provider internals.
 
@@ -75,15 +75,15 @@ than importing provider internals.
 
 ### Requirement: Theme mode selector is a widget feature
 The system SHALL provide the `auto`/`light`/`dark` theme mode selector as the
-first `wevra.widgets` feature.
+first `wybra.widgets` feature.
 
 #### Scenario: Theme selector renders when enabled
-- **WHEN** `wevra.widgets` is configured with the theme selector feature enabled
+- **WHEN** `wybra.widgets` is configured with the theme selector feature enabled
 - **THEN** widget-aware templates render the theme mode selector through an overridable widget partial
 
 #### Scenario: Theme selector updates mode dynamically
 - **WHEN** a user changes theme mode through the selector
-- **THEN** the request is handled by a `wevra.widgets` route or equivalent widget-owned handler
+- **THEN** the request is handled by a `wybra.widgets` route or equivalent widget-owned handler
 - **AND** the selected mode is reflected in subsequent rendered pages
 
 #### Scenario: Theme selector can be disabled
@@ -140,7 +140,7 @@ The system SHALL place enabled header widgets in a deterministic order so authen
 
 #### Scenario: Header widgets remain overridable
 - **WHEN** an earlier configured application module overrides the login widget partial or header action layout
-- **THEN** the application override is used according to normal Wevra template precedence
+- **THEN** the application override is used according to normal Wybra template precedence
 
 ### Requirement: Login widget is responsive
 The system SHALL provide responsive behaviour for the login/logout control so it remains usable on narrow screens, using responsive conventions supplied by the web foundation.
@@ -170,4 +170,3 @@ The system SHALL have the login widget consume profile-owned image descriptors w
 - **AND** the profile capability is not available
 - **THEN** the widget does not depend on auth-owned profile image helpers
 - **AND** it renders only behaviour that can be provided without profile data
-

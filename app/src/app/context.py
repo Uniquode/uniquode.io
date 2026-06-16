@@ -1,5 +1,5 @@
 from fastapi import Request
-from wevra.web.context import TemplateContext, add_to_context
+from wybra.web.context import TemplateContext, add_to_context
 
 
 def get_context(_request: Request, context: TemplateContext) -> TemplateContext:

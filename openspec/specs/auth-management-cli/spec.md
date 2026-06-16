@@ -3,32 +3,32 @@
 ## Purpose
 Define the package-owned administrative authentication management CLI for local
 users, groups, scopes, memberships, password operations, and effective-scope
-inspection. The current project command is `wevra-authmgr`, implemented through
-the `wevra.auth.cli.authmgr` package.
+inspection. The current project command is `wybra-authmgr`, implemented through
+the `wybra.auth.cli.authmgr` package.
 
 ## Requirements
 ### Requirement: Auth management command
-The system SHALL provide a `wevra.auth`-owned CLI script named `wevra-authmgr`
+The system SHALL provide a `wybra.auth`-owned CLI script named `wybra-authmgr`
 for administrative local identity management, including users, groups, scopes,
 memberships, and effective-scope inspection.
 
 #### Scenario: Project script exists
-- **WHEN** a developer inspects Wevra package scripts
-- **THEN** `wevra-authmgr` is defined as a runnable package command
-- **AND** `wevra-identitymgr`, `identitymgr`, and `usermgr` are not defined as
+- **WHEN** a developer inspects Wybra package scripts
+- **THEN** `wybra-authmgr` is defined as a runnable package command
+- **AND** `wybra-identitymgr`, `identitymgr`, and `usermgr` are not defined as
   runnable package commands
 
 #### Scenario: Command uses identity foundation
-- **WHEN** `wevra-authmgr` performs user, group, scope, membership, or
+- **WHEN** `wybra-authmgr` performs user, group, scope, membership, or
   effective-scope operations
 - **THEN** it uses the configured identity persistence and FastAPI
   Users/auth-extension identity services rather than duplicating password,
   user-lifecycle, or authorisation-scope logic
 
 #### Scenario: Command loads application auth configuration
-- **WHEN** an operator runs `wevra-authmgr` from a resolvable Wevra host
+- **WHEN** an operator runs `wybra-authmgr` from a resolvable Wybra host
   application project or with `APP_CONFIG` set
-- **THEN** `wevra-authmgr` reads identity configuration from the `[auth]` table
+- **THEN** `wybra-authmgr` reads identity configuration from the `[auth]` table
   in the resolved application config file
 - **AND** it uses the resolved application database URL for identity
   persistence
@@ -36,7 +36,7 @@ memberships, and effective-scope inspection.
   application config file directory
 
 #### Scenario: Command rejects missing application configuration
-- **WHEN** an operator runs `wevra-authmgr` and no application config file can be
+- **WHEN** an operator runs `wybra-authmgr` and no application config file can be
   resolved
 - **THEN** the command fails with an actionable configuration error that names
   the missing application config boundary
@@ -45,57 +45,57 @@ memberships, and effective-scope inspection.
 #### Scenario: Standalone auth config is not discovered
 - **WHEN** `auth.toml` or `AUTH_CONFIG` exists without a resolved application
   config file
-- **THEN** `wevra-authmgr` does not use that standalone auth config as the
+- **THEN** `wybra-authmgr` does not use that standalone auth config as the
   command configuration source
 
 #### Scenario: Command supports shared database override
 - **WHEN** `DATABASE_URL` is set
-- **THEN** `wevra-authmgr` uses `DATABASE_URL` instead of the value from
+- **THEN** `wybra-authmgr` uses `DATABASE_URL` instead of the value from
   `[app].database_url`
 
 #### Scenario: Auth-specific database environment override is ignored
 - **WHEN** `AUTH_DATABASE_URL` is set without `DATABASE_URL`
-- **THEN** `wevra-authmgr` does not use `AUTH_DATABASE_URL` as the application
+- **THEN** `wybra-authmgr` does not use `AUTH_DATABASE_URL` as the application
   database URL
 
 #### Scenario: Scriptable output is available
 - **WHEN** an operator requests JSON or CSV output
-- **THEN** `wevra-authmgr` emits the requested machine-readable format without
+- **THEN** `wybra-authmgr` emits the requested machine-readable format without
   password material
 
 #### Scenario: Root command is resource oriented
-- **WHEN** an operator runs `wevra-authmgr --help`
+- **WHEN** an operator runs `wybra-authmgr --help`
 - **THEN** the command lists resource command groups for users, groups, and
   scopes
 - **AND** top-level user action commands such as `create`, `update`, `delete`,
   `deactivate`, `list`, and `password` are not exposed at the root
 
 ### Requirement: User creation
-The `wevra-authmgr` command SHALL create local users through a controlled
+The `wybra-authmgr` command SHALL create local users through a controlled
 administrative path.
 
 #### Scenario: Create standard user
-- **WHEN** an operator runs `wevra-authmgr user create` with a valid email and password input
+- **WHEN** an operator runs `wybra-authmgr user create` with a valid email and password input
 - **THEN** the command creates a verified local non-admin, non-superuser account
 
 #### Scenario: Create admin
-- **WHEN** an operator runs `wevra-authmgr user create` with the admin option
+- **WHEN** an operator runs `wybra-authmgr user create` with the admin option
 - **THEN** the command creates a verified local user with admin status
 
 #### Scenario: Create superuser
-- **WHEN** an operator runs `wevra-authmgr user create` with the superuser option
+- **WHEN** an operator runs `wybra-authmgr user create` with the superuser option
 - **THEN** the command creates a verified local user with superuser status
 
 #### Scenario: Create unverified user
-- **WHEN** an operator runs `wevra-authmgr user create` with the unverified option
+- **WHEN** an operator runs `wybra-authmgr user create` with the unverified option
 - **THEN** the command creates a local user that must complete the email-token verification flow
 
 #### Scenario: Create user with profile metadata
-- **WHEN** an operator runs `wevra-authmgr user create` with display-name, preferred-name, or timezone options
+- **WHEN** an operator runs `wybra-authmgr user create` with display-name, preferred-name, or timezone options
 - **THEN** the command stores the supplied metadata on the user account
 
 #### Scenario: Create user with expiry
-- **WHEN** an operator runs `wevra-authmgr user create` with an expiry option
+- **WHEN** an operator runs `wybra-authmgr user create` with an expiry option
 - **THEN** the command stores the supplied expiry timestamp on the user account
 
 #### Scenario: Duplicate user is rejected
@@ -103,11 +103,11 @@ administrative path.
 - **THEN** the command fails without creating a duplicate account
 
 #### Scenario: Password can be read from stdin
-- **WHEN** an operator runs `wevra-authmgr user create` with `--password -`
+- **WHEN** an operator runs `wybra-authmgr user create` with `--password -`
 - **THEN** the command reads one password value from stdin and does not prompt for confirmation
 
 ### Requirement: Password policy
-Local-user password writes SHALL use an injectable `wevra.auth` password policy boundary.
+Local-user password writes SHALL use an injectable `wybra.auth` password policy boundary.
 
 #### Scenario: Password strength is available
 - **WHEN** a caller evaluates a password through the configured password policy
@@ -167,7 +167,7 @@ Local users SHALL store operational metadata needed for user management.
 - **THEN** the user stores no preferred-name value
 
 ### Requirement: User target resolution
-The `wevra-authmgr` command SHALL resolve user command targets predictably.
+The `wybra-authmgr` command SHALL resolve user command targets predictably.
 
 #### Scenario: Email target is supplied
 - **WHEN** an operator supplies a user target containing `@`
@@ -182,19 +182,19 @@ The `wevra-authmgr` command SHALL resolve user command targets predictably.
 - **THEN** the command fails with an invalid-target error instead of reporting the user as missing
 
 ### Requirement: User update
-The `wevra-authmgr` command SHALL update existing users through explicit field
+The `wybra-authmgr` command SHALL update existing users through explicit field
 options.
 
 #### Scenario: Update admin status
-- **WHEN** an operator runs `wevra-authmgr user update` with `--admin` or `--no-admin`
+- **WHEN** an operator runs `wybra-authmgr user update` with `--admin` or `--no-admin`
 - **THEN** the command updates the user's admin state
 
 #### Scenario: Update verification status
-- **WHEN** an operator runs `wevra-authmgr user update` with `--verify` or `--no-verify`
+- **WHEN** an operator runs `wybra-authmgr user update` with `--verify` or `--no-verify`
 - **THEN** the command updates the user's verification state
 
 #### Scenario: Update superuser status
-- **WHEN** an operator runs `wevra-authmgr user update` with `--superuser` or `--no-superuser`
+- **WHEN** an operator runs `wybra-authmgr user update` with `--superuser` or `--no-superuser`
 - **THEN** the command updates the user's superuser state
 
 #### Scenario: Sole superuser cannot be demoted
@@ -202,31 +202,31 @@ options.
 - **THEN** the command fails without changing that account
 
 #### Scenario: Update profile metadata
-- **WHEN** an operator runs `wevra-authmgr user update` with display-name, preferred-name, or timezone options
+- **WHEN** an operator runs `wybra-authmgr user update` with display-name, preferred-name, or timezone options
 - **THEN** the command updates the supplied metadata fields
 
 #### Scenario: Clear profile metadata
-- **WHEN** an operator runs `wevra-authmgr user update` with no-display-name, no-preferred-name, or no-timezone options
+- **WHEN** an operator runs `wybra-authmgr user update` with no-display-name, no-preferred-name, or no-timezone options
 - **THEN** the command clears the supplied nullable metadata fields
 
 #### Scenario: Update expiry
-- **WHEN** an operator runs `wevra-authmgr user update` with an expiry option
+- **WHEN** an operator runs `wybra-authmgr user update` with an expiry option
 - **THEN** the command updates the user's expiry timestamp
 
 #### Scenario: Clear expiry
-- **WHEN** an operator runs `wevra-authmgr user update` with a no-expiry option
+- **WHEN** an operator runs `wybra-authmgr user update` with a no-expiry option
 - **THEN** the command clears the user's expiry timestamp
 
 #### Scenario: Update password
-- **WHEN** an operator runs `wevra-authmgr user update` with password input
+- **WHEN** an operator runs `wybra-authmgr user update` with password input
 - **THEN** the command changes the user's password through the existing identity boundary
 
 ### Requirement: User deletion
-The `wevra-authmgr` command SHALL delete users only through an explicit
+The `wybra-authmgr` command SHALL delete users only through an explicit
 destructive operation.
 
 #### Scenario: Delete requires confirmation
-- **WHEN** an operator runs `wevra-authmgr user delete` without a force option
+- **WHEN** an operator runs `wybra-authmgr user delete` without a force option
 - **THEN** the command asks for confirmation before deleting the target user
 
 #### Scenario: Delete removes target user
@@ -242,11 +242,11 @@ destructive operation.
 - **THEN** the command reports that no matching user was found
 
 ### Requirement: User deactivation
-The `wevra-authmgr` command SHALL deactivate users without deleting the account
+The `wybra-authmgr` command SHALL deactivate users without deleting the account
 row.
 
 #### Scenario: Deactivate target user
-- **WHEN** an operator runs `wevra-authmgr user deactivate` for an existing user
+- **WHEN** an operator runs `wybra-authmgr user deactivate` for an existing user
 - **THEN** the command marks the user inactive without removing the user record
 
 #### Scenario: Deactivate rejects superuser
@@ -258,11 +258,11 @@ row.
 - **THEN** existing identity checks reject or neutralise the inactive account
 
 ### Requirement: User listing
-The `wevra-authmgr` command SHALL list users with filters and ordering suitable
+The `wybra-authmgr` command SHALL list users with filters and ordering suitable
 for operational inspection.
 
 #### Scenario: List all users
-- **WHEN** an operator runs `wevra-authmgr user list` with no filters
+- **WHEN** an operator runs `wybra-authmgr user list` with no filters
 - **THEN** the command prints local users in a readable tabular or line-oriented format
 
 #### Scenario: Filter by admin status
@@ -316,11 +316,11 @@ for operational inspection.
 - **THEN** fields with no value are omitted from each user object
 
 ### Requirement: Password change
-The `wevra-authmgr` command SHALL support changing a user's password through
+The `wybra-authmgr` command SHALL support changing a user's password through
 interactive confirmation.
 
 #### Scenario: Password change prompts for confirmation
-- **WHEN** an operator runs `wevra-authmgr user password`
+- **WHEN** an operator runs `wybra-authmgr user password`
 - **THEN** the command prompts for the new password and confirmation without echoing the entered value
 
 #### Scenario: Password mismatch is rejected
@@ -328,7 +328,7 @@ interactive confirmation.
 - **THEN** the command fails without changing the user's password
 
 #### Scenario: Password can be read from stdin
-- **WHEN** an operator runs `wevra-authmgr user password` with `--password -`
+- **WHEN** an operator runs `wybra-authmgr user password` with `--password -`
 - **THEN** the command reads one password value from stdin and does not prompt for confirmation
 
 #### Scenario: Password change updates authentication state
@@ -344,12 +344,12 @@ interactive confirmation.
 - **THEN** existing sessions for that user are preserved
 
 ### Requirement: API-backed mode deferred
-The system SHALL defer API-backed `wevra-authmgr` operation until administrative
+The system SHALL defer API-backed `wybra-authmgr` operation until administrative
 API tokens/scopes exist.
 
 #### Scenario: Initial implementation uses local service mode
-- **WHEN** the first `wevra-authmgr` implementation is delivered
-- **THEN** it operates through `wevra.auth` configured services and database
+- **WHEN** the first `wybra-authmgr` implementation is delivered
+- **THEN** it operates through `wybra.auth` configured services and database
   access rather than requiring an admin API token or host-specific settings
   object
 
@@ -358,26 +358,26 @@ API tokens/scopes exist.
 - **THEN** it requires an authenticated token with explicit administrative privileges or scopes
 
 ### Requirement: Auth management Click parser
-The system SHALL use Click for the `wevra-authmgr` command parser while exposing
+The system SHALL use Click for the `wybra-authmgr` command parser while exposing
 user-management operations through a resource-oriented `user` command group.
 
 #### Scenario: User subcommands are grouped under user
-- **WHEN** an operator runs `wevra-authmgr user --help`
+- **WHEN** an operator runs `wybra-authmgr user --help`
 - **THEN** the command lists `create`, `update`, `delete`, `deactivate`,
   `list`, and `password` user subcommands
 - **AND** those subcommands accept the same user operation arguments, options,
   output formats, and exit statuses as the pre-prefix user commands
 
 #### Scenario: Top-level user action commands are rejected
-- **WHEN** an operator runs `wevra-authmgr create`, `wevra-authmgr update`,
-  `wevra-authmgr delete`, `wevra-authmgr deactivate`, `wevra-authmgr list`, or
-  `wevra-authmgr password`
+- **WHEN** an operator runs `wybra-authmgr create`, `wybra-authmgr update`,
+  `wybra-authmgr delete`, `wybra-authmgr deactivate`, `wybra-authmgr list`, or
+  `wybra-authmgr password`
 - **THEN** the command fails with a normal Click unknown-command error instead
   of invoking a user operation
 
 #### Scenario: Help paths are accepted
-- **WHEN** an operator runs `wevra-authmgr help`,
-  `wevra-authmgr help user create`, or `wevra-authmgr user help create`
+- **WHEN** an operator runs `wybra-authmgr help`,
+  `wybra-authmgr help user create`, or `wybra-authmgr user help create`
 - **THEN** the command emits the same help output as the corresponding
   `--help` option without invoking the operation
 - **AND** command argument or option values equal to `help` remain ordinary
@@ -399,21 +399,21 @@ user-management operations through a resource-oriented `user` command group.
   command-prefix change
 
 ### Requirement: Auth management package entry point
-The system SHALL expose the `wevra-authmgr` CLI through the package-owned
-`wevra.auth.cli.authmgr:main` entry point while the implementation is split into
+The system SHALL expose the `wybra-authmgr` CLI through the package-owned
+`wybra.auth.cli.authmgr:main` entry point while the implementation is split into
 focused modules.
 
 #### Scenario: Project script uses authmgr package
 - **WHEN** a developer inspects project scripts after the refactor
-- **THEN** `wevra-authmgr` resolves to `wevra.auth.cli.authmgr:main`
+- **THEN** `wybra-authmgr` resolves to `wybra.auth.cli.authmgr:main`
 
 #### Scenario: Package exports main
-- **WHEN** code imports `wevra.auth.cli.authmgr`
+- **WHEN** code imports `wybra.auth.cli.authmgr`
 - **THEN** the package exposes a callable `main` entry point equivalent to the
   current CLI entry point
 
 #### Scenario: Package exports public surface
-- **WHEN** code imports `wevra.auth.cli.authmgr`
+- **WHEN** code imports `wybra.auth.cli.authmgr`
 - **THEN** the package exposes the supported public CLI surface for root command
   construction, argument typing, password-source typing, program naming, and
   `main`
@@ -421,7 +421,7 @@ focused modules.
   being re-exported from the package root
 
 ### Requirement: Auth management command registration
-The system SHALL compose the `wevra-authmgr` Click command tree through explicit
+The system SHALL compose the `wybra-authmgr` Click command tree through explicit
 registration functions rather than automatic plugin discovery.
 
 #### Scenario: Root command registers resource components
@@ -430,7 +430,7 @@ registration functions rather than automatic plugin discovery.
   with the root command tree
 
 #### Scenario: Registration preserves command behaviour
-- **WHEN** an operator runs existing `wevra-authmgr` user, group, or scope
+- **WHEN** an operator runs existing `wybra-authmgr` user, group, or scope
   commands
 - **THEN** command names, options, arguments, help output, output formats,
   validation behaviour, and exit statuses remain unchanged from the pre-refactor
@@ -452,7 +452,7 @@ The system SHALL split auth-management CLI responsibilities into focused
 modules without adding new runtime dependencies.
 
 #### Scenario: Resource commands are separated
-- **WHEN** a developer inspects the `wevra.auth.cli.authmgr` package
+- **WHEN** a developer inspects the `wybra.auth.cli.authmgr` package
 - **THEN** user, group, and scope command registration live in separate modules
   or subpackages from the root CLI construction
 
@@ -465,10 +465,10 @@ modules without adding new runtime dependencies.
 #### Scenario: Cross-command helpers are shared outside auth modules
 - **WHEN** a CLI helper handles project configuration, database URL resolution,
   database/session setup, schema preflight wiring, or common operator
-  diagnostics needed by another Wevra command
-- **THEN** that helper lives in a shared Wevra CLI/tooling module rather than
-  under `wevra.auth.cli.authmgr`
-- **AND** `wevra-authmgr` uses the shared helper instead of duplicating
+  diagnostics needed by another Wybra command
+- **THEN** that helper lives in a shared Wybra CLI/tooling module rather than
+  under `wybra.auth.cli.authmgr`
+- **AND** `wybra-authmgr` uses the shared helper instead of duplicating
   command-private logic
 
 #### Scenario: No new runtime dependencies
@@ -478,20 +478,20 @@ modules without adding new runtime dependencies.
 
 #### Scenario: Host application boundary is preserved
 - **WHEN** the package split is complete
-- **THEN** `wevra.auth.cli.authmgr` modules continue to avoid imports from
+- **THEN** `wybra.auth.cli.authmgr` modules continue to avoid imports from
   `uniquode` application code
 
 ### Requirement: Group management commands
-The `wevra-authmgr` command SHALL provide local group and scope management
+The `wybra-authmgr` command SHALL provide local group and scope management
 commands through the application auth configuration and database boundaries.
 
 #### Scenario: Group command tree exists
-- **WHEN** an operator runs `wevra-authmgr group --help`
+- **WHEN** an operator runs `wybra-authmgr group --help`
 - **THEN** the command lists group create, update, delete, list, show,
   membership, scope, and effective-scope operations
 
 #### Scenario: Scope command tree exists
-- **WHEN** an operator runs `wevra-authmgr scope --help`
+- **WHEN** an operator runs `wybra-authmgr scope --help`
 - **THEN** the command lists scope create, update, delete, and list operations
 
 #### Scenario: Group commands use application auth configuration
@@ -501,7 +501,7 @@ commands through the application auth configuration and database boundaries.
   and database resolution as existing user commands
 
 ### Requirement: Group target resolution
-The `wevra-authmgr` command SHALL resolve group command targets by stable group
+The `wybra-authmgr` command SHALL resolve group command targets by stable group
 ID or unique group abbreviation.
 
 #### Scenario: Group abbreviation target is supplied
@@ -518,84 +518,84 @@ ID or unique group abbreviation.
 - **THEN** the command fails with an invalid group target error
 
 ### Requirement: Group lifecycle operations
-The `wevra-authmgr` command SHALL allow operators to create, inspect, update,
+The `wybra-authmgr` command SHALL allow operators to create, inspect, update,
 list, and delete groups safely.
 
 #### Scenario: Create group
-- **WHEN** an operator runs `wevra-authmgr group create <abbrev>` with a
+- **WHEN** an operator runs `wybra-authmgr group create <abbrev>` with a
   description and one or more scopes
 - **THEN** the command creates a group with a stable ID, immutable abbreviation,
   description, and scope assignments
 
 #### Scenario: Update group description
-- **WHEN** an operator runs `wevra-authmgr group <id-or-abbrev> update` with a new
+- **WHEN** an operator runs `wybra-authmgr group <id-or-abbrev> update` with a new
   description
 - **THEN** the command updates the group description without changing the group
   abbreviation
 
 #### Scenario: List groups
-- **WHEN** an operator runs `wevra-authmgr group list`
+- **WHEN** an operator runs `wybra-authmgr group list`
 - **THEN** the command emits group records in human-readable output by default
   and supports JSON or CSV output when requested
 
 #### Scenario: Show group
-- **WHEN** an operator runs `wevra-authmgr group <id-or-abbrev> show`
+- **WHEN** an operator runs `wybra-authmgr group <id-or-abbrev> show`
 - **THEN** the command shows the group's ID, abbreviation, description, scopes,
   user memberships, child groups, and parent groups
 
 #### Scenario: Delete group with memberships is rejected
-- **WHEN** an operator runs `wevra-authmgr group <id-or-abbrev> delete` for a
+- **WHEN** an operator runs `wybra-authmgr group <id-or-abbrev> delete` for a
   group that has users, child groups, or parent groups
 - **THEN** the command fails without deleting the group
 
 ### Requirement: Scope lifecycle operations
-The `wevra-authmgr` command SHALL allow operators to create, update, and list
+The `wybra-authmgr` command SHALL allow operators to create, update, and list
 scope records with optional descriptive text.
 
 #### Scenario: Create scope
-- **WHEN** an operator runs `wevra-authmgr scope create <scope> --description <text>`
+- **WHEN** an operator runs `wybra-authmgr scope create <scope> --description <text>`
 - **THEN** the command creates the scope record with the supplied description
 
 #### Scenario: Update scope description
-- **WHEN** an operator runs `wevra-authmgr scope update <scope> --description <text>`
+- **WHEN** an operator runs `wybra-authmgr scope update <scope> --description <text>`
 - **THEN** the command updates the scope description without changing the scope
   string
 
 #### Scenario: Delete unused scope
-- **WHEN** an operator runs `wevra-authmgr scope delete <scope>` for a scope that is not
+- **WHEN** an operator runs `wybra-authmgr scope delete <scope>` for a scope that is not
   assigned to any group
 - **THEN** the command removes the scope record
 
 #### Scenario: Delete used scope is rejected
-- **WHEN** an operator runs `wevra-authmgr scope delete <scope>` for a scope assigned to
+- **WHEN** an operator runs `wybra-authmgr scope delete <scope>` for a scope assigned to
   one or more groups
 - **THEN** the command fails without removing the scope record
 
 #### Scenario: List scopes
-- **WHEN** an operator runs `wevra-authmgr scope list`
+- **WHEN** an operator runs `wybra-authmgr scope list`
 - **THEN** the command emits scope records in human-readable output by default
   and supports JSON or CSV output when requested
 
 ### Requirement: Group membership operations
-The `wevra-authmgr` command SHALL allow operators to assign and remove user and
+The `wybra-authmgr` command SHALL allow operators to assign and remove user and
 nested group membership while preventing duplicates and cycles.
 
 #### Scenario: Add user to group
-- **WHEN** an operator runs `wevra-authmgr group <id-or-abbrev> add-user <user-target>`
+- **WHEN** an operator runs `wybra-authmgr group <id-or-abbrev> add-user <user-target>`
 - **THEN** the command adds the target user to the group
 
 #### Scenario: Remove user from group
-- **WHEN** an operator runs `wevra-authmgr group <id-or-abbrev> remove-user <user-target>`
+- **WHEN** an operator runs `wybra-authmgr group <id-or-abbrev> remove-user <user-target>`
 - **THEN** the command removes the target user from the group
 
 #### Scenario: Add child group
-- **WHEN** an operator runs `wevra-authmgr group <parent-id-or-abbrev> add-group
+- **WHEN** an operator runs `wybra-authmgr group <parent-id-or-abbrev> add-group
   <child-id-or-abbrev>`
 - **THEN** the command adds the child group to the parent group when the
   relationship does not create a duplicate or cycle
 
 #### Scenario: Remove child group
-- **WHEN** an operator runs `wevra-authmgr group <parent-id-or-abbrev> remove-group
+- **WHEN** an operator runs `wybra-authmgr group <parent-id-or-abbrev> remove-group
   <child-id-or-abbrev>`
 - **THEN** the command removes the child group from the parent group
 
@@ -604,51 +604,51 @@ nested group membership while preventing duplicates and cycles.
 - **THEN** the command fails without changing group membership
 
 ### Requirement: User group membership options
-The `wevra-authmgr` command SHALL support group membership while creating or
+The `wybra-authmgr` command SHALL support group membership while creating or
 updating users.
 
 #### Scenario: Create user with groups
-- **WHEN** an operator runs `wevra-authmgr user create <email>
+- **WHEN** an operator runs `wybra-authmgr user create <email>
   --group <id-or-abbrev>` one or more times
 - **THEN** the command creates the user and assigns the user to the supplied
   groups
 
 #### Scenario: Add group to user
-- **WHEN** an operator runs `wevra-authmgr user update <user-target>
+- **WHEN** an operator runs `wybra-authmgr user update <user-target>
   --add-group <id-or-abbrev>`
 - **THEN** the command adds the user to that group without replacing other group
   memberships
 
 #### Scenario: Remove group from user
-- **WHEN** an operator runs `wevra-authmgr user update <user-target>
+- **WHEN** an operator runs `wybra-authmgr user update <user-target>
   --rm-group <id-or-abbrev>`
 - **THEN** the command removes the user from that group without changing other
   group memberships
 
 #### Scenario: Set user groups
-- **WHEN** an operator runs `wevra-authmgr user update <user-target>
+- **WHEN** an operator runs `wybra-authmgr user update <user-target>
   --set-group <id-or-abbrev>` one or more times
 - **THEN** the command replaces the user's direct group memberships with exactly
   the supplied groups
 
 #### Scenario: Group replacement is explicit
-- **WHEN** an operator runs `wevra-authmgr user update <user-target>
+- **WHEN** an operator runs `wybra-authmgr user update <user-target>
   --group <id-or-abbrev>`
 - **THEN** the command rejects the option because replacement uses `--set-group`
   and incremental updates use `--add-group` or `--rm-group`
 
 #### Scenario: Group replacement excludes incremental changes
-- **WHEN** an operator runs `wevra-authmgr user update <user-target>` with
+- **WHEN** an operator runs `wybra-authmgr user update <user-target>` with
   `--set-group` and either `--add-group` or `--rm-group`
 - **THEN** the command rejects the invocation instead of layering replacement
   and incremental edits
 
 ### Requirement: Effective scope inspection
-The `wevra-authmgr` command SHALL allow operators to inspect effective scopes
+The `wybra-authmgr` command SHALL allow operators to inspect effective scopes
 for a user target.
 
 #### Scenario: Show effective scopes
-- **WHEN** an operator runs `wevra-authmgr group effective-scopes <user-target>`
+- **WHEN** an operator runs `wybra-authmgr group effective-scopes <user-target>`
 - **THEN** the command prints the de-duplicated scopes resolved through direct
   and nested group membership
 

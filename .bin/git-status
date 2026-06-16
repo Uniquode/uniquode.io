@@ -1,8 +1,0 @@
-#!/bin/sh
-
-echo ===== Project root ===== $(git branch --show-current)
-git status
-
-echo
-echo ===== Wevra project ===== $(git -C wevra branch --show-current)
-git -C wevra status

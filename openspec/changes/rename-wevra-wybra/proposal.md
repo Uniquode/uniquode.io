@@ -1,3 +1,5 @@
+Linear: [UT-243](https://linear.app/uniquode/issue/UT-243/rename-wevra-to-wybra)
+
 ## Why
 
 The Wevra package, repository, CLI, configuration namespace, and documentation

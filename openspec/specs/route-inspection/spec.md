@@ -12,28 +12,28 @@ tree.
 #### Scenario: Host application routes are inspected
 
 - **WHEN** a developer runs the route-inspection utility from a configured
-  Wevra host project
+  Wybra host project
 - **THEN** the utility loads the configured host ASGI application target
 - **AND** the utility reports routes, mounts, and traversable sub-application
   routes from the installed application route graph
 
 #### Scenario: Prefixed package command is provided
 
-- **WHEN** Wevra package console scripts are installed
-- **THEN** the route-inspection utility is exposed as `wevra-routes`
+- **WHEN** Wybra package console scripts are installed
+- **THEN** the route-inspection utility is exposed as `wybra-routes`
 - **AND** host applications are not required to publish a bare `routes` console
   script to use route inspection
 
-#### Scenario: Wevra origin metadata is included when available
+#### Scenario: Wybra origin metadata is included when available
 
-- **WHEN** an installed route was included from a configured Wevra module router
+- **WHEN** an installed route was included from a configured Wybra module router
 - **THEN** the route-inspection output identifies the configured module name and
   router label when that origin metadata is available
 
-#### Scenario: Non-Wevra routes remain visible
+#### Scenario: Non-Wybra routes remain visible
 
 - **WHEN** the installed application includes routes or mounts that do not have
-  Wevra module-origin metadata
+  Wybra module-origin metadata
 - **THEN** the route-inspection output still lists those routes with best-effort
   route metadata
 
@@ -171,7 +171,7 @@ metadata is available.
 #### Scenario: Explicit template metadata is reported
 
 - **WHEN** an installed route exposes explicit template metadata through a
-  Wevra-supported metadata convention
+  Wybra-supported metadata convention
 - **THEN** route-inspection output reports the template name or logical template
   identifier
 

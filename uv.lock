@@ -10,7 +10,7 @@ resolution-markers = [
 members = [
     "app",
     "uniquode",
-    "wevra",
+    "wybra",
 ]
 
 [[package]]
@@ -73,7 +73,7 @@ source = { editable = "app" }
 dependencies = [
     { name = "fastapi" },
     { name = "starlette" },
-    { name = "wevra" },
+    { name = "wybra" },
 ]
 
 [package.dev-dependencies]
@@ -89,7 +89,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.136.3" },
     { name = "starlette", specifier = ">=1.2.1" },
-    { name = "wevra", editable = "wevra" },
+    { name = "wybra", editable = "wybra" },
 ]
 
 [package.metadata.requires-dev]
@@ -1441,7 +1441,7 @@ version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
     { name = "app" },
-    { name = "wevra" },
+    { name = "wybra" },
 ]
 
 [package.dev-dependencies]
@@ -1456,7 +1456,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "app", editable = "app" },
-    { name = "wevra", editable = "wevra" },
+    { name = "wybra", editable = "wybra" },
 ]
 
 [package.metadata.requires-dev]
@@ -1497,9 +1497,9 @@ wheels = [
 ]
 
 [[package]]
-name = "wevra"
+name = "wybra"
 version = "0.1.0"
-source = { editable = "wevra" }
+source = { editable = "wybra" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "alembic" },

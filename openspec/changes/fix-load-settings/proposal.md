@@ -1,6 +1,6 @@
 ## Why
 
-Wevra has a module settings pattern, but not every module consistently uses it.
+Wybra has a module settings pattern, but not every module consistently uses it.
 Some modules still expose ad hoc helpers such as `*_settings_from_config(...)`
 that manually read `ConfigService`, parse values, apply defaults, and normalise
 types.
@@ -23,8 +23,8 @@ transformers.
 ## What Changes
 
 - Make `BaseSettings.load_settings(...)` the required runtime settings entry
-  point for Wevra modules.
-- Audit Wevra modules for ad hoc settings helpers and replace them with
+  point for Wybra modules.
+- Audit Wybra modules for ad hoc settings helpers and replace them with
   `BaseSettings` subclasses where configuration is needed.
 - Remove or deprecate-in-place internal helpers such as
   `*_settings_from_config(...)` where they only duplicate `load_settings`.

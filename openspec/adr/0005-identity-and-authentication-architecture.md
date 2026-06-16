@@ -90,7 +90,7 @@ the identity data.
 
 Treat local identity administration tooling as part of the `auth_ext` boundary
 when it operates on the reusable `auth_ext` identity model. Package-owned tools
-such as `wevra-authmgr` must remain publishable with the reusable auth package,
+such as `wybra-authmgr` must remain publishable with the reusable auth package,
 but normal operation belongs inside a configured host application. The command
 resolves the host application config boundary, reads `[auth]` from that
 application config for auth policy, and uses the host application's configured
@@ -218,5 +218,5 @@ API token support allows machine access without forcing browser-facing workflows
   `auth_ext` when they operate on the reusable identity model.
 - 2026-06-08: Replaced standalone auth-tool configuration with host
   application config as the normal auth-management boundary. The package-owned
-  `wevra-authmgr` command reads `[auth]` policy from the resolved app config
+  `wybra-authmgr` command reads `[auth]` policy from the resolved app config
   and uses the host application's database URL.

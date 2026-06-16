@@ -88,7 +88,7 @@ The configuration loader SHALL discover module config definitions from configure
 - **THEN** the loader captures raw `[app].database_url` before post-load database URL normalisation occurs
 
 ### Requirement: Config definition registration
-The configuration service SHALL allow Wevra modules and host applications to register config definitions that define or extend one or more section headers.
+The configuration service SHALL allow Wybra modules and host applications to register config definitions that define or extend one or more section headers.
 
 #### Scenario: Definition defines a new section
 - **WHEN** an definition defines fields for a new section header
@@ -132,53 +132,53 @@ The system SHALL NOT introduce runtime subscriptions, listeners, or background c
 - **THEN** listener or subscription support is designed as a separate change
 
 ### Requirement: Startup accepts explicit config source
-Wevra site startup SHALL accept configuration sources supplied by the host application or CLI rather than discovering source configuration by reading the same config file first.
+Wybra site startup SHALL accept configuration sources supplied by the host application or CLI rather than discovering source configuration by reading the same config file first.
 
 #### Scenario: App passes file config source
 - **WHEN** a host app or CLI resolves an app config file path
-- **THEN** it can pass that path or an equivalent source object to Wevra startup
-- **AND** Wevra constructs the central configuration service from that explicit source
+- **THEN** it can pass that path or an equivalent source object to Wybra startup
+- **AND** Wybra constructs the central configuration service from that explicit source
 
 #### Scenario: CLI passes config overrides
 - **WHEN** CLI arguments represent configuration overrides rather than FastAPI constructor options
-- **THEN** those overrides can be passed into Wevra startup as explicit config inputs
-- **AND** Wevra applies them through the same central configuration precedence rules as other startup sources
+- **THEN** those overrides can be passed into Wybra startup as explicit config inputs
+- **AND** Wybra applies them through the same central configuration precedence rules as other startup sources
 
 #### Scenario: FastAPI constructor options stay outside config loading
 - **WHEN** CLI arguments are needed to construct the FastAPI app itself
-- **THEN** the host app applies those values before calling Wevra startup
-- **AND** Wevra startup does not retroactively own FastAPI constructor configuration
+- **THEN** the host app applies those values before calling Wybra startup
+- **AND** Wybra startup does not retroactively own FastAPI constructor configuration
 
 ### Requirement: Startup config drives module composition
-The central configuration loaded during Wevra startup SHALL drive configured modules, module config definitions, route configuration, database configuration, and module-owned settings construction.
+The central configuration loaded during Wybra startup SHALL drive configured modules, module config definitions, route configuration, database configuration, and module-owned settings construction.
 
 #### Scenario: Modules are resolved from startup config
-- **WHEN** Wevra startup loads the central configuration
+- **WHEN** Wybra startup loads the central configuration
 - **THEN** it resolves the configured module list from that configuration
 - **AND** discovers module config definitions before constructing module-owned typed settings
 
 #### Scenario: Config remains raw until owned by settings
 - **WHEN** a module consumes loaded config during startup
 - **THEN** the module's settings loader performs coercion, validation, defaults, and policy interpretation
-- **AND** host app code does not perform that interpretation for Wevra-owned sections
+- **AND** host app code does not perform that interpretation for Wybra-owned sections
 
 ### Requirement: Config definitions are owned by the relevant module or platform component
-Reusable config definitions SHALL be declared by the Wevra platform component or configured module that owns the setting. The host app SHALL NOT aggregate Wevra-owned database, auth, static, template, validation, or module settings into an app-level config definition file.
+Reusable config definitions SHALL be declared by the Wybra platform component or configured module that owns the setting. The host app SHALL NOT aggregate Wybra-owned database, auth, static, template, validation, or module settings into an app-level config definition file.
 
 #### Scenario: Module declares owned config definitions
 - **WHEN** a configured module owns runtime configuration
-- **THEN** the module exposes its own config definition through the Wevra config definition discovery boundary
+- **THEN** the module exposes its own config definition through the Wybra config definition discovery boundary
 - **AND** the host app does not duplicate that definition
 
 #### Scenario: Platform declares owned config definitions
-- **WHEN** Wevra platform startup owns a configuration value
-- **THEN** Wevra declares the config definition itself
-- **AND** the host app does not need to define that value for Wevra startup to understand it
+- **WHEN** Wybra platform startup owns a configuration value
+- **THEN** Wybra declares the config definition itself
+- **AND** the host app does not need to define that value for Wybra startup to understand it
 
 #### Scenario: App declares product-specific config only
 - **WHEN** the host app has product-specific configuration
 - **THEN** it may declare config definitions for those product settings in an app-owned config module such as `app.config`
-- **AND** those definitions do not include Wevra-owned module settings
+- **AND** those definitions do not include Wybra-owned module settings
 
 #### Scenario: Settings classes bind to their module config definitions
 - **WHEN** an app defines a typed settings object
@@ -189,12 +189,12 @@ Reusable config definitions SHALL be declared by the Wevra platform component or
 #### Scenario: Multi-section settings classes name their section
 - **WHEN** a typed settings class is backed by a `ConfigDef` with multiple sections
 - **THEN** the settings class declares the specific config section it consumes
-- **AND** Wevra rejects ambiguous settings loading when the section is omitted
+- **AND** Wybra rejects ambiguous settings loading when the section is omitted
 
-#### Scenario: Wevra-owned runtime config is not bundled with app config
-- **WHEN** Wevra needs runtime/platform values such as deployment environment
-- **THEN** those values are declared and loaded by Wevra-owned config
-- **AND** app-owned config definitions do not import or re-export Wevra runtime config bundles
+#### Scenario: Wybra-owned runtime config is not bundled with app config
+- **WHEN** Wybra needs runtime/platform values such as deployment environment
+- **THEN** those values are declared and loaded by Wybra-owned config
+- **AND** app-owned config definitions do not import or re-export Wybra runtime config bundles
 
 ### Requirement: Config source selection does not create implicit modules
 The configuration service SHALL treat configured modules as explicit input. It MUST NOT add database, auth, web, or other modules because related config fields or environment values are present.

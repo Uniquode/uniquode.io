@@ -3,12 +3,12 @@
 ## Purpose
 TBD - created by archiving change add-user-profile. Update Purpose after archive.
 ## Requirements
-### Requirement: Media storage is reusable Wevra infrastructure
+### Requirement: Media storage is reusable Wybra infrastructure
 The system SHALL provide a reusable media capability for catalogue-backed writable media storage that can be used by profile and other modules.
 
 #### Scenario: Media root is configured
 - **WHEN** media storage is configured
-- **THEN** Wevra resolves a writable media root from Wevra-owned media configuration
+- **THEN** Wybra resolves a writable media root from Wybra-owned media configuration
 - **AND** the media root is not profile-specific application configuration
 
 #### Scenario: Multiple modules can use media
@@ -92,15 +92,14 @@ The system SHALL validate that media storage is usable before workflows that req
 - **WHEN** a media write workflow finds the media root is missing or not writable
 - **THEN** the workflow fails with a clear media configuration error
 
-### Requirement: Media files can be served by Wevra when enabled
+### Requirement: Media files can be served by Wybra when enabled
 The system SHALL provide optional staticfiles-like serving for configured media files for local and simple deployments.
 
 #### Scenario: App-served media is enabled
 - **WHEN** media serving is enabled in configuration
-- **THEN** Wevra exposes configured media files from the media root at the configured media mount path
+- **THEN** Wybra exposes configured media files from the media root at the configured media mount path
 
 #### Scenario: App-served media is disabled
 - **WHEN** media serving is disabled in configuration
-- **THEN** Wevra does not mount the media file server
+- **THEN** Wybra does not mount the media file server
 - **AND** media storage remains usable for deployments that serve media externally
-

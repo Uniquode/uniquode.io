@@ -38,7 +38,7 @@ values must be persisted and later recovered as plaintext for an operation.
   also introduced for that value.
 
 ### Requirement: Crypto service provides versioned envelope encryption and decryption
-The system SHALL provide a shared `wevra.services.crypto` service for encrypting and
+The system SHALL provide a shared `wybra.services.crypto` service for encrypting and
 decrypting sensitive secret material used by identity integrations.
 
 #### Scenario: Encryption returns a versioned secret envelope
@@ -152,7 +152,7 @@ configuration.
 #### Scenario: Supported key inputs are accepted from environment
 - **WHEN** the environment provides supported key settings
 - **THEN** the service SHALL load key bytes through the existing env/config pathway
-  used by wevra.
+  used by wybra.
 
 #### Scenario: Weak or malformed key material is rejected
 - **WHEN** key material is present but not decodable or not valid for the configured

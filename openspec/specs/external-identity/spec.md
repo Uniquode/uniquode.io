@@ -18,7 +18,7 @@ browser, API, password, and external-provider authentication.
   becoming the canonical user record
 
 ### Requirement: External provider identity model
-The system SHALL maintain a normalised provider registry in `wevra` where each
+The system SHALL maintain a normalised provider registry in `wybra` where each
 provider identity record stores `provider_name` and `provider_subject` and links to
 one local user through a dedicated link record.
 

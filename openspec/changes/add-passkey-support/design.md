@@ -26,7 +26,7 @@ well-defined acceptance and rejection states.
 
 ### Library boundary
 
-`wevra.auth` should rely on a concrete passkey library in passkey implementation
+`wybra.auth` should rely on a concrete passkey library in passkey implementation
 rather than duplicating cryptography logic.
 
 ### Counter handling as policy

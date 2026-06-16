@@ -18,8 +18,8 @@ the addon to publish optional configured-module surfaces.
 
 #### Scenario: Addon may depend on core contracts
 - **WHEN** the addon publishes configured-module surfaces
-- **THEN** it may depend on `wevra.web` contracts for web surfaces and
-  `wevra.db` contracts for model metadata rather than importing the
+- **THEN** it may depend on `wybra.web` contracts for web surfaces and
+  `wybra.db` contracts for model metadata rather than importing the
   `uniquode` application package
 
 #### Scenario: Addon can publish model metadata
@@ -44,7 +44,7 @@ the addon to publish optional configured-module surfaces.
 
 #### Scenario: Python package name is importable
 - **WHEN** addon code is imported from Python
-- **THEN** the import package uses the valid Python package name `wevra.auth`
+- **THEN** the import package uses the valid Python package name `wybra.auth`
 
 ### Requirement: FastAPI Users extension boundary
 The addon SHALL extend FastAPI Users through public route, dependency,
@@ -67,7 +67,7 @@ integration points.
   by mutating the host application automatically
 
 #### Scenario: Addon can be omitted from composition
-- **WHEN** the host application omits `wevra.auth` from `modules`
+- **WHEN** the host application omits `wybra.auth` from `modules`
 - **THEN** the addon contributes no models, migration revisions, routes,
   templates, static assets, or context providers to that application instance
 
@@ -163,14 +163,14 @@ application.
   configuration and application-composition boundaries
 
 ### Requirement: Shared ownership of storage contracts
-The addon SHALL provide protocol types in `wevra` so applications consume the
+The addon SHALL provide protocol types in `wybra` so applications consume the
 link and assertion contracts without adding new schema ownership or provider
 persistence tables themselves.
 
 #### Scenario: Host application uses shared contracts
 - **WHEN** a host application needs provider-linking persistence and assertion
   flows
-- **THEN** the application uses the shared wevra contracts and does not define
+- **THEN** the application uses the shared wybra contracts and does not define
   its own provider identity table schema in this change
 
 ### Requirement: Provider-identity contracts

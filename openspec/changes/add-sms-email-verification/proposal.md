@@ -36,4 +36,4 @@ Users need recovery and step-up verification paths that do not depend on an alre
 - SMS delivery will require a provider-driver interface and at least one concrete driver implementation or test driver.
 - Configuration will need a provider section for driver class selection and driver-specific data.
 - SMS provider selection must account for Australian sender-name compliance, especially registered alphanumeric sender IDs / alpha tags.
-- Tests should cover Wevra-owned verification behaviour in Wevra, with host applications testing only their own configuration and composition wiring.
+- Tests should cover Wybra-owned verification behaviour in Wybra, with host applications testing only their own configuration and composition wiring.

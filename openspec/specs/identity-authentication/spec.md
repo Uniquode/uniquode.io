@@ -26,7 +26,7 @@ The system SHALL use FastAPI Users for the baseline local account lifecycle and 
 - **THEN** FastAPI Users is included as a runtime dependency for identity foundation work
 
 #### Scenario: Application owns policy around library flows
-- **WHEN** FastAPI Users or `wevra.auth` provides account lifecycle or
+- **WHEN** FastAPI Users or `wybra.auth` provides account lifecycle or
   authentication primitives
 - **THEN** application code still owns account creation policy, email delivery,
   redirects, layout, theme, product navigation, and project-specific error
@@ -36,13 +36,13 @@ The system SHALL use FastAPI Users for the baseline local account lifecycle and 
 - **WHEN** local account lifecycle or authentication primitives need browser
   pages such as login, signup, verification, password reset, account, logout,
   or password change
-- **THEN** `wevra.auth` owns the reusable route surfaces and default
+- **THEN** `wybra.auth` owns the reusable route surfaces and default
   `templates/identity` content for those pages
 
 #### Scenario: Auth extension owns identity data revisions
 - **WHEN** local identity tables need Alembic migration revisions
-- **THEN** `wevra.auth` owns those revision files alongside its identity models
-  and the host migration command includes them only when `wevra.auth` is
+- **THEN** `wybra.auth` owns those revision files alongside its identity models
+  and the host migration command includes them only when `wybra.auth` is
   configured
 
 ### Requirement: Baseline authentication ceremony
@@ -304,9 +304,9 @@ API, and token policy layers that need authorisation decisions.
 - **THEN** the policy can deny the action without consulting direct user flags
 
 ### Requirement: Application-scoped auth configuration
-The system SHALL configure reusable `wevra.auth` runtime and password policy
+The system SHALL configure reusable `wybra.auth` runtime and password policy
 settings through the host application configuration file for normal
-Wevra-hosted operation, while auth persistence uses the host application's
+Wybra-hosted operation, while auth persistence uses the host application's
 configured database URL.
 
 #### Scenario: Auth configuration lives in app config
@@ -328,7 +328,7 @@ configured database URL.
 - **THEN** reusable auth services use that database URL for identity persistence
 
 #### Scenario: Reusable auth remains app-contextual
-- **WHEN** reusable auth services are used by a Wevra-hosted application
+- **WHEN** reusable auth services are used by a Wybra-hosted application
 - **THEN** they are configured through the host application's resolved app
   configuration boundary rather than through a package-global standalone auth
   configuration boundary
@@ -354,14 +354,14 @@ ceremony method for local users after resolving identity from owned email claims
 
 ### Requirement: External identity feature gating
 The system SHALL hide optional provider-linking, TOTP, and passkey integration
-unless explicitly enabled in wevra authentication configuration.
+unless explicitly enabled in wybra authentication configuration.
 
 #### Scenario: Disabled provider linking is not exposed
-- **WHEN** provider-linking is disabled in wevra authentication configuration
+- **WHEN** provider-linking is disabled in wybra authentication configuration
 - **THEN** provider linking routes and login choices are not exposed
 
 #### Scenario: Disabled authentication methods are not exposed
-- **WHEN** TOTP or passkey is disabled in wevra authentication configuration
+- **WHEN** TOTP or passkey is disabled in wybra authentication configuration
 - **THEN** those methods are not offered in the ceremony or login choices
 
 #### Scenario: Inactive local user cannot complete provider assertion

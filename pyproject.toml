@@ -1,11 +1,11 @@
 [project]
 name = "uniquode"
 version = "0.1.0"
-description = "Local uv workspace for coordinated Uniquode and Wevra development"
+description = "Local uv workspace for coordinated Uniquode and Wybra development"
 requires-python = ">=3.13"
 dependencies = [
     "app",
-    "wevra",
+    "wybra",
 ]
 
 [dependency-groups]
@@ -22,15 +22,15 @@ package = false
 
 [tool.uv.sources]
 app = { workspace = true }
-wevra = { workspace = true }
+wybra = { workspace = true }
 
 [tool.uv.workspace]
 members = [
     "app",
-    "wevra",
+    "wybra",
 ]
 
-[tool.wevra]
+[tool.wybra]
 runserver_reload_env = "APP_RELOAD"
 runserver_app = "app.asgi:app"
 

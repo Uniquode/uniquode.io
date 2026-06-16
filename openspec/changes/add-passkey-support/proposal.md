@@ -8,7 +8,7 @@ independent implementation plan instead of being bundled with every other authen
 ## What Changes
 
 - Define WebAuthn/passkey registration, authentication, and credential revocation
-  requirements in `wevra.auth`.
+  requirements in `wybra.auth`.
 - Define relying-party configuration and challenge lifecycles as passkey-specific concerns.
 - Keep provider and TOTP slices independent from passkey requirement planning.
 

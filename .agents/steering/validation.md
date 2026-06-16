@@ -29,5 +29,5 @@ Use `gtimeout` for commands with meaningful hang risk, such as test suites, pre-
 ```text
 gtimeout 30s uv run pytest
 gtimeout 120s uv run pre-commit run --all-files
-gtimeout 30s uv run wevra-runserver
+gtimeout 30s uv run wybra-runserver
 ```

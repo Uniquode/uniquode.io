@@ -22,11 +22,11 @@ The roadmap should stay aligned with accepted and provisional ADRs, OpenSpec cha
 - ADR 0006 establishes the authorisation and access-control model.
 - ADR 0007 reserves the future internal OAuth provider direction.
 - ADR 0008 establishes media storage ownership and boundaries.
-- Wevra is now the common application engine boundary. Host applications
-  provide their FastAPI instance and product code; Wevra owns common startup,
+- Wybra is now the common application engine boundary. Host applications
+  provide their FastAPI instance and product code; Wybra owns common startup,
   configured module setup, route/template/static discovery, middleware,
   validation, settings composition, and reusable capabilities.
-- Site startup is based around a Wevra site object, configured modules, and
+- Site startup is based around a Wybra site object, configured modules, and
   capability registration.
 - Module ordering is a precedence mechanism for routes, templates, static
   assets, and overrides. Capability dependencies should not use ordering as a
@@ -38,25 +38,25 @@ The roadmap should stay aligned with accepted and provisional ADRs, OpenSpec cha
 - The current web foundation includes composed template/static lookup, route
   registration, staticfiles support, template context providers, CSRF support,
   security headers, error handling, and responsive/layout conventions.
-- `wevra.widgets` owns optional reusable UI affordances such as theme selection
+- `wybra.widgets` owns optional reusable UI affordances such as theme selection
   and login/logout controls. Widget templates can override lower-level web
   defaults through normal module ordering.
-- The current styling direction is Wevra-owned design tokens and plain CSS,
+- The current styling direction is Wybra-owned design tokens and plain CSS,
   with module/app override through template and static precedence.
 - The current persistence direction is SQLAlchemy 2 async with Alembic,
   PostgreSQL in production, and SQLite for local/lightweight development and
   tests.
 - The current identity direction is local-account-first, using FastAPI Users
   for baseline local account lifecycle and session-backed browser
-  authentication, with reusable advanced identity features inside Wevra auth.
+  authentication, with reusable advanced identity features inside Wybra auth.
 - The current access-control direction is group-, flag-, and scope-aware
   authorisation for pages, APIs, and administrative surfaces.
-- The current profile/media direction is `wevra.profile` for app-facing user
-  profile records and descriptors, backed by `wevra.media` for media storage,
+- The current profile/media direction is `wybra.profile` for app-facing user
+  profile records and descriptors, backed by `wybra.media` for media storage,
   catalogue records, path/URL resolution, and optional media serving.
-- The current generator direction is a `wevra-create` command family for
-  creating sites and later application modules from Wevra-owned templates.
-- The current static collection direction is a `wevra-collect` command that
+- The current generator direction is a `wybra-create` command family for
+  creating sites and later application modules from Wybra-owned templates.
+- The current static collection direction is a `wybra-collect` command that
   gathers configured module static assets for efficient external serving and
   optional processing.
 - The current internal OAuth2 provider direction is deferred until a concrete
@@ -75,12 +75,12 @@ partials.
 
 ## Near-Term Roadmap
 
-### 1. Wevra Site Engine
+### 1. Wybra Site Engine
 
 - Keep host app boilerplate minimal: the app should focus on product routes,
   views, templates, and app-specific settings.
 - Continue moving common FastAPI setup, module discovery, route/static/template
-  composition, middleware, and validation into Wevra.
+  composition, middleware, and validation into Wybra.
 - Keep the site startup API simple and explicit.
 - Keep `runserver` and ASGI loading aligned with project-root, config, database,
   and deployment-target command conventions.
@@ -89,7 +89,7 @@ partials.
 
 - Keep configuration module-owned through `ConfigDef`, `ConfigGroup`, and
   `ConfigField` style declarations.
-- Keep host applications out of Wevra-owned environment, persistence, auth,
+- Keep host applications out of Wybra-owned environment, persistence, auth,
   static, and media configuration mechanics.
 - Extend validation only for concrete app/module checks that catch broken
   routes, templates, static assets, media roots, persistence setup, and
@@ -98,19 +98,19 @@ partials.
 ### 3. Web Foundation and Widgets
 
 - Continue consolidating reusable layout, context, staticfiles, template, and
-  route behaviour into Wevra.
-- Keep reusable optional UI behaviour in `wevra.widgets`.
+  route behaviour into Wybra.
+- Keep reusable optional UI behaviour in `wybra.widgets`.
 - Preserve module/template override ordering so applications can replace
   defaults without special hooks.
 - Add additional widgets only when a concrete reusable UX need exists.
 
 ### 4. Media and Profile
 
-- Implement `wevra.media` as the reusable media storage boundary.
+- Implement `wybra.media` as the reusable media storage boundary.
 - Use `media.store(...)` as the common write contract for uploads, generated
   bytes, imports, and other stream-like sources.
 - Store media item IDs in consuming modules.
-- Implement `wevra.profile` for profile records, profile-picture media IDs, and
+- Implement `wybra.profile` for profile records, profile-picture media IDs, and
   profile image descriptors.
 - Keep widgets consuming profile descriptors rather than auth or media internals.
 - Build account/profile UI surfaces that compose profile details,
@@ -118,8 +118,8 @@ partials.
 
 ### 5. Site and Module Generation
 
-- Add the `wevra-create` command family.
-- Start with `wevra-create site` for a minimal generated site matching the
+- Add the `wybra-create` command family.
+- Start with `wybra-create site` for a minimal generated site matching the
   cleaned host-app shape.
 - Leave the generator extensible for later module templates, including simple
   CRUD/data-management/report modules.
@@ -128,7 +128,7 @@ partials.
 
 ### 6. Static Collection and Asset Delivery
 
-- Add `wevra-collect` to gather static assets from configured modules into a
+- Add `wybra-collect` to gather static assets from configured modules into a
   destination suitable for external serving.
 - Preserve file metadata where practical.
 - Keep room for configured processing steps such as Sass/SCSS compilation, CSS
@@ -137,7 +137,7 @@ partials.
 ### 7. Authorisation and Administration
 
 - Continue implementing groups, scopes, flags, and administrative management
-  through Wevra auth/authorisation capabilities.
+  through Wybra auth/authorisation capabilities.
 - Keep page, route, and API access policy explicit and reusable.
 - Add administration surfaces only behind the established access-control model.
 
@@ -217,7 +217,7 @@ partials.
   include OIDC discovery and ID tokens immediately.
 - Whether public pages need content-management features early or can begin as static templates backed by application services.
 - Whether media processing should remain an external processor pipeline or gain
-  first-class Wevra processing abstractions.
+  first-class Wybra processing abstractions.
 - What minimum email backend abstraction is needed before signup and
   verification flows become useful.
 - Whether background tasks should begin as an in-process scheduler/queue or

@@ -13,11 +13,11 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v6
 
-      - name: Check out temporary Wevra dependency source
+      - name: Check out temporary Wybra dependency source
         uses: actions/checkout@v6
         with:
-          repository: Uniquode/wevra
-          path: wevra
+          repository: Uniquode/wybra
+          path: wybra
 
       - name: Install uv
         uses: astral-sh/setup-uv@v8.2.0

@@ -23,7 +23,7 @@ headers from arbitrary clients lets them spoof the original scheme and client
 address.
 
 ```sh
-uv run wevra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
+uv run wybra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
 Non-local deployments must set `SESSION_FORCE_SECURE=1`. This is also the
@@ -70,7 +70,7 @@ server {
 Run the application so Uvicorn trusts the Nginx proxy source IP:
 
 ```sh
-uv run wevra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
+uv run wybra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
 If Nginx runs on a different host or container network address, replace
@@ -106,7 +106,7 @@ are enabled.
 Run the application so Uvicorn trusts the Apache proxy source IP:
 
 ```sh
-uv run wevra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
+uv run wybra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forwarded-allow-ips 127.0.0.1
 ```
 
 If Apache runs on a different host or container network address, replace

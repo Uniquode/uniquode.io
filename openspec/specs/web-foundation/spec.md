@@ -108,7 +108,7 @@ The system SHALL apply theme-aware styling through semantic design roles and
 tokens across the HTML foundation rather than through template-local light or
 dark colour assumptions. The HTML foundation SHALL own semantic theme behaviour
 and token expectations, while optional theme-selection UI belongs to composed UI
-support modules such as `wevra.widgets`.
+support modules such as `wybra.widgets`.
 
 #### Scenario: Base templates consume semantic styling roles
 - **WHEN** a developer inspects the base page templates and shared components
@@ -124,7 +124,7 @@ support modules such as `wevra.widgets`.
 
 #### Scenario: Theme selector UI is not owned by the web foundation
 - **WHEN** a developer inspects the low-level web foundation templates and routes
-- **THEN** the optional `auto`/`light`/`dark` selector UI is not implemented as a core `wevra.web` concern
+- **THEN** the optional `auto`/`light`/`dark` selector UI is not implemented as a core `wybra.web` concern
 - **AND** selector UI behaviour is provided by a composed UI support module when enabled
 
 ### Requirement: Web-structure validation is available
@@ -138,7 +138,7 @@ The system SHALL provide an initial validation surface for the web foundation th
 
 #### Scenario: Web validation is contributed by web core
 - **WHEN** web-structure validation is discovered
-- **THEN** reusable web checks are contributed by `wevra.web.validation` rather
+- **THEN** reusable web checks are contributed by `wybra.web.validation` rather
   than by the host application package
 
 #### Scenario: Broken references fail validation
@@ -150,7 +150,7 @@ The system SHALL provide an initial validation surface for the web foundation th
 ### Requirement: Error handling is explicit across route surfaces
 The system SHALL provide explicit error-handling behaviour for page, partial,
 and API route surfaces using FastAPI/Starlette exception-handler mechanisms and
-Wevra response helpers.
+Wybra response helpers.
 
 #### Scenario: FastAPI route exceptions are handled
 - **WHEN** a module route handler raises an exception
@@ -188,7 +188,7 @@ Wevra response helpers.
 #### Scenario: Exception handlers are extensible without host imports
 - **WHEN** a framework module or host application needs specialised exception
   mapping
-- **THEN** it can register exception handlers without `wevra.web` importing the
+- **THEN** it can register exception handlers without `wybra.web` importing the
   host application package
 
 ### Requirement: Known and non-standard HTTP status codes have defined fallback behaviour
@@ -244,7 +244,7 @@ configured application modules.
   prefixes
 
 #### Scenario: Router prefix is applied at inclusion
-- **WHEN** Wevra composes configured module routers
+- **WHEN** Wybra composes configured module routers
 - **THEN** it calls FastAPI router inclusion with the configured prefix for each
   router label
 
@@ -282,7 +282,7 @@ configured application modules.
 #### Scenario: Reverse URL names are FastAPI names
 - **WHEN** templates or handlers link to a module route
 - **THEN** they use the FastAPI/Starlette route name declared on the route
-  decorator rather than a Wevra-generated route name
+  decorator rather than a Wybra-generated route name
 
 ### Requirement: HTML form protection remains enforced
 The system SHALL preserve CSRF protection for unsafe HTML form submissions after

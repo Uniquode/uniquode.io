@@ -33,19 +33,19 @@ local SQLite development database schema through Alembic migrations.
 #### Scenario: Local SQLite migration state can be initialised
 - **WHEN** the project-root development database file does not yet contain
   Alembic migration state
-- **THEN** `uv run wevra-migrate init` can create the SQLite database file and
+- **THEN** `uv run wybra-migrate init` can create the SQLite database file and
   Alembic migration state without applying application schema revisions
 
 #### Scenario: Local SQLite schema can be upgraded after init
 - **WHEN** the project-root development database has Alembic migration state
   initialised at base
-- **THEN** `uv run wevra-migrate upgrade` can apply Alembic migrations to
+- **THEN** `uv run wybra-migrate upgrade` can apply Alembic migrations to
   create the required schema tables
 
 #### Scenario: Upgrade requires migration state
-- **WHEN** a developer runs `uv run wevra-migrate upgrade` against a database
+- **WHEN** a developer runs `uv run wybra-migrate upgrade` against a database
   without Alembic migration state
-- **THEN** the command fails with guidance to run `uv run wevra-migrate init`
+- **THEN** the command fails with guidance to run `uv run wybra-migrate init`
   for first-time schema initialisation
 
 #### Scenario: Migration command resolves effective configuration
@@ -57,8 +57,8 @@ local SQLite development database schema through Alembic migrations.
 - **THEN** that URL is used for the migration command instead of the configured default
 
 #### Scenario: Migration mechanism is explicit
-- **WHEN** database lifecycle commands are run through `wevra-migrate init` and
-  `wevra-migrate upgrade`
+- **WHEN** database lifecycle commands are run through `wybra-migrate init` and
+  `wybra-migrate upgrade`
 - **THEN** provisioning, migration-state initialisation, and schema upgrade
   behaviour are visible in command output or command failure guidance rather
   than being undocumented side effects
@@ -69,7 +69,7 @@ through explicit migration initialisation while keeping that work outside
 application startup and ordinary migration upgrade.
 
 #### Scenario: Init provisions PostgreSQL
-- **WHEN** `uv run wevra-migrate init` runs against PostgreSQL with an
+- **WHEN** `uv run wybra-migrate init` runs against PostgreSQL with an
   administrative database URL available
 - **THEN** it provisions the target database, user, role, and privileges before
   initialising Alembic migration state at base through the application
@@ -81,64 +81,64 @@ application startup and ordinary migration upgrade.
   as part of ordinary startup
 
 #### Scenario: Migration upgrade does not provision PostgreSQL
-- **WHEN** `uv run wevra-migrate upgrade` cannot connect to PostgreSQL because
+- **WHEN** `uv run wybra-migrate upgrade` cannot connect to PostgreSQL because
   the database, user, role, or privilege boundary is missing
 - **THEN** the command fails with a safe connection or provisioning diagnostic
   instead of attempting privileged provisioning through the application
   connection
 
 #### Scenario: Missing PostgreSQL admin connection is reported safely
-- **WHEN** `uv run wevra-migrate init` runs against PostgreSQL and cannot
+- **WHEN** `uv run wybra-migrate init` runs against PostgreSQL and cannot
   provision with an administrative database URL
 - **THEN** the command fails with a safe diagnostic that names the missing
   admin connection requirement without leaking credentials or raw driver traces
 
 ### Requirement: Migration command Click parser
-The system SHALL use Click for the `wevra-migrate` command parser while
+The system SHALL use Click for the `wybra-migrate` command parser while
 preserving database URL override behaviour and exposing explicit lifecycle
 commands for initialisation, upgrade, status inspection, history, downgrade,
 and revision generation.
 
 #### Scenario: Migration subcommands remain available
-- **WHEN** a developer runs `uv run wevra-migrate init`,
-  `uv run wevra-migrate upgrade`,
-  `uv run wevra-migrate downgrade`, `uv run wevra-migrate current`, or
-  `uv run wevra-migrate history`
+- **WHEN** a developer runs `uv run wybra-migrate init`,
+  `uv run wybra-migrate upgrade`,
+  `uv run wybra-migrate downgrade`, `uv run wybra-migrate current`, or
+  `uv run wybra-migrate history`
 - **THEN** the command invokes the matching lifecycle or Alembic operation with
   the documented revision argument requirements
 
 #### Scenario: Database URL override remains available
-- **WHEN** a developer runs `uv run wevra-migrate --database-url <url> upgrade`
+- **WHEN** a developer runs `uv run wybra-migrate --database-url <url> upgrade`
 - **THEN** the supplied database URL is used for that migration command instead
   of the configured default
 
 #### Scenario: Subcommand-level database URL override remains available
 - **WHEN** a developer runs
-  `uv run wevra-migrate upgrade --database-url <url>`
+  `uv run wybra-migrate upgrade --database-url <url>`
 - **THEN** the supplied database URL is used for that migration command instead
   of the configured default
 
 #### Scenario: Init accepts PostgreSQL admin URL override
 - **WHEN** a developer runs
-  `uv run wevra-migrate init --admin-database-url <url>`
+  `uv run wybra-migrate init --admin-database-url <url>`
 - **THEN** the supplied admin URL is used for PostgreSQL provisioning while the
   configured or overridden application database URL remains the migration
   target
 
 #### Scenario: Current reports uninitialised database
-- **WHEN** a developer runs `uv run wevra-migrate current` against a reachable
+- **WHEN** a developer runs `uv run wybra-migrate current` against a reachable
   database without Alembic migration state
 - **THEN** the command reports that the database is not initialised and exits
   successfully because status inspection completed
 
 #### Scenario: Current reports connection failure safely
-- **WHEN** a developer runs `uv run wevra-migrate current` against an
+- **WHEN** a developer runs `uv run wybra-migrate current` against an
   unavailable configured database
 - **THEN** the command fails with a safe diagnostic that does not leak database
   credentials or raw driver traces
 
 #### Scenario: Revision command remains configured consistently
-- **WHEN** a developer runs `uv run wevra-migrate revision`
+- **WHEN** a developer runs `uv run wybra-migrate revision`
 - **THEN** the command uses the same effective database URL, app configuration,
   model metadata, and composed module migration locations as the other
   migration commands
@@ -149,7 +149,7 @@ revision files in configured module-owned migration locations.
 
 #### Scenario: Revision command places file in owning module
 - **WHEN** a developer runs
-  `uv run wevra-migrate revision --module <module> -m <message>` for a
+  `uv run wybra-migrate revision --module <module> -m <message>` for a
   configured importable module
 - **THEN** the command invokes Alembic revision generation with `version_path`
   set to that module's conventional `<module>/migrations/versions/` location
@@ -183,15 +183,15 @@ revision files in configured module-owned migration locations.
   while still placing the generated file in the selected owning module
 
 #### Scenario: Roll-forward order is visible in help
-- **WHEN** a developer views `uv run wevra-migrate revision --help`
+- **WHEN** a developer views `uv run wybra-migrate revision --help`
 - **THEN** the command help explains the usual roll-forward order of upgrading
   to the previous head, updating models, generating the owning module revision,
   reviewing generated operations and graph pointers, running upgrade, and
   running validation
 
 #### Scenario: Existing migration commands remain unchanged
-- **WHEN** a developer runs `uv run wevra-migrate upgrade`,
-  `uv run wevra-migrate downgrade`, `uv run wevra-migrate current`, or
-  `uv run wevra-migrate history`
+- **WHEN** a developer runs `uv run wybra-migrate upgrade`,
+  `uv run wybra-migrate downgrade`, `uv run wybra-migrate current`, or
+  `uv run wybra-migrate history`
 - **THEN** those commands retain their existing arguments, database URL
   override behaviour, and Alembic operation mapping

@@ -19,35 +19,35 @@ The runtime convention should not depend on a front-end build pipeline. The curr
 Use Uvicorn as the ASGI server for local and direct ASGI runtime execution.
 
 The canonical ASGI target is configured by the host project's
-`[tool.wevra].runserver_app` option. For this application, the target is:
+`[tool.wybra].runserver_app` option. For this application, the target is:
 
 ```text
 app.asgi:app
 ```
 
-Wevra-owned operator commands should be exposed through prefixed package
+Wybra-owned operator commands should be exposed through prefixed package
 scripts to avoid collisions with host application or environment-specific
 commands. The ADR-owned command set is:
 
-- `wevra-runserver`
-- `wevra-migrate`
-- `wevra-routes`
-- `wevra-validate`
-- `wevra-authmgr`
+- `wybra-runserver`
+- `wybra-migrate`
+- `wybra-routes`
+- `wybra-validate`
+- `wybra-authmgr`
 
 Package metadata, application docs, and specs should conform to this decision
 without re-declaring those scripts from the host app package. The local
 development server command is:
 
 ```text
-wevra-runserver
+wybra-runserver
 ```
 
 The script should resolve the configured host ASGI target and start Uvicorn
 against it. It should be run through `uv`:
 
 ```text
-uv run wevra-runserver
+uv run wybra-runserver
 ```
 
 For direct invocation in the current application, the equivalent command is:
@@ -56,13 +56,13 @@ For direct invocation in the current application, the equivalent command is:
 uv run uvicorn app.asgi:app
 ```
 
-The `wevra-runserver` command uses the following baseline local defaults:
+The `wybra-runserver` command uses the following baseline local defaults:
 
 - host `127.0.0.1`;
 - port `8000`;
 - reload disabled by default.
 
-The `wevra-runserver` command should support explicit local overrides for host
+The `wybra-runserver` command should support explicit local overrides for host
 and port.
 
 The `--reload` flag should enable reload explicitly. When `--reload` is not supplied, the `APP_RELOAD` environment variable may enable reload when set to a truthy value.
@@ -83,7 +83,7 @@ Using `uv run` keeps runtime behaviour tied to project metadata and the managed 
 Keeping the ASGI target stable avoids coupling deployment configuration to internal application factory details.
 
 If later requirements introduce a front-end build step, that step can be added
-before or alongside `wevra-runserver` without changing the ASGI target.
+before or alongside `wybra-runserver` without changing the ASGI target.
 
 ## Follow-Up Work
 

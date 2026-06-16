@@ -1,4 +1,4 @@
-from wevra.core.asgi import load_asgi_app
+from wybra.core.asgi import load_asgi_app
 
 from app.app import create_app
 

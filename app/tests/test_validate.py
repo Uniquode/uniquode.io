@@ -3,31 +3,31 @@ from textwrap import dedent
 
 import click
 import pytest
-import wevra.tools.validate as validate_module
+import wybra.tools.validate as validate_module
 from click.testing import CliRunner
 from fastapi.routing import APIRoute, APIRouter
-from wevra.core.composition import (
+from wybra.core.composition import (
     AppConfig,
     RouteOptions,
     StaticOptions,
     TemplateOptions,
 )
-from wevra.tools.settings import ProjectSettings
-from wevra.tools.validate import main as validate_main
-from wevra.tools.validation.core import ValidationResult
-from wevra.tools.validation.registry import (
+from wybra.tools.settings import ProjectSettings
+from wybra.tools.validate import main as validate_main
+from wybra.tools.validation.core import ValidationResult
+from wybra.tools.validation.registry import (
     ValidationDiscoveryError,
     discover_validation_targets,
 )
-from wevra.web.validation import _contains_post_form, validate_web
+from wybra.web.validation import _contains_post_form, validate_web
 
 from app.settings import Settings
 from app.validation import validate_app
 
 TEST_ROUTE_PREFIXES = {
     "app": {"default": ""},
-    "wevra.web": {"partials": "", "api": ""},
-    "wevra.auth": {"account": "/account", "api": ""},
+    "wybra.web": {"partials": "", "api": ""},
+    "wybra.auth": {"account": "/account", "api": ""},
 }
 
 
@@ -129,7 +129,7 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     assert "ok: development database initialisation command is available:" in (
         captured.out
     )
-    assert "uv run wevra-migrate init" in captured.out
+    assert "uv run wybra-migrate init" in captured.out
 
 
 def test_validate_command_does_not_mask_unrelated_value_errors(monkeypatch) -> None:
@@ -158,7 +158,7 @@ def test_validation_targets_are_discovered_from_configured_modules(
         tmp_path,
         "first_validation_module",
         """
-        from wevra.tools.validation.core import ValidationResult
+        from wybra.tools.validation.core import ValidationResult
 
         def validate_first(settings):
             return ValidationResult(name="first", errors=())
@@ -170,7 +170,7 @@ def test_validation_targets_are_discovered_from_configured_modules(
         tmp_path,
         "second_validation_module",
         """
-        from wevra.tools.validation.core import ValidationResult
+        from wybra.tools.validation.core import ValidationResult
 
         def validate_second(settings):
             return ValidationResult(name="second", errors=())
@@ -197,7 +197,7 @@ def test_unlisted_module_validation_targets_are_not_discovered(
         tmp_path,
         "listed_validation_module",
         """
-        from wevra.tools.validation.core import ValidationResult
+        from wybra.tools.validation.core import ValidationResult
 
         def validate_listed(settings):
             return ValidationResult(name="listed", errors=())
@@ -209,7 +209,7 @@ def test_unlisted_module_validation_targets_are_not_discovered(
         tmp_path,
         "unlisted_validation_module",
         """
-        from wevra.tools.validation.core import ValidationResult
+        from wybra.tools.validation.core import ValidationResult
 
         def validate_unlisted(settings):
             return ValidationResult(name="unlisted", errors=())
@@ -251,7 +251,7 @@ def test_validate_command_runs_discovered_module_targets(
         tmp_path,
         "command_validation_module",
         """
-        from wevra.tools.validation.core import ValidationResult
+        from wybra.tools.validation.core import ValidationResult
 
         def validate_command_target(settings):
             return ValidationResult(name="command-target", errors=())
@@ -413,7 +413,7 @@ def test_validate_command_rejects_blank_static_url_path(capsys) -> None:
     assert "static_url_path must not be blank." in captured.err
 
 
-def test_validate_web_omitting_wevra_web_does_not_use_default_static_root(
+def test_validate_web_omitting_wybra_web_does_not_use_default_static_root(
     tmp_path: Path,
 ) -> None:
     result = validate_web(

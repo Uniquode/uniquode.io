@@ -46,7 +46,9 @@ Create the corresponding Linear issue only after the OpenSpec change is fully
 formed with all `4/4` artefacts complete. Do not create Linear tracking while a
 change is still being discussed or while the proposal/design/spec/tasks may
 still change scope or name. Before creating the Linear issue, use the completed
-OpenSpec artefacts as the source for the issue title and description.
+OpenSpec artefacts as the source for the issue title and description. Assign
+the issue to the current owner when known, and record it on the OpenSpec change
+proposal with a bare markdown Linear issue link.
 
 Only create or link Linear earlier when the user explicitly asks for early
 tracking, or when the current Guide-tracked issue already provides that
@@ -75,21 +77,21 @@ Treat GitHub metadata as the automation trigger and Linear issue links as visibl
 - Do not add GitHub pull requests or branches as Linear comments.
 - Do not rely on manually added Linear resource links to trigger Linear status automation.
 
-## Cross-Repository Wevra/App Changes
+## Cross-Repository Wybra/App Changes
 
-While `uniquode.io` consumes Wevra through the temporary workspace checkout, its
-CI checks out `Uniquode/wevra` `main` into `wevra/`. For changes that span both
-repositories, complete and merge the Wevra side before opening the
+While `uniquode.io` consumes Wybra through the temporary workspace checkout, its
+CI checks out `Uniquode/wybra` `main` into `wybra/`. For changes that span both
+repositories, complete and merge the Wybra side before opening the
 `uniquode.io` pull request:
 
-1. Commit, push, and open the Wevra branch/PR.
-2. Address Wevra review feedback, then commit and push follow-up changes.
-3. Merge the PR to `wevra:main`.
-4. Update the local `wevra/` checkout to `main`.
-5. Verify the `uniquode.io` changes against the updated Wevra checkout.
+1. Commit, push, and open the Wybra branch/PR.
+2. Address Wybra review feedback, then commit and push follow-up changes.
+3. Merge the PR to `wybra:main`.
+4. Update the local `wybra/` checkout to `main`.
+5. Verify the `uniquode.io` changes against the updated Wybra checkout.
 6. Commit, push, and open the `uniquode.io` branch/PR.
 
-Do not rely on a `uniquode.io` PR to pass CI against an unmerged Wevra feature
+Do not rely on a `uniquode.io` PR to pass CI against an unmerged Wybra feature
 branch unless the workflow is deliberately changed to pin that branch for the PR.
 
 # Stitch

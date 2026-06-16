@@ -150,15 +150,15 @@ verification surfaces. Reversible persisted TOTP seed material SHALL be encrypte
 
 #### Scenario: Persisted seed uses encrypted-at-rest storage
 - **WHEN** a TOTP credential is stored
-- **THEN** the persisted seed value is encrypted using configured Wevra secret storage
+- **THEN** the persisted seed value is encrypted using configured Wybra secret storage
   facilities.
 - **AND** the field or column storing that value starts with `crypt_`.
 
 #### Scenario: TOTP uses the shared versioned secret key ring
 - **WHEN** TOTP seed material is encrypted or decrypted
-- **THEN** the system uses the shared Wevra secret envelope/key-ring mechanism used by
+- **THEN** the system uses the shared Wybra secret envelope/key-ring mechanism used by
   other `crypt_` fields.
-- **AND** the key configuration uses universal Wevra secret names rather than
+- **AND** the key configuration uses universal Wybra secret names rather than
   provider-specific names.
 - **AND** current and legacy key versions are supported.
 

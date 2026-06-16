@@ -21,7 +21,7 @@ The system SHALL load application runtime configuration from environment variabl
 
 #### Scenario: Settings loading mechanics are reusable
 - **WHEN** an application uses the shared envex and app composition pattern
-- **THEN** reusable environment parsing, app configuration loading, central config construction, and settings-provider access are provided by `wevra.core` or `wevra.config`, while concrete typed settings fields and deployment policy remain owned by the module that uses them
+- **THEN** reusable environment parsing, app configuration loading, central config construction, and settings-provider access are provided by `wybra.core` or `wybra.config`, while concrete typed settings fields and deployment policy remain owned by the module that uses them
 
 #### Scenario: Module settings are not app settings
 - **WHEN** a reusable module defines typed settings for its own behaviour
@@ -100,7 +100,7 @@ The system SHALL require a resolved application config file for normal environme
 
 #### Scenario: Project app config is discovered
 
-- **WHEN** no `APP_CONFIG` is set and a Wevra host project with `app.toml` can be resolved
+- **WHEN** no `APP_CONFIG` is set and a Wybra host project with `app.toml` can be resolved
 - **THEN** normal project command and default app startup configuration loading uses that `app.toml` as the application config boundary
 - **AND** the effective project root is the runtime project root used to locate that default config file
 
@@ -150,7 +150,7 @@ The system SHALL resolve application database URL values in a deterministic orde
 
 - **WHEN** the effective application database URL contains a relative SQLite file path
 - **THEN** the path is resolved relative to the effective project root
-- **AND** it is not resolved relative to the Wevra package root or an accidental process current directory
+- **AND** it is not resolved relative to the Wybra package root or an accidental process current directory
 
 ### Requirement: Environment source adapter
 The system SHALL provide one environment-backed source adapter that can feed
@@ -203,32 +203,32 @@ by app startup or CLI entrypoints.
   from
 - **THEN** it can include file, line, or column metadata
 
-### Requirement: Environment loading is Wevra-owned for generated and basic sites
-A generated or basic Wevra site SHALL NOT require host-app environment loader code. Wevra SHALL provide the environment source loading, optional dotenv loading, and typed raw-value parsing needed by the configuration service and Wevra-owned commands.
+### Requirement: Environment loading is Wybra-owned for generated and basic sites
+A generated or basic Wybra site SHALL NOT require host-app environment loader code. Wybra SHALL provide the environment source loading, optional dotenv loading, and typed raw-value parsing needed by the configuration service and Wybra-owned commands.
 
 #### Scenario: Host app has no environment loader module
-- **WHEN** a basic Wevra site is generated or cleaned
-- **THEN** no app-owned `environment.py` module is required for startup or Wevra CLI commands
+- **WHEN** a basic Wybra site is generated or cleaned
+- **THEN** no app-owned `environment.py` module is required for startup or Wybra CLI commands
 
 #### Scenario: Dotenv support is centralised
 - **WHEN** local dotenv loading is required
-- **THEN** Wevra loads it through a Wevra-owned environment source
+- **THEN** Wybra loads it through a Wybra-owned environment source
 - **AND** host apps do not wrap dotenv loading themselves
 
 #### Scenario: Env parsing remains minimal
-- **WHEN** Wevra parses environment-backed values
+- **WHEN** Wybra parses environment-backed values
 - **THEN** it exposes only required behaviours such as lookup, presence checks, bool/int coercion, path handling, and secret-safe diagnostics
 - **AND** additional environment framework complexity is not exposed to host apps
 
 ### Requirement: Envex is not an app-facing requirement
-If `envex` remains in use, it SHALL be encapsulated inside Wevra-owned environment/configuration code and SHALL NOT be required as an app-facing integration layer.
+If `envex` remains in use, it SHALL be encapsulated inside Wybra-owned environment/configuration code and SHALL NOT be required as an app-facing integration layer.
 
 #### Scenario: Envex remains internally useful
-- **WHEN** Wevra uses `envex` for required dotenv or parsing behaviour
-- **THEN** app code imports Wevra environment/config APIs rather than `envex` or app-owned wrappers around `envex`
+- **WHEN** Wybra uses `envex` for required dotenv or parsing behaviour
+- **THEN** app code imports Wybra environment/config APIs rather than `envex` or app-owned wrappers around `envex`
 
 #### Scenario: Envex behaviour is unnecessary
-- **WHEN** Wevra only needs simple environment lookup and coercion that can be provided directly
+- **WHEN** Wybra only needs simple environment lookup and coercion that can be provided directly
 - **THEN** the implementation may simplify or remove `envex` usage rather than preserving it by default
 
 ### Requirement: Deployment environment startup override
@@ -246,17 +246,17 @@ The system SHALL allow runserver startup to override the effective application d
 - **WHEN** no startup deployment override is supplied
 - **THEN** the effective application deployment environment comes from configured application/environment sources
 
-### Requirement: Media configuration is Wevra-owned
-The system SHALL configure media storage through Wevra-owned media configuration rather than app-owned profile configuration.
+### Requirement: Media configuration is Wybra-owned
+The system SHALL configure media storage through Wybra-owned media configuration rather than app-owned profile configuration.
 
 #### Scenario: Media root is configured
 - **WHEN** media configuration provides a media root
-- **THEN** Wevra resolves that root relative to the loaded project configuration/root when it is relative
+- **THEN** Wybra resolves that root relative to the loaded project configuration/root when it is relative
 - **AND** media consumers use the resolved media capability rather than resolving paths themselves
 
 #### Scenario: Media serving is configured
 - **WHEN** media configuration enables app-served media
-- **THEN** Wevra uses the configured media mount path for the media file server
+- **THEN** Wybra uses the configured media mount path for the media file server
 
 #### Scenario: Media URL mode is configured
 - **WHEN** media configuration selects external storage-key URL mode
@@ -266,4 +266,3 @@ The system SHALL configure media storage through Wevra-owned media configuration
 #### Scenario: Media configuration is invalid
 - **WHEN** media configuration contains an invalid root, mount path, or serving option
 - **THEN** configuration or validation fails with a clear media configuration error
-

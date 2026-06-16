@@ -1,34 +1,34 @@
 ## ADDED Requirements
 
-### Requirement: Extensible wevra-create command
-Wevra SHALL provide a `wevra-create` command with subcommand-based dispatch so site generation and future artefact generators share one command surface.
+### Requirement: Extensible wybra-create command
+Wybra SHALL provide a `wybra-create` command with subcommand-based dispatch so site generation and future artefact generators share one command surface.
 
 #### Scenario: Site subcommand is available
-- **WHEN** a developer runs `wevra-create site --help`
+- **WHEN** a developer runs `wybra-create site --help`
 - **THEN** the command describes site generation options
-- **AND** it is exposed from the same `wevra-create` command surface used for future generators
+- **AND** it is exposed from the same `wybra-create` command surface used for future generators
 
 #### Scenario: Unknown subcommand fails clearly
 - **WHEN** a developer requests an unsupported generator subcommand
 - **THEN** the command fails with an actionable message listing or pointing to supported generator types
 
-### Requirement: Site generator creates a minimal Wevra host app
-The `wevra-create site` command SHALL generate the minimal host-app source needed to run a Wevra site while leaving Wevra-owned startup, config, environment, route discovery, route registration, static composition, and template composition inside Wevra.
+### Requirement: Site generator creates a minimal Wybra host app
+The `wybra-create site` command SHALL generate the minimal host-app source needed to run a Wybra site while leaving Wybra-owned startup, config, environment, route discovery, route registration, static composition, and template composition inside Wybra.
 
 #### Scenario: Generated site files exist
-- **WHEN** a developer runs `wevra-create site --name example --title "Example"`
+- **WHEN** a developer runs `wybra-create site --name example --title "Example"`
 - **THEN** the generated site includes app-owned files for application startup, context, settings, routes, and views
 - **AND** it includes generated configuration when requested by the command options
 
-#### Scenario: Generated site uses Wevra startup
+#### Scenario: Generated site uses Wybra startup
 - **WHEN** the generated app entry point is inspected
-- **THEN** it uses the public Wevra site startup API
-- **AND** it does not manually initialise Wevra database, auth, route discovery, static, template, or module runtime state
+- **THEN** it uses the public Wybra site startup API
+- **AND** it does not manually initialise Wybra database, auth, route discovery, static, template, or module runtime state
 
 #### Scenario: Generated site does not include app environment boilerplate
 - **WHEN** the generated file set is inspected
-- **THEN** it does not include an app-owned environment loader module for Wevra concerns
-- **AND** it does not include an app-owned config definition aggregation file for Wevra-owned settings
+- **THEN** it does not include an app-owned environment loader module for Wybra concerns
+- **AND** it does not include an app-owned config definition aggregation file for Wybra-owned settings
 
 ### Requirement: Site generation is explicit and safe
 The site generator SHALL make output location, module inclusion, config generation, and overwrite behaviour explicit.
@@ -45,4 +45,4 @@ The site generator SHALL make output location, module inclusion, config generati
 #### Scenario: Requested modules are reflected in config
 - **WHEN** a developer requests specific modules during site generation
 - **THEN** generated config includes those modules in the requested order
-- **AND** Wevra startup uses that configured module order at runtime
+- **AND** Wybra startup uses that configured module order at runtime

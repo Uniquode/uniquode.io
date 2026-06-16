@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from fastapi.routing import APIRoute
-from wevra.tools.validation.core import ValidationCheck, ValidationResult, record_check
+from wybra.tools.validation.core import ValidationCheck, ValidationResult, record_check
 
 HOME_TEMPLATE = "public/pages/home.html"
 HOME_STATIC_ASSETS = ("styles/home.css",)
