@@ -7,6 +7,8 @@ modules = [
   "wevra.web",
   "wevra.db",
   "wevra.auth",
+  "wevra.media",
+  "wevra.profile",
 ]
 
 [app.routes]
@@ -17,6 +19,12 @@ wevra-auth = { account = "/account", api = "" }
 [wevra.widgets]
 features = ["theme", "login"]
 
+[wevra.media]
+root = "media"
+mount_path = "/media"
+serve = true
+url_mode = "storage-key"
+
 [app.templates]
 auto_reload = true
 cache_size = 0
@@ -24,6 +32,7 @@ cache_size = 0
 [app.static]
 url_path = "/static/"
 export_root = "static"
+serve = true
 
 [auth]
 session_cookie_name = "uniquode_session"
