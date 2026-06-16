@@ -3,23 +3,23 @@ name = "uniquode"
 database_url = "sqlite+aiosqlite:///app.sqlite3"
 modules = [
   "app",
-  "wevra.widgets",
-  "wevra.web",
-  "wevra.db",
-  "wevra.auth",
-  "wevra.media",
-  "wevra.profile",
+  "wybra.widgets",
+  "wybra.web",
+  "wybra.db",
+  "wybra.auth",
+  "wybra.media",
+  "wybra.profile",
 ]
 
 [app.routes]
 app = { default = "" }
-wevra-widgets = { partials = "", api = "" }
-wevra-auth = { account = "/account", api = "" }
+wybra-widgets = { partials = "", api = "" }
+wybra-auth = { account = "/account", api = "" }
 
-[wevra.widgets]
+[wybra.widgets]
 features = ["theme", "login"]
 
-[wevra.media]
+[wybra.media]
 root = "media"
 mount_path = "/media"
 serve = true

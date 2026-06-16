@@ -12,42 +12,42 @@ from textwrap import dedent
 
 import click
 import pytest
-import wevra.db.migrate as data_migrate_module
-import wevra.tools.migrate as migrate_module
-import wevra.tools.runserver as runserver_module
+import wybra.db.migrate as data_migrate_module
+import wybra.tools.migrate as migrate_module
+import wybra.tools.runserver as runserver_module
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect as sqlalchemy_inspect
 from starlette.staticfiles import StaticFiles
-from wevra import get_site
-from wevra.auth import AuthCapability
-from wevra.auth.models import (
+from wybra import get_site
+from wybra.auth import AuthCapability
+from wybra.auth.models import (
     User,
 )
-from wevra.config import load_configured_settings
-from wevra.core.asgi import load_asgi_app
-from wevra.core.composition import (
+from wybra.config import load_configured_settings
+from wybra.core.asgi import load_asgi_app
+from wybra.core.composition import (
     AppConfig,
     RouteOptions,
     StaticOptions,
     TemplateOptions,
 )
-from wevra.core.exceptions import ConfigurationError
-from wevra.db import DatabaseCapability
-from wevra.db.config import ENV_DATABASE_URL
-from wevra.db.migration_metadata import (
+from wybra.core.exceptions import ConfigurationError
+from wybra.db import DatabaseCapability
+from wybra.db.config import ENV_DATABASE_URL
+from wybra.db.migration_metadata import (
     MigrationConfigError,
 )
-from wevra.db.persistence import (
+from wybra.db.persistence import (
     close_database,
     create_database_engine,
     sqlite_database_path,
 )
-from wevra.db.urls import SQLITE_MEMORY_DATABASE_URL
-from wevra.tools.project import (
+from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL
+from wybra.tools.project import (
     runtime_project_root,
 )
-from wevra.tools.runserver import (
+from wybra.tools.runserver import (
     APP_TARGET_OPTION,
     DEFAULT_HOST,
     DEFAULT_PORT,
@@ -55,12 +55,12 @@ from wevra.tools.runserver import (
     RELOAD_ENV_VAR_OPTION,
     env_requests_reload,
 )
-from wevra.tools.settings import ProjectSettings
-from wevra.web.forms.csrf import (
+from wybra.tools.settings import ProjectSettings
+from wybra.web.forms.csrf import (
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
 )
-from wevra.web.routes.contracts import _normalise_path_prefix
+from wybra.web.routes.contracts import _normalise_path_prefix
 
 from app.app import create_app
 from app.asgi import app
@@ -83,10 +83,10 @@ IDENTITY_TABLE_NAMES = frozenset(
 )
 TEST_ROUTE_PREFIXES = {
     "app": {"default": ""},
-    "wevra.widgets": {"partials": "", "api": ""},
-    "wevra.web": {},
-    "wevra.db": {},
-    "wevra.auth": {"account": "/account", "api": ""},
+    "wybra.widgets": {"partials": "", "api": ""},
+    "wybra.web": {},
+    "wybra.db": {},
+    "wybra.auth": {"account": "/account", "api": ""},
 }
 
 
@@ -120,10 +120,10 @@ def sqlite_file_url(path: Path) -> str:
     return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
 
 
-def write_wevra_tool_config(path: Path) -> Path:
+def write_wybra_tool_config(path: Path) -> Path:
     path.write_text(
         """
-        [tool.wevra]
+        [tool.wybra]
         runserver_reload_env = "APP_RELOAD"
         runserver_app = "app.asgi:app"
         """,
@@ -137,10 +137,10 @@ def write_app_config(
     *,
     modules: tuple[str, ...] = (
         "app",
-        "wevra.widgets",
-        "wevra.web",
-        "wevra.db",
-        "wevra.auth",
+        "wybra.widgets",
+        "wybra.web",
+        "wybra.db",
+        "wybra.auth",
     ),
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
@@ -271,7 +271,7 @@ def build_test_app_config(
                 "session_cookie_name": "test_session",
                 "session_cookie_force_secure": False,
             }
-            if "wevra.auth" in modules
+            if "wybra.auth" in modules
             else None
         ),
     )
@@ -317,7 +317,7 @@ def test_create_app_requires_config_source_with_explicit_settings() -> None:
         create_app(settings=Settings())
 
 
-def test_create_app_uses_wevra_lifespan_startup_for_configured_routes() -> None:
+def test_create_app_uses_wybra_lifespan_startup_for_configured_routes() -> None:
     with TestClient(create_app()) as client:
         login_response = client.get("/account/login")
         static_response = client.get("/static/styles/app.css")
@@ -332,37 +332,37 @@ def test_baseline_route_handlers_are_async() -> None:
     assert inspect.iscoroutinefunction(health)
 
 
-def test_app_project_does_not_redeclare_wevra_operator_scripts() -> None:
+def test_app_project_does_not_redeclare_wybra_operator_scripts() -> None:
     pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
 
     with pyproject.open("rb") as handle:
         data = tomllib.load(handle)
 
     scripts = data["project"].get("scripts", {})
-    wevra_operator_scripts = {
+    wybra_operator_scripts = {
         "identitymgr",
         "migrate",
         "routes",
         "runserver",
         "validate",
-        "wevra-authmgr",
-        "wevra-identitymgr",
-        "wevra-migrate",
-        "wevra-routes",
-        "wevra-runserver",
-        "wevra-validate",
+        "wybra-authmgr",
+        "wybra-identitymgr",
+        "wybra-migrate",
+        "wybra-routes",
+        "wybra-runserver",
+        "wybra-validate",
     }
 
-    assert scripts.keys().isdisjoint(wevra_operator_scripts)
+    assert scripts.keys().isdisjoint(wybra_operator_scripts)
 
 
-def test_app_runtime_does_not_import_wevra_owned_configuration_details() -> None:
+def test_app_runtime_does_not_import_wybra_owned_configuration_details() -> None:
     app_root = Path(__file__).resolve().parents[1] / "src/app"
     forbidden_imports = {
-        "wevra.auth.configuration",
-        "wevra.auth.settings",
-        "wevra.db.migrate",
-        "wevra.db.surfaces",
+        "wybra.auth.configuration",
+        "wybra.auth.settings",
+        "wybra.db.migrate",
+        "wybra.db.surfaces",
     }
     imported_modules = {
         module for path in app_root.rglob("*.py") for module in _imported_modules(path)
@@ -394,7 +394,7 @@ def test_migrate_upgrade_uses_settings_database_url(
     )
     with sqlite3.connect(tmp_path / "app.sqlite3") as connection:
         connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -428,7 +428,7 @@ def test_migrate_database_url_override_takes_precedence(
             current_revisions=("abc123",),
         ),
     )
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -459,13 +459,13 @@ def test_migrate_alembic_config_accepts_percent_encoded_database_url(
     config = migrate_module.build_alembic_config(
         ProjectSettings(
             project_root=tmp_path,
-            app_config=build_test_app_config(tmp_path, modules=("wevra.db",)),
+            app_config=build_test_app_config(tmp_path, modules=("wybra.db",)),
             database_url=database_url,
         )
     )
 
     assert config.get_main_option("sqlalchemy.url") == database_url
-    assert config.get_main_option("script_location") == "wevra.db:migrations"
+    assert config.get_main_option("script_location") == "wybra.db:migrations"
 
 
 def test_migrate_database_url_override_preempts_blank_environment_value(
@@ -486,7 +486,7 @@ def test_migrate_database_url_override_preempts_blank_environment_value(
             current_revisions=("abc123",),
         ),
     )
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
     monkeypatch.setenv(ENV_DATABASE_URL, "")
@@ -525,7 +525,7 @@ def test_migrate_database_url_override_can_follow_subcommand(
     )
     with sqlite3.connect(tmp_path / "subcommand.sqlite3") as connection:
         connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -596,7 +596,7 @@ def test_migrate_reports_operation_errors_cleanly(
             current_revisions=("abc123",),
         ),
     )
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -626,7 +626,7 @@ def test_migrate_reports_metadata_configuration_errors_cleanly(
             current_revisions=("abc123",),
         ),
     )
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -666,7 +666,7 @@ def test_migrate_dispatches_supported_commands(
         )
 
     monkeypatch.setattr(migrate_module.command, command_name, record_command)
-    write_wevra_tool_config(tmp_path / "pyproject.toml")
+    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -906,7 +906,7 @@ def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     static_root = tmp_path / "src/test-static"
     static_root.mkdir(parents=True)
     app_config = replace(
-        build_test_app_config(tmp_path, modules=("wevra.web",)),
+        build_test_app_config(tmp_path, modules=("wybra.web",)),
         static=StaticOptions(
             url_path="/assets/",
             root=Path("src/test-static"),
@@ -940,7 +940,7 @@ def test_create_app_serves_static_files_from_configured_modules() -> None:
     assert "--web-core-colour-page-bg" in response.text
 
 
-def test_create_app_omitting_wevra_web_mounts_empty_static_route(
+def test_create_app_omitting_wybra_web_mounts_empty_static_route(
     tmp_path: Path,
 ) -> None:
     app = create_app(
@@ -984,7 +984,7 @@ def test_create_app_applies_configured_route_prefixes(
     app = create_app(
         config_source=build_test_app_config(
             tmp_path,
-            modules=("prefixed_route_app", "wevra.web"),
+            modules=("prefixed_route_app", "wybra.web"),
             route_prefixes={"prefixed_route_app": {"default": "/tools"}},
         ),
     )
@@ -998,7 +998,7 @@ def test_create_app_registers_routes_only_from_configured_modules(
     tmp_path: Path,
 ) -> None:
     app = create_app(
-        config_source=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
+        config_source=build_test_app_config(tmp_path, modules=("app", "wybra.web")),
     )
 
     with TestClient(app) as client:
@@ -1020,7 +1020,7 @@ def test_create_app_honours_explicit_template_root_with_module_templates(
         config_source=replace(
             build_test_app_config(
                 tmp_path,
-                modules=("app", "wevra.web"),
+                modules=("app", "wybra.web"),
             ),
             templates=TemplateOptions(
                 auto_reload=True,
@@ -1067,7 +1067,7 @@ def test_load_settings_reads_mapping_values() -> None:
 def test_load_configured_settings_reads_explicit_config_source(tmp_path) -> None:
     config_path = write_app_config(
         tmp_path / "app.toml",
-        modules=("app", "wevra.db", "wevra.auth"),
+        modules=("app", "wybra.db", "wybra.auth"),
         static_url_path="/assets/",
         database_url="sqlite+aiosqlite:///identity.sqlite3",
         name="file-app",
@@ -1153,7 +1153,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
     app_config = AppConfig(
         config_path=(tmp_path / "app.toml").resolve(),
         project_root=tmp_path.resolve(),
-        modules=("app", "wevra.widgets", "wevra.web", "wevra.db", "wevra.auth"),
+        modules=("app", "wybra.widgets", "wybra.web", "wybra.db", "wybra.auth"),
         routes=RouteOptions(prefixes={}),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         static=StaticOptions(
@@ -1164,10 +1164,10 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
 
     assert app_config.modules == (
         "app",
-        "wevra.widgets",
-        "wevra.web",
-        "wevra.db",
-        "wevra.auth",
+        "wybra.widgets",
+        "wybra.web",
+        "wybra.db",
+        "wybra.auth",
     )
 
 
@@ -1191,7 +1191,7 @@ def test_create_app_without_explicit_settings_uses_configured_app_name(
     tmp_path,
 ) -> None:
     app_config = replace(
-        build_test_app_config(tmp_path, modules=("app", "wevra.web")),
+        build_test_app_config(tmp_path, modules=("app", "wybra.web")),
         raw_config={"app": {"name": "configured-app"}},
     )
     web_app = create_app(config_source=app_config)
@@ -1475,7 +1475,7 @@ def test_theme_mode_route_rejects_csrf_header_without_cookie() -> None:
     assert "theme_mode" not in response.cookies
 
 
-def test_earlier_application_module_can_override_wevra_auth_identity_template(
+def test_earlier_application_module_can_override_wybra_auth_identity_template(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1500,9 +1500,9 @@ def test_earlier_application_module_can_override_wevra_auth_identity_template(
                 tmp_path,
                 modules=(
                     "identity_override_app",
-                    "wevra.web",
-                    "wevra.db",
-                    "wevra.auth",
+                    "wybra.web",
+                    "wybra.db",
+                    "wybra.auth",
                 ),
             ),
             database_url=SQLITE_MEMORY_DATABASE_URL,
@@ -1531,7 +1531,7 @@ def test_create_app_without_database_or_auth_modules_registers_no_capabilities(
     tmp_path: Path,
 ) -> None:
     web_app = create_app(
-        config_source=build_test_app_config(tmp_path, modules=("app", "wevra.web")),
+        config_source=build_test_app_config(tmp_path, modules=("app", "wybra.web")),
     )
 
     with TestClient(web_app) as client:
@@ -1541,14 +1541,14 @@ def test_create_app_without_database_or_auth_modules_registers_no_capabilities(
         assert not site.has_capability(AuthCapability)
 
 
-def test_configured_compatible_database_provider_is_not_replaced_by_wevra_db(
+def test_configured_compatible_database_provider_is_not_replaced_by_wybra_db(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     package_root = tmp_path / "compatible_database_app"
     package_root.mkdir()
     (package_root / "__init__.py").write_text(
-        "from wevra.db import DatabaseCapability\n\n"
+        "from wybra.db import DatabaseCapability\n\n"
         "class CompatibleDatabaseCapability:\n"
         "    def connection(self, name='default'):\n"
         "        raise NotImplementedError\n"
@@ -1568,7 +1568,7 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wevra_db(
     web_app = create_app(
         config_source=build_test_app_config(
             tmp_path,
-            modules=("compatible_database_app", "app", "wevra.web"),
+            modules=("compatible_database_app", "app", "wybra.web"),
         ),
     )
 

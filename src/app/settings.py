@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import ClassVar
 
-from wevra.config import BaseSettings, ConfigDef
-from wevra.core.exceptions import ConfigurationError
+from wybra.config import BaseSettings, ConfigDef
+from wybra.core.exceptions import ConfigurationError
 
 from app.config import DEFAULT_APP_NAME, module_config
 
