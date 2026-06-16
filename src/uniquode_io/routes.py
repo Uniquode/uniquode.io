@@ -1,6 +1,6 @@
 from fastapi import APIRouter
 
-from app.views import home
+from uniquode_io.views import home
 
 router = APIRouter()
 router.get("/", include_in_schema=False, name="public:home")(home)

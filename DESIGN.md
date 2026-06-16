@@ -42,13 +42,13 @@ The current design direction is meant to:
 
 ### Asset and template structure
 
-- Application templates live under `app/src/app/templates/`.
+- Application templates live under `app/src/uniquode_io/templates/`.
 - Reusable web templates, static assets, layout, error, form, and theme
   defaults live under `wybra.web`.
 - Identity templates and related defaults live under `wybra.auth`.
 - Shared reusable template components live in the package that owns them.
 - Feature-specific templates should live under conventional subpaths such as
-  `app/src/app/templates/public/`.
+  `app/src/uniquode_io/templates/public/`.
 
 ## Visual Direction
 

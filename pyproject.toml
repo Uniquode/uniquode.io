@@ -1,5 +1,5 @@
 [project]
-name = "app"
+name = "uniquode-io"
 version = "0.1.0"
 description = "FastAPI based website for uniquode.io"
 authors = [
@@ -17,7 +17,11 @@ requires = ["uv_build>=0.11.19,<0.12.0"]
 build-backend = "uv_build"
 
 [tool.uv.build-backend]
-module-name = ["app"]
+module-name = ["uniquode_io"]
+
+[tool.wybra]
+runserver_app = "uniquode_io.asgi:app"
+runserver_reload_env = "APP_RELOAD"
 
 [dependency-groups]
 dev = [

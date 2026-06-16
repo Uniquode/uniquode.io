@@ -6,7 +6,7 @@ from typing import ClassVar
 from wybra.config import BaseSettings, ConfigDef
 from wybra.core.exceptions import ConfigurationError
 
-from app.config import DEFAULT_APP_NAME, module_config
+from uniquode_io.config import DEFAULT_APP_NAME, module_config
 
 __all__ = ("ConfigurationError", "Settings")
 

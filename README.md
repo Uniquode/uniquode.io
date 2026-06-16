@@ -7,13 +7,13 @@ identity support.
 
 ## Current Foundations
 
-- FastAPI/Starlette ASGI application with `app.asgi:app` as the stable app
+- FastAPI/Starlette ASGI application with `uniquode_io.asgi:app` as the stable app
   import path.
 - Jinja2 server-rendered pages with `htmx` used only for progressive
   enhancement.
 - Package-owned static assets and templates under configured modules, including
   reusable web foundation defaults from `wybra.web`, application-owned public
-  page templates in `src/app/templates/`, and identity defaults from
+  page templates in `src/uniquode_io/templates/`, and identity defaults from
   `wybra.auth`.
 - SQLAlchemy async persistence with Alembic migrations.
 - Local account support using FastAPI Users, including password sign-in,
@@ -180,7 +180,7 @@ example `postgresql+asyncpg://***:***@host.example/app`.
 Project command wrappers such as `wybra-runserver`, `wybra-routes`, and
 `wybra-validate` are published by the `wybra` package. The current application
 remains the configured command target where appropriate, for example
-`wybra-runserver` starts `app.asgi:app` through the `[tool.wybra]` adapter
+`wybra-runserver` starts `uniquode_io.asgi:app` through the `[tool.wybra]` adapter
 metadata.
 
 From the workspace root, run the main checks:

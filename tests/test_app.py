@@ -62,10 +62,10 @@ from wybra.web.forms.csrf import (
 )
 from wybra.web.routes.contracts import _normalise_path_prefix
 
-from app.app import create_app
-from app.asgi import app
-from app.routes import health
-from app.settings import Settings
+from uniquode_io.app import create_app
+from uniquode_io.asgi import app
+from uniquode_io.routes import health
+from uniquode_io.settings import Settings
 
 CSRF_INPUT_PATTERN = re.compile(
     rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
@@ -82,7 +82,7 @@ IDENTITY_TABLE_NAMES = frozenset(
     },
 )
 TEST_ROUTE_PREFIXES = {
-    "app": {"default": ""},
+    "uniquode_io": {"default": ""},
     "wybra.widgets": {"partials": "", "api": ""},
     "wybra.web": {},
     "wybra.db": {},
@@ -125,7 +125,7 @@ def write_wybra_tool_config(path: Path) -> Path:
         """
         [tool.wybra]
         runserver_reload_env = "APP_RELOAD"
-        runserver_app = "app.asgi:app"
+        runserver_app = "uniquode_io.asgi:app"
         """,
         encoding="utf-8",
     )
@@ -136,7 +136,7 @@ def write_app_config(
     path: Path,
     *,
     modules: tuple[str, ...] = (
-        "app",
+        "uniquode_io",
         "wybra.widgets",
         "wybra.web",
         "wybra.db",
@@ -357,7 +357,7 @@ def test_app_project_does_not_redeclare_wybra_operator_scripts() -> None:
 
 
 def test_app_runtime_does_not_import_wybra_owned_configuration_details() -> None:
-    app_root = Path(__file__).resolve().parents[1] / "src/app"
+    app_root = Path(__file__).resolve().parents[1] / "src/uniquode_io"
     forbidden_imports = {
         "wybra.auth.configuration",
         "wybra.auth.settings",
@@ -752,7 +752,7 @@ def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
 
     assert observed["project_root"] == runtime_project_root()
     assert observed["uvicorn_args"] == [
-        "app.asgi:app",
+        "uniquode_io.asgi:app",
         "--host",
         DEFAULT_HOST,
         "--port",
@@ -791,7 +791,7 @@ def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
     assert observed["project_root"] == runtime_project_root()
     assert observed["reload_env_name"] == RUNSERVER_RELOAD_ENV
     assert observed["uvicorn_args"] == [
-        "app.asgi:app",
+        "uniquode_io.asgi:app",
         "--host",
         DEFAULT_HOST,
         "--port",
@@ -833,7 +833,7 @@ def test_runserver_forwards_trailing_uvicorn_arguments(monkeypatch) -> None:
     )
 
     assert observed["uvicorn_args"] == [
-        "app.asgi:app",
+        "uniquode_io.asgi:app",
         "--host",
         "0.0.0.0",
         "--port",
@@ -863,7 +863,7 @@ def test_runserver_no_reload_overrides_reload_environment(monkeypatch) -> None:
     runserver_module.main(["--no-reload"])
 
     assert observed["uvicorn_args"] == [
-        "app.asgi:app",
+        "uniquode_io.asgi:app",
         "--host",
         DEFAULT_HOST,
         "--port",
@@ -880,8 +880,8 @@ def test_runserver_rejects_extra_uvicorn_app_target(monkeypatch) -> None:
 
 def test_runserver_allows_explicit_default_uvicorn_app_target() -> None:
     runserver_module._reject_extra_app_target(
-        ["app.asgi:app"],
-        app_target="app.asgi:app",
+        ["uniquode_io.asgi:app"],
+        app_target="uniquode_io.asgi:app",
     )
 
 
@@ -898,7 +898,7 @@ def test_runserver_target_detection_does_not_reject_option_values(
 ) -> None:
     runserver_module._reject_extra_app_target(
         [option_value],
-        app_target="app.asgi:app",
+        app_target="uniquode_io.asgi:app",
     )
 
 
@@ -944,7 +944,7 @@ def test_create_app_omitting_wybra_web_mounts_empty_static_route(
     tmp_path: Path,
 ) -> None:
     app = create_app(
-        config_source=build_test_app_config(tmp_path, modules=("app",)),
+        config_source=build_test_app_config(tmp_path, modules=("uniquode_io",)),
     )
 
     with TestClient(app) as client:
@@ -998,7 +998,10 @@ def test_create_app_registers_routes_only_from_configured_modules(
     tmp_path: Path,
 ) -> None:
     app = create_app(
-        config_source=build_test_app_config(tmp_path, modules=("app", "wybra.web")),
+        config_source=build_test_app_config(
+            tmp_path,
+            modules=("uniquode_io", "wybra.web"),
+        ),
     )
 
     with TestClient(app) as client:
@@ -1020,7 +1023,7 @@ def test_create_app_honours_explicit_template_root_with_module_templates(
         config_source=replace(
             build_test_app_config(
                 tmp_path,
-                modules=("app", "wybra.web"),
+                modules=("uniquode_io", "wybra.web"),
             ),
             templates=TemplateOptions(
                 auto_reload=True,
@@ -1067,7 +1070,7 @@ def test_load_settings_reads_mapping_values() -> None:
 def test_load_configured_settings_reads_explicit_config_source(tmp_path) -> None:
     config_path = write_app_config(
         tmp_path / "app.toml",
-        modules=("app", "wybra.db", "wybra.auth"),
+        modules=("uniquode_io", "wybra.db", "wybra.auth"),
         static_url_path="/assets/",
         database_url="sqlite+aiosqlite:///identity.sqlite3",
         name="file-app",
@@ -1084,7 +1087,7 @@ def test_load_configured_settings_reads_explicit_config_source(tmp_path) -> None
 def test_load_settings_uses_app_config_environment_override(tmp_path) -> None:
     config_path = write_app_config(
         tmp_path / "config" / "application.toml",
-        modules=("app",),
+        modules=("uniquode_io",),
         static_url_path="/public-static/",
         name="override-file-app",
     )
@@ -1153,7 +1156,13 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
     app_config = AppConfig(
         config_path=(tmp_path / "app.toml").resolve(),
         project_root=tmp_path.resolve(),
-        modules=("app", "wybra.widgets", "wybra.web", "wybra.db", "wybra.auth"),
+        modules=(
+            "uniquode_io",
+            "wybra.widgets",
+            "wybra.web",
+            "wybra.db",
+            "wybra.auth",
+        ),
         routes=RouteOptions(prefixes={}),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         static=StaticOptions(
@@ -1191,7 +1200,7 @@ def test_create_app_without_explicit_settings_uses_configured_app_name(
     tmp_path,
 ) -> None:
     app_config = replace(
-        build_test_app_config(tmp_path, modules=("app", "wybra.web")),
+        build_test_app_config(tmp_path, modules=("uniquode_io", "wybra.web")),
         raw_config={"app": {"name": "configured-app"}},
     )
     web_app = create_app(config_source=app_config)
@@ -1531,7 +1540,10 @@ def test_create_app_without_database_or_auth_modules_registers_no_capabilities(
     tmp_path: Path,
 ) -> None:
     web_app = create_app(
-        config_source=build_test_app_config(tmp_path, modules=("app", "wybra.web")),
+        config_source=build_test_app_config(
+            tmp_path,
+            modules=("uniquode_io", "wybra.web"),
+        ),
     )
 
     with TestClient(web_app) as client:

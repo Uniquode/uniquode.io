@@ -21,11 +21,11 @@ from wybra.tools.validation.registry import (
 )
 from wybra.web.validation import _contains_post_form, validate_web
 
-from app.settings import Settings
-from app.validation import validate_app
+from uniquode_io.settings import Settings
+from uniquode_io.validation import validate_app
 
 TEST_ROUTE_PREFIXES = {
-    "app": {"default": ""},
+    "uniquode_io": {"default": ""},
     "wybra.web": {"partials": "", "api": ""},
     "wybra.auth": {"account": "/account", "api": ""},
 }
@@ -181,11 +181,11 @@ def test_validation_targets_are_discovered_from_configured_modules(
     monkeypatch.syspath_prepend(str(tmp_path))
 
     targets = discover_validation_targets(
-        ("app", "first_validation_module", "second_validation_module")
+        ("uniquode_io", "first_validation_module", "second_validation_module")
     )
 
-    assert tuple(targets) == ("app", "first", "second")
-    assert isinstance(targets["app"](Settings()), ValidationResult)
+    assert tuple(targets) == ("uniquode_io", "first", "second")
+    assert isinstance(targets["uniquode_io"](Settings()), ValidationResult)
     assert isinstance(targets["first"](Settings()), ValidationResult)
 
 
@@ -419,7 +419,7 @@ def test_validate_web_omitting_wybra_web_does_not_use_default_static_root(
     result = validate_web(
         ProjectSettings(
             project_root=tmp_path,
-            app_config=_app_config(tmp_path, ("app",)),
+            app_config=_app_config(tmp_path, ("uniquode_io",)),
         )
     )
 

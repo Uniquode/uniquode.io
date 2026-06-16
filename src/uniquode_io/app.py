@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from wybra import start_site
 from wybra.config import SettingsConfigSource, load_configured_settings
 
-from app.settings import Settings
+from uniquode_io.settings import Settings
 
 
 def create_app(
