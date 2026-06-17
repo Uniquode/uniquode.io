@@ -121,9 +121,9 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     assert "ok: static asset exists: styles/app.css" in captured.out
     assert "ok: theme token present: --web-core-colour-page-bg" in captured.out
     assert "ok: database URL uses supported async SQLAlchemy driver" in captured.out
-    assert "ok: Alembic config exists:" in captured.out
-    assert "ok: Alembic config does not force in-memory SQLite" in captured.out
+    assert "ok: Alembic migrations root exists:" in captured.out
     assert "ok: Alembic migration file exists: env.py" in captured.out
+    assert "ok: Alembic migration file exists: script.py.mako" in captured.out
     assert "ok: module migration version locations exist:" in captured.out
     assert "ok: Alembic migration revision exists" in captured.out
     assert "ok: development database initialisation command is available:" in (
@@ -556,8 +556,6 @@ def test_validate_command_reports_missing_alembic_structure(tmp_path, capsys) ->
             "persistence",
             "--migrations-root",
             str(tmp_path / "missing-migrations"),
-            "--alembic-config",
-            str(tmp_path / "missing-alembic.ini"),
         ]
     )
 
@@ -565,8 +563,8 @@ def test_validate_command_reports_missing_alembic_structure(tmp_path, capsys) ->
 
     assert exit_code == 1
     assert captured.out == ""
-    assert "Missing Alembic config" in captured.err
     assert "Missing Alembic migrations root" in captured.err
+    assert "Development database initialisation requires migrations." in captured.err
 
 
 def test_validate_command_reports_missing_templates(tmp_path, capsys) -> None:
