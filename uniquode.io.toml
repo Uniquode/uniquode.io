@@ -1,6 +1,6 @@
 [app]
 name = "uniquode"
-database_url = "sqlite+aiosqlite:///app.sqlite3"
+database_url = "sqlite+aiosqlite:///uniquode.io.sqlite3"
 modules = [
   "uniquode_io",
   "wybra.widgets",
@@ -38,8 +38,32 @@ url_path = "/static/"
 export_root = "static"
 serve = true
 
+[log]
+version = 1
+disable_existing_loggers = false
+
+[log.formatters.simple]
+format = "%(levelname)-5.5s [%(name)s] %(message)s"
+
+[log.handlers.console]
+class = "logging.StreamHandler"
+level = "INFO"
+formatter = "simple"
+stream = "ext://sys.stderr"
+
+[log.root]
+level = "WARNING"
+handlers = ["console"]
+
+[log.loggers.alembic]
+level = "INFO"
+
+[log.loggers."sqlalchemy.engine"]
+level = "WARNING"
+
 [auth]
 session_cookie_name = "uniquode_session"
+totp_mode = "opt_in"
 # Local development leaves session_cookie_force_secure unset so HTTP works.
 # Non-local deployments must set SESSION_FORCE_SECURE=true or configure
 # session_cookie_force_secure = true in deployment-specific config.
