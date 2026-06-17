@@ -8,6 +8,8 @@ jobs:
   tests:
     name: Tests
     runs-on: ubuntu-latest
+    env:
+      APP_CONFIG: ${{ github.workspace }}/uniquode.io.toml-example
 
     steps:
       - name: Check out repository
