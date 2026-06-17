@@ -6,6 +6,7 @@ import json
 import re
 import sqlite3
 import tomllib
+from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
@@ -48,11 +49,9 @@ from wybra.tools.project import (
     runtime_project_root,
 )
 from wybra.tools.runserver import (
-    APP_TARGET_OPTION,
     DEFAULT_HOST,
     DEFAULT_PORT,
     DEFAULT_RELOAD,
-    RELOAD_ENV_VAR_OPTION,
     env_requests_reload,
 )
 from wybra.tools.settings import ProjectSettings
@@ -63,7 +62,6 @@ from wybra.web.forms.csrf import (
 from wybra.web.routes.contracts import _normalise_path_prefix
 
 from uniquode_io.app import create_app
-from uniquode_io.asgi import app
 from uniquode_io.routes import health
 from uniquode_io.settings import Settings
 
@@ -118,18 +116,6 @@ def _imported_modules(path: Path) -> set[str]:
 
 def sqlite_file_url(path: Path) -> str:
     return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
-
-
-def write_wybra_tool_config(path: Path) -> Path:
-    path.write_text(
-        """
-        [tool.wybra]
-        runserver_reload_env = "APP_RELOAD"
-        runserver_app = "uniquode_io.asgi:app"
-        """,
-        encoding="utf-8",
-    )
-    return path
 
 
 def write_app_config(
@@ -193,6 +179,10 @@ def write_app_config(
 
         [app.routes]
         {route_config}
+
+        [app.runserver]
+        asgi_app = "uniquode_io.asgi:app"
+        reload_env = "APP_RELOAD"
 
         [app.templates]
         auto_reload = true
@@ -277,8 +267,12 @@ def build_test_app_config(
     )
 
 
-def test_asgi_app_imports() -> None:
-    assert isinstance(app, FastAPI)
+def test_asgi_app_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("APP_CONFIG", str(write_app_config(tmp_path / "app.toml")))
+
+    asgi_module = importlib.import_module("uniquode_io.asgi")
+
+    assert isinstance(asgi_module.app, FastAPI)
 
 
 def test_asgi_loader_reports_configuration_errors_without_traceback(
@@ -392,13 +386,13 @@ def test_migrate_upgrade_uses_settings_database_url(
         "_migration_state_from_connection",
         lambda _database_url: data_migrate_module.MigrationState(initialised=True),
     )
-    with sqlite3.connect(tmp_path / "app.sqlite3") as connection:
-        connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
-    write_app_config(tmp_path / "app.toml")
+    with closing(sqlite3.connect(tmp_path / "app.sqlite3")) as connection:
+        with connection:
+            connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
-    exit_code = migrate_module.main(["upgrade"])
+    exit_code = migrate_module.main(["--config", str(config_path), "upgrade"])
 
     assert exit_code == 0
     assert calls == [
@@ -428,7 +422,6 @@ def test_migrate_database_url_override_takes_precedence(
             current_revisions=("abc123",),
         ),
     )
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -486,7 +479,6 @@ def test_migrate_database_url_override_preempts_blank_environment_value(
             current_revisions=("abc123",),
         ),
     )
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
     monkeypatch.setenv(ENV_DATABASE_URL, "")
@@ -523,9 +515,9 @@ def test_migrate_database_url_override_can_follow_subcommand(
         "_migration_state_from_connection",
         lambda _database_url: data_migrate_module.MigrationState(initialised=True),
     )
-    with sqlite3.connect(tmp_path / "subcommand.sqlite3") as connection:
-        connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
+    with closing(sqlite3.connect(tmp_path / "subcommand.sqlite3")) as connection:
+        with connection:
+            connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -596,7 +588,6 @@ def test_migrate_reports_operation_errors_cleanly(
             current_revisions=("abc123",),
         ),
     )
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -626,7 +617,6 @@ def test_migrate_reports_metadata_configuration_errors_cleanly(
             current_revisions=("abc123",),
         ),
     )
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
     write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
@@ -666,11 +656,10 @@ def test_migrate_dispatches_supported_commands(
         )
 
     monkeypatch.setattr(migrate_module.command, command_name, record_command)
-    write_wybra_tool_config(tmp_path / "pyproject.toml")
-    write_app_config(tmp_path / "app.toml")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
-    exit_code = migrate_module.main(argv)
+    exit_code = migrate_module.main(["--config", str(config_path), *argv])
 
     assert exit_code == 0
     assert calls == [
@@ -758,8 +747,6 @@ def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
         "--port",
         str(DEFAULT_PORT),
     ]
-    assert RELOAD_ENV_VAR_OPTION == "runserver_reload_env"
-    assert APP_TARGET_OPTION == "runserver_app"
 
 
 def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
@@ -1172,7 +1159,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
     )
 
     assert app_config.modules == (
-        "app",
+        "uniquode_io",
         "wybra.widgets",
         "wybra.web",
         "wybra.db",
@@ -1580,7 +1567,7 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wybra_db(
     web_app = create_app(
         config_source=build_test_app_config(
             tmp_path,
-            modules=("compatible_database_app", "app", "wybra.web"),
+            modules=("compatible_database_app", "uniquode_io", "wybra.web"),
         ),
     )
 

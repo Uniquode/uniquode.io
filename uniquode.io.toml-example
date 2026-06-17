@@ -2,7 +2,7 @@
 name = "uniquode"
 database_url = "sqlite+aiosqlite:///app.sqlite3"
 modules = [
-  "app",
+  "uniquode_io",
   "wybra.widgets",
   "wybra.web",
   "wybra.db",
@@ -12,9 +12,13 @@ modules = [
 ]
 
 [app.routes]
-app = { default = "" }
+uniquode_io = { default = "" }
 wybra-widgets = { partials = "", api = "" }
 wybra-auth = { account = "/account", api = "" }
+
+[app.runserver]
+asgi_app = "uniquode_io.asgi:app"
+reload_env = "APP_RELOAD"
 
 [wybra.widgets]
 features = ["theme", "login"]
