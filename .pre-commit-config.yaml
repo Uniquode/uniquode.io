@@ -1,0 +1,42 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: no-commit-to-branch
+        args: ["--branch", "main"]
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+      - id: check-yaml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+      - id: check-toml
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.16
+    hooks:
+      - id: ruff-check
+        args: ["--fix"]
+      - id: ruff-format
+
+  - repo: local
+    hooks:
+      - id: wybra-source-git
+        name: Ensure Wybra source is commit-safe
+        entry: python scripts/wybra_source.py check git -q
+        language: system
+        pass_filenames: false
+        always_run: true
+
+      - id: ty-uniquode-io
+        name: ty type checker uniquode.io
+        entry: uv run ty check src/
+        language: system
+        pass_filenames: false
+        types: [python]
+
+      - id: pytest-uniquode-io
+        name: pytest uniquode.io
+        entry: uv run pytest -q
+        language: system
+        pass_filenames: false
+        types: [python]

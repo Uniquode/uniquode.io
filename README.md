@@ -1,5 +1,9 @@
 # uniquode.io
 
+[![Build Status](https://img.shields.io/github/actions/workflow/status/Uniquode/uniquode.io/tests.yml?branch=main&label=tests&logo=github)](https://github.com/Uniquode/uniquode.io/actions/workflows/tests.yml)
+[![Security](https://img.shields.io/github/actions/workflow/status/Uniquode/uniquode.io/codeql.yml?branch=main&label=security&logo=github)](https://github.com/Uniquode/uniquode.io/security/code-scanning)
+[![Maintenance](https://img.shields.io/badge/maintenance-active-brightgreen.svg)](https://github.com/Uniquode/uniquode.io)
+
 `uniquode` is the FastAPI-based web application for `uniquode.io`.
 
 The application is currently an early server-rendered FastAPI site with local
@@ -63,9 +67,8 @@ validation, and future project tooling. `wybra.db` discovers model metadata
 from `<module>.models` and Alembic version locations from
 `<module>/migrations/versions/` when those surfaces exist; it also owns the
 reusable database URL parsing and async SQLAlchemy engine/session helpers. The
-project `wybra-migrate` command is a `wybra.tools.migrate` adapter that loads
-the configured host settings adapter from `[tool.wybra]` and passes those
-settings into the generic `wybra.db` migration command factory.
+project `wybra-migrate` command loads the selected app config boundary and
+passes those settings into the generic `wybra.db` migration command factory.
 Page, partial, and API routes are discovered and registered through `wybra.web`
 from `<module>.routes` through a `module_routers` export, and template context
 providers are registered from `<module>.context` with `add_to_context`. Route
@@ -94,6 +97,10 @@ modules = [
 app = { default = "" }
 wybra-web = { partials = "", api = "" }
 wybra-auth = { account = "/account", api = "" }
+
+[app.runserver]
+asgi_app = "uniquode_io.asgi:app"
+reload_env = "APP_RELOAD"
 
 [app.templates]
 auto_reload = true
@@ -165,6 +172,27 @@ Use `uv` for dependency and command execution. Runtime dependencies should be
 added with `uv add`; development dependencies should be added with `uv add
 --dev` or the appropriate dependency group option.
 
+`uniquode.io` commits must use the `wybra` Git source in `pyproject.toml` so CI
+can install dependencies without a sibling checkout. When working locally across
+both repositories, switch to the sibling checkout source:
+
+```sh
+python scripts/wybra_source.py path
+uv sync
+```
+
+Before committing or pushing `uniquode.io`, switch back to the CI-safe Git
+source:
+
+```sh
+python scripts/wybra_source.py git
+uv sync
+python scripts/wybra_source.py check
+```
+
+The `check` command is intended for `deeprave/pyproject-pre-commit` so the local
+path source cannot be committed accidentally.
+
 Run project validation:
 
 ```sh
@@ -180,8 +208,8 @@ example `postgresql+asyncpg://***:***@host.example/app`.
 Project command wrappers such as `wybra-runserver`, `wybra-routes`, and
 `wybra-validate` are published by the `wybra` package. The current application
 remains the configured command target where appropriate, for example
-`wybra-runserver` starts `uniquode_io.asgi:app` through the `[tool.wybra]` adapter
-metadata.
+`wybra-runserver` starts `uniquode_io.asgi:app` through `[app.runserver]` in the
+selected app config file.
 
 From the workspace root, run the main checks:
 
@@ -205,6 +233,15 @@ Use `--database-url` to target an explicit database for one migration command:
 ```sh
 uv run wybra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 init
 uv run wybra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 upgrade
+```
+
+Use `--config` to select an explicit app config file for one host-tool
+invocation:
+
+```sh
+uv run wybra-migrate --config config/app.toml current
+uv run wybra-routes --config config/app.toml
+uv run wybra-authmgr --config config/app.toml user list
 ```
 
 PostgreSQL environments use `wybra-migrate init` for explicit database, user,
@@ -252,8 +289,9 @@ separated form such as `2025-01-01` for calendar dates.
 
 `wybra-authmgr` is owned by the reusable authentication package and resolves
 the same application config boundary as the other Wybra project tools: run it
-from the app project or set `APP_CONFIG`. It reads `[auth]` from `app.toml`,
-with `DATABASE_URL` overriding `[app].database_url` when explicitly set.
+from the app project, set `APP_CONFIG`, or pass `--config <path>`. It reads
+`[auth]` from `app.toml`, with `DATABASE_URL` overriding `[app].database_url`
+when explicitly set.
 
 `wybra-authmgr` talks to the configured identity database directly. It is
 not an API-backed remote administration client; that mode is deferred until

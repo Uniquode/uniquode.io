@@ -53,7 +53,11 @@ def validate_app(_settings: object) -> ValidationResult:
             error=f"Missing home page static asset: {asset_path}",
         )
 
-    return ValidationResult(name="uniquode_io", errors=tuple(errors), checks=tuple(checks))
+    return ValidationResult(
+        name="uniquode_io",
+        errors=tuple(errors),
+        checks=tuple(checks),
+    )
 
 
 def _app_routes() -> tuple[APIRoute, ...]:

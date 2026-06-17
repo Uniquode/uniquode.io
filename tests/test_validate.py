@@ -281,7 +281,7 @@ def test_validate_app_checks_home_health_template_and_static_assets() -> None:
     result = validate_app(Settings())
 
     assert result.is_ok
-    assert result.name == "app"
+    assert result.name == "uniquode_io"
     descriptions = {check.description for check in result.checks}
     assert "home route exists: /" in descriptions
     assert "health route exists: /health" in descriptions
@@ -299,7 +299,7 @@ def test_validate_app_reports_missing_home_route(
         return {"status": "ok"}
 
     monkeypatch.setattr(
-        "app.validation._app_routes",
+        "uniquode_io.validation._app_routes",
         lambda: tuple(route for route in router.routes if isinstance(route, APIRoute)),
     )
 
@@ -319,7 +319,7 @@ def test_validate_app_reports_missing_health_route(
         return "home"
 
     monkeypatch.setattr(
-        "app.validation._app_routes",
+        "uniquode_io.validation._app_routes",
         lambda: tuple(route for route in router.routes if isinstance(route, APIRoute)),
     )
 

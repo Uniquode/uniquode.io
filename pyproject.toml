@@ -19,9 +19,9 @@ build-backend = "uv_build"
 [tool.uv.build-backend]
 module-name = ["uniquode_io"]
 
-[tool.wybra]
-runserver_app = "uniquode_io.asgi:app"
-runserver_reload_env = "APP_RELOAD"
+[tool.uv.sources]
+wybra = { git = "https://github.com/Uniquode/wybra.git", branch = "main" }
+# wybra = { path = "../wybra", editable = true }
 
 [dependency-groups]
 dev = [

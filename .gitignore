@@ -1,0 +1,29 @@
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*.pyo
+.*_cache/
+.ty/
+.coverage
+htmlcov/
+
+# Build and packaging outputs
+dist/
+build/
+*.egg-info/
+
+# Virtual environments and local environment files
+.venv/
+.env
+.env.*
+!.env.example
+
+# Local databases
+*.sqlite
+*.sqlite3
+*.db
+
+# Local project state
+.guide.yaml
+.idea/
+.vscode/
