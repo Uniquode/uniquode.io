@@ -422,11 +422,13 @@ def test_migrate_database_url_override_takes_precedence(
             current_revisions=("abc123",),
         ),
     )
-    write_app_config(tmp_path / "app.toml")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(
         [
+            "--config",
+            str(config_path),
             "--database-url",
             "sqlite+aiosqlite:///override.sqlite3",
             "current",
@@ -479,12 +481,14 @@ def test_migrate_database_url_override_preempts_blank_environment_value(
             current_revisions=("abc123",),
         ),
     )
-    write_app_config(tmp_path / "app.toml")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
     monkeypatch.setenv(ENV_DATABASE_URL, "")
 
     exit_code = migrate_module.main(
         [
+            "--config",
+            str(config_path),
             "--database-url",
             "sqlite+aiosqlite:///scratch.sqlite3",
             "current",
@@ -518,11 +522,13 @@ def test_migrate_database_url_override_can_follow_subcommand(
     with closing(sqlite3.connect(tmp_path / "subcommand.sqlite3")) as connection:
         with connection:
             connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    write_app_config(tmp_path / "app.toml")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
     exit_code = migrate_module.main(
         [
+            "--config",
+            str(config_path),
             "upgrade",
             "--database-url",
             "sqlite+aiosqlite:///subcommand.sqlite3",
@@ -588,10 +594,10 @@ def test_migrate_reports_operation_errors_cleanly(
             current_revisions=("abc123",),
         ),
     )
-    write_app_config(tmp_path / "app.toml")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
-    exit_code = migrate_module.main(["current"])
+    exit_code = migrate_module.main(["--config", str(config_path), "current"])
 
     captured = capsys.readouterr()
     assert exit_code == 1
@@ -617,10 +623,10 @@ def test_migrate_reports_metadata_configuration_errors_cleanly(
             current_revisions=("abc123",),
         ),
     )
-    write_app_config(tmp_path / "app.toml")
+    config_path = write_app_config(tmp_path / "app.toml")
     monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
 
-    exit_code = migrate_module.main(["current"])
+    exit_code = migrate_module.main(["--config", str(config_path), "current"])
 
     captured = capsys.readouterr()
     assert exit_code == 1
@@ -674,8 +680,14 @@ def test_migrate_dispatches_supported_commands(
 def test_migrate_init_then_upgrade_initialises_empty_sqlite_database(tmp_path) -> None:
     database_path = tmp_path / "dev.sqlite3"
     database_url = f"sqlite+aiosqlite:///{database_path.as_posix()}"
+    config_path = write_app_config(tmp_path / "app.toml")
 
-    assert migrate_module.main(["--database-url", database_url, "init"]) == 0
+    assert (
+        migrate_module.main(
+            ["--config", str(config_path), "--database-url", database_url, "init"]
+        )
+        == 0
+    )
     assert database_path.is_file()
 
     engine = create_database_engine(database_url)
@@ -695,7 +707,12 @@ def test_migrate_init_then_upgrade_initialises_empty_sqlite_database(tmp_path) -
     finally:
         asyncio.run(close_database(engine))
 
-    assert migrate_module.main(["--database-url", database_url, "upgrade"]) == 0
+    assert (
+        migrate_module.main(
+            ["--config", str(config_path), "--database-url", database_url, "upgrade"]
+        )
+        == 0
+    )
 
     engine = create_database_engine(database_url)
 
