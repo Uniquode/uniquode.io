@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
 
@@ -8,8 +9,8 @@ from click.testing import CliRunner
 from fastapi.routing import APIRoute, APIRouter
 from wybra.core.composition import (
     AppConfig,
+    AssetOptions,
     RouteOptions,
-    StaticOptions,
     TemplateOptions,
 )
 from wybra.tools.settings import ProjectSettings
@@ -19,7 +20,10 @@ from wybra.tools.validation.registry import (
     ValidationDiscoveryError,
     discover_validation_targets,
 )
-from wybra.web.validation import _contains_post_form, validate_web
+from wybra.web.validation import (
+    _contains_post_form,
+    validate_web,
+)
 
 from uniquode_io.settings import Settings
 from uniquode_io.validation import validate_app
@@ -58,12 +62,36 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
             }
         ),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
-        static=StaticOptions(
+        assets=AssetOptions(
             url_path="/static/",
             root=None,
             export_root=Path("static"),
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class WebValidationTestSettings:
+    project_root: Path
+    app_config: AppConfig | None = None
+    template_root: Path | None = None
+    static_root: Path | None = None
+    static_url_path: str = "/static/"
+    template_auto_reload: bool | None = None
+    template_cache_size: int = 400
+
+    @property
+    def modules(self) -> tuple[str, ...]:
+        assert self.app_config is not None
+        return self.app_config.modules
+
+    @property
+    def uses_filesystem_template_root(self) -> bool:
+        return self.template_root is not None
+
+    @property
+    def uses_filesystem_static_root(self) -> bool:
+        return self.static_root is not None
 
 
 def test_validate_command_checks_web_foundation(capsys) -> None:
@@ -417,7 +445,7 @@ def test_validate_web_omitting_wybra_web_does_not_use_default_static_root(
     tmp_path: Path,
 ) -> None:
     result = validate_web(
-        ProjectSettings(
+        WebValidationTestSettings(
             project_root=tmp_path,
             app_config=_app_config(tmp_path, ("uniquode_io",)),
         )
@@ -446,7 +474,7 @@ def test_validate_post_form_detection_accepts_html_attribute_variants() -> None:
 
 
 def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
-    settings = ProjectSettings(
+    settings = WebValidationTestSettings(
         project_root=tmp_path,
         app_config=AppConfig(
             config_path=tmp_path / "app.toml",
@@ -454,7 +482,7 @@ def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
             modules=("missing_validation_app",),
             routes=RouteOptions(prefixes={}),
             templates=TemplateOptions(auto_reload=True, cache_size=0),
-            static=StaticOptions(
+            assets=AssetOptions(
                 url_path="/static/",
                 root=None,
                 export_root=Path("static"),

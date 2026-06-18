@@ -33,7 +33,7 @@ url_mode = "storage-key"
 auto_reload = true
 cache_size = 0
 
-[app.static]
+[app.assets]
 url_path = "/static/"
 export_root = "static"
 serve = true

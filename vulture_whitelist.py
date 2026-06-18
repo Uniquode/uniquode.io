@@ -1,9 +1,28 @@
 # ruff: noqa: B018
 # Vulture whitelist: application entry points discovered by frameworks.
 
+_KNOWN_WHITELIST_NAMES = frozenset(
+    {
+        "csrf",
+        "csrf_token_secret_configured",
+        "health",
+        "home",
+        "module_routers",
+        "renderer",
+        "route_prefixes",
+        "security_header_options",
+        "static_app",
+        "static_mount_path",
+        "template_root",
+    }
+)
+
 
 class _Whitelist:
-    pass
+    def __getattr__(self, name: str) -> object:
+        if name not in _KNOWN_WHITELIST_NAMES:
+            raise AttributeError(name)
+        return None
 
 
 _ = _Whitelist()
