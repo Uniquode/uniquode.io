@@ -254,9 +254,7 @@ def build_test_app_config(
         modules=modules,
         routes=RouteOptions(prefixes=prefixes),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
-        assets=AssetOptions(
-            url_path="/static/", root=None, export_root=Path("static")
-        ),
+        assets=AssetOptions(url_path="/static/", root=None, export_root=Path("static")),
         auth={
             "session_cookie_name": "test_session",
             "session_cookie_force_secure": False,
@@ -1183,9 +1181,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
         ),
         routes=RouteOptions(prefixes={}),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
-        assets=AssetOptions(
-            url_path="/static/", root=None, export_root=Path("static")
-        ),
+        assets=AssetOptions(url_path="/static/", root=None, export_root=Path("static")),
         auth={},
     )
 
