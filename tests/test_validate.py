@@ -1,6 +1,6 @@
+from dataclasses import dataclass
 from pathlib import Path
 from textwrap import dedent
-from typing import cast
 
 import click
 import pytest
@@ -21,7 +21,6 @@ from wybra.tools.validation.registry import (
     discover_validation_targets,
 )
 from wybra.web.validation import (
-    WebValidationSettings,
     _contains_post_form,
     validate_web,
 )
@@ -69,6 +68,30 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
             export_root=Path("static"),
         ),
     )
+
+
+@dataclass(frozen=True, slots=True)
+class WebValidationTestSettings:
+    project_root: Path
+    app_config: AppConfig | None = None
+    template_root: Path | None = None
+    static_root: Path | None = None
+    static_url_path: str = "/static/"
+    template_auto_reload: bool | None = None
+    template_cache_size: int = 400
+
+    @property
+    def modules(self) -> tuple[str, ...]:
+        assert self.app_config is not None
+        return self.app_config.modules
+
+    @property
+    def uses_filesystem_template_root(self) -> bool:
+        return self.template_root is not None
+
+    @property
+    def uses_filesystem_static_root(self) -> bool:
+        return self.static_root is not None
 
 
 def test_validate_command_checks_web_foundation(capsys) -> None:
@@ -422,12 +445,9 @@ def test_validate_web_omitting_wybra_web_does_not_use_default_static_root(
     tmp_path: Path,
 ) -> None:
     result = validate_web(
-        cast(
-            WebValidationSettings,
-            ProjectSettings(
-                project_root=tmp_path,
-                app_config=_app_config(tmp_path, ("uniquode_io",)),
-            ),
+        WebValidationTestSettings(
+            project_root=tmp_path,
+            app_config=_app_config(tmp_path, ("uniquode_io",)),
         )
     )
 
@@ -454,7 +474,7 @@ def test_validate_post_form_detection_accepts_html_attribute_variants() -> None:
 
 
 def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
-    settings = ProjectSettings(
+    settings = WebValidationTestSettings(
         project_root=tmp_path,
         app_config=AppConfig(
             config_path=tmp_path / "app.toml",
@@ -470,7 +490,7 @@ def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
         ),
     )
 
-    result = validate_web(cast(WebValidationSettings, settings))
+    result = validate_web(settings)
 
     assert not result.is_ok
     assert result.errors == (

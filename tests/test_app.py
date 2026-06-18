@@ -7,7 +7,7 @@ import re
 import sqlite3
 import tomllib
 from contextlib import closing
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 from textwrap import dedent
 from typing import cast
@@ -56,7 +56,6 @@ from wybra.tools.runserver import (
     DEFAULT_RELOAD,
     env_requests_reload,
 )
-from wybra.tools.settings import ProjectSettings
 from wybra.web.forms.csrf import (
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
@@ -267,6 +266,19 @@ def build_test_app_config(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class MigrationTestSettings:
+    project_root: Path
+    database_url: str
+    app_config: AppConfig | None = None
+    migrations_root: Path | None = None
+
+    @property
+    def modules(self) -> tuple[str, ...]:
+        assert self.app_config is not None
+        return self.app_config.modules
+
+
 def test_asgi_app_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_CONFIG", str(write_app_config(tmp_path / "app.toml")))
 
@@ -452,13 +464,10 @@ def test_migrate_alembic_config_accepts_percent_encoded_database_url(
     )
 
     config = migrate_module.build_alembic_config(
-        cast(
-            data_migrate_module.MigrationSettings,
-            ProjectSettings(
-                project_root=tmp_path,
-                app_config=build_test_app_config(tmp_path, modules=("wybra.db",)),
-                database_url=database_url,
-            ),
+        MigrationTestSettings(
+            project_root=tmp_path,
+            app_config=build_test_app_config(tmp_path, modules=("wybra.db",)),
+            database_url=database_url,
         )
     )
 
