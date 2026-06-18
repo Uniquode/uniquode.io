@@ -3,7 +3,8 @@
 
 
 class _Whitelist:
-    pass
+    def __getattr__(self, name: str) -> object:
+        return None
 
 
 _ = _Whitelist()

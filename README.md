@@ -82,7 +82,7 @@ logical template or static path. Static defaults from `wybra.web` are available
 only when `wybra.web` is configured, unless an explicit filesystem `STATIC_ROOT`
 is supplied. Static collection is only needed when exporting assets for an
 external static server such as Nginx, and the reusable static export boundary
-writes the composed logical static namespace to `[app.static].export_root`.
+writes the composed logical static namespace to `[app.assets].export_root`.
 
 ```toml
 [app]
@@ -106,7 +106,7 @@ reload_env = "APP_RELOAD"
 auto_reload = true
 cache_size = 0
 
-[app.static]
+[app.assets]
 url_path = "/static/"
 export_root = "static"
 

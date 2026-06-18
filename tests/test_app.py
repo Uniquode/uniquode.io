@@ -10,6 +10,7 @@ from contextlib import closing
 from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
+from typing import cast
 
 import click
 import pytest
@@ -19,6 +20,7 @@ import wybra.tools.runserver as runserver_module
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 from sqlalchemy import inspect as sqlalchemy_inspect
+from starlette.routing import Mount
 from starlette.staticfiles import StaticFiles
 from wybra import get_site
 from wybra.auth import AuthCapability
@@ -29,8 +31,8 @@ from wybra.config import load_configured_settings
 from wybra.core.asgi import load_asgi_app
 from wybra.core.composition import (
     AppConfig,
+    AssetOptions,
     RouteOptions,
-    StaticOptions,
     TemplateOptions,
 )
 from wybra.core.exceptions import ConfigurationError
@@ -188,7 +190,7 @@ def write_app_config(
         auto_reload = true
         cache_size = 0
 
-        [app.static]
+        [app.assets]
         url_path = {json.dumps(static_url_path)}
         export_root = {json.dumps(static_export_root)}
 
@@ -253,17 +255,15 @@ def build_test_app_config(
         modules=modules,
         routes=RouteOptions(prefixes=prefixes),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
-        static=StaticOptions(
+        assets=AssetOptions(
             url_path="/static/", root=None, export_root=Path("static")
         ),
-        auth=(
-            {
-                "session_cookie_name": "test_session",
-                "session_cookie_force_secure": False,
-            }
-            if "wybra.auth" in modules
-            else None
-        ),
+        auth={
+            "session_cookie_name": "test_session",
+            "session_cookie_force_secure": False,
+        }
+        if "wybra.auth" in modules
+        else {},
     )
 
 
@@ -452,10 +452,13 @@ def test_migrate_alembic_config_accepts_percent_encoded_database_url(
     )
 
     config = migrate_module.build_alembic_config(
-        ProjectSettings(
-            project_root=tmp_path,
-            app_config=build_test_app_config(tmp_path, modules=("wybra.db",)),
-            database_url=database_url,
+        cast(
+            data_migrate_module.MigrationSettings,
+            ProjectSettings(
+                project_root=tmp_path,
+                app_config=build_test_app_config(tmp_path, modules=("wybra.db",)),
+                database_url=database_url,
+            ),
         )
     )
 
@@ -911,7 +914,7 @@ def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     static_root.mkdir(parents=True)
     app_config = replace(
         build_test_app_config(tmp_path, modules=("wybra.web",)),
-        static=StaticOptions(
+        assets=AssetOptions(
             url_path="/assets/",
             root=Path("src/test-static"),
             export_root=Path("static"),
@@ -928,10 +931,12 @@ def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     assert len(static_routes) == 1
 
     static_route = static_routes[0]
+    assert isinstance(static_route, Mount)
     assert static_route.path == "/assets"
 
     static_app = static_route.app
     assert isinstance(static_app, StaticFiles)
+    assert static_app.directory is not None
     assert Path(static_app.directory) == static_root.resolve()
 
 
@@ -1169,7 +1174,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
         ),
         routes=RouteOptions(prefixes={}),
         templates=TemplateOptions(auto_reload=True, cache_size=0),
-        static=StaticOptions(
+        assets=AssetOptions(
             url_path="/static/", root=None, export_root=Path("static")
         ),
         auth={},
@@ -1186,7 +1191,8 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
 
 def test_create_app_configures_database_and_identity_boundaries() -> None:
     with TestClient(create_app()) as client:
-        site = get_site(client.app)
+        app = cast(FastAPI, client.app)
+        site = get_site(app)
         database = site.require_capability(DatabaseCapability)
         auth = site.require_capability(AuthCapability)
 
@@ -1196,8 +1202,8 @@ def test_create_app_configures_database_and_identity_boundaries() -> None:
         assert callable(database.transaction)
         assert callable(auth.login_required)
 
-    assert not hasattr(client.app.state, "database")
-    assert not hasattr(client.app.state, "identity_options")
+    assert not hasattr(app.state, "database")
+    assert not hasattr(app.state, "identity_options")
 
 
 def test_create_app_without_explicit_settings_uses_configured_app_name(
@@ -1551,7 +1557,7 @@ def test_create_app_without_database_or_auth_modules_registers_no_capabilities(
     )
 
     with TestClient(web_app) as client:
-        site = get_site(client.app)
+        site = get_site(cast(FastAPI, client.app))
 
         assert not site.has_capability(DatabaseCapability)
         assert not site.has_capability(AuthCapability)
@@ -1589,7 +1595,7 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wybra_db(
     )
 
     with TestClient(web_app) as client:
-        site = get_site(client.app)
+        site = get_site(cast(FastAPI, client.app))
 
         assert type(site.require_capability(DatabaseCapability)).__name__ == (
             "CompatibleDatabaseCapability"
