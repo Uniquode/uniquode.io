@@ -4,6 +4,7 @@ database_url = "sqlite+aiosqlite:///uniquode.io.sqlite3"
 modules = [
   "uniquode_io",
   "wybra.widgets",
+  "wybra.assets",
   "wybra.web",
   "wybra.db",
   "wybra.auth",
@@ -35,7 +36,7 @@ cache_size = 0
 
 [app.assets]
 url_path = "/static/"
-export_root = "static"
+root = "static"
 serve = true
 
 [log]
