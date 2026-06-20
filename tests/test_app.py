@@ -22,7 +22,7 @@ from fastapi.testclient import TestClient
 from sqlalchemy import inspect as sqlalchemy_inspect
 from starlette.routing import Mount
 from wybra import get_site
-from wybra.assets import ComposedStaticFiles
+from wybra.assets import StaticAssetCapability
 from wybra.auth import AuthCapability
 from wybra.auth.models import (
     User,
@@ -942,9 +942,14 @@ def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     assert isinstance(static_route, Mount)
     assert static_route.path == "/assets"
 
-    static_app = static_route.app
-    assert isinstance(static_app, ComposedStaticFiles)
-    assert static_app.sources[0].package == "wybra.web"
+    with TestClient(web_app) as client:
+        site = get_site(web_app)
+        capability = site.require_capability(StaticAssetCapability)
+        response = client.get(capability.url("styles/app.css"))
+
+    assert capability.url_path == "/assets"
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/css")
 
 
 def test_create_app_serves_static_files_from_configured_modules() -> None:
