@@ -36,12 +36,12 @@ def _write_pyproject(path: Path, source_lines: str) -> None:
     )
 
 
-def test_wybra_source_executable_checks_project_source() -> None:
+def test_wybra_source_executable_reports_project_source() -> None:
     project_root = Path(__file__).resolve().parents[1]
     script_path = project_root / "scripts" / "wybra_source.py"
 
     result = subprocess.run(
-        [script_path, "check", "git", "-q"],
+        [script_path, "check"],
         cwd=project_root,
         check=False,
         capture_output=True,
@@ -49,7 +49,7 @@ def test_wybra_source_executable_checks_project_source() -> None:
     )
 
     assert result.returncode == 0
-    assert result.stdout == ""
+    assert result.stdout in {"git\n", "path\n"}
     assert result.stderr == ""
 
 

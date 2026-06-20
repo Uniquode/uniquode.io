@@ -47,6 +47,7 @@ from wybra.db.persistence import (
     sqlite_database_path,
 )
 from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL
+from wybra.template import DefaultTemplateCapability, TemplateCapability
 from wybra.tools.project import (
     runtime_project_root,
 )
@@ -84,6 +85,7 @@ TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
     "wybra.widgets": {"partials": "", "api": ""},
     "wybra.assets": {},
+    "wybra.template": {},
     "wybra.web": {},
     "wybra.db": {},
     "wybra.auth": {"account": "/account", "api": ""},
@@ -127,6 +129,7 @@ def write_app_config(
         "uniquode_io",
         "wybra.widgets",
         "wybra.assets",
+        "wybra.template",
         "wybra.web",
         "wybra.db",
         "wybra.auth",
@@ -922,7 +925,10 @@ def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     static_root = tmp_path / "src/test-static"
     static_root.mkdir(parents=True)
     app_config = replace(
-        build_test_app_config(tmp_path, modules=("wybra.assets", "wybra.web")),
+        build_test_app_config(
+            tmp_path,
+            modules=("wybra.assets", "wybra.template", "wybra.web"),
+        ),
         assets=AssetOptions(
             url_path="/assets/",
             root=Path("src/test-static"),
@@ -1005,7 +1011,12 @@ def test_create_app_applies_configured_route_prefixes(
     app = create_app(
         config_source=build_test_app_config(
             tmp_path,
-            modules=("prefixed_route_app", "wybra.assets", "wybra.web"),
+            modules=(
+                "prefixed_route_app",
+                "wybra.assets",
+                "wybra.template",
+                "wybra.web",
+            ),
             route_prefixes={"prefixed_route_app": {"default": "/tools"}},
         ),
     )
@@ -1021,7 +1032,7 @@ def test_create_app_registers_routes_only_from_configured_modules(
     app = create_app(
         config_source=build_test_app_config(
             tmp_path,
-            modules=("uniquode_io", "wybra.assets", "wybra.web"),
+            modules=("uniquode_io", "wybra.assets", "wybra.template", "wybra.web"),
         ),
     )
 
@@ -1044,7 +1055,12 @@ def test_create_app_honours_explicit_template_root_with_module_templates(
         config_source=replace(
             build_test_app_config(
                 tmp_path,
-                modules=("uniquode_io", "wybra.assets", "wybra.web"),
+                modules=(
+                    "uniquode_io",
+                    "wybra.assets",
+                    "wybra.template",
+                    "wybra.web",
+                ),
             ),
             templates=TemplateOptions(
                 auto_reload=True,
@@ -1181,6 +1197,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
             "uniquode_io",
             "wybra.widgets",
             "wybra.assets",
+            "wybra.template",
             "wybra.web",
             "wybra.db",
             "wybra.auth",
@@ -1195,6 +1212,7 @@ def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
         "uniquode_io",
         "wybra.widgets",
         "wybra.assets",
+        "wybra.template",
         "wybra.web",
         "wybra.db",
         "wybra.auth",
@@ -1224,7 +1242,7 @@ def test_create_app_without_explicit_settings_uses_configured_app_name(
     app_config = replace(
         build_test_app_config(
             tmp_path,
-            modules=("uniquode_io", "wybra.assets", "wybra.web"),
+            modules=("uniquode_io", "wybra.assets", "wybra.template", "wybra.web"),
         ),
         raw_config={"app": {"name": "configured-app"}},
     )
@@ -1535,6 +1553,7 @@ def test_earlier_application_module_can_override_wybra_auth_identity_template(
                 modules=(
                     "identity_override_app",
                     "wybra.assets",
+                    "wybra.template",
                     "wybra.web",
                     "wybra.db",
                     "wybra.auth",
@@ -1555,8 +1574,9 @@ def test_earlier_application_module_can_override_wybra_auth_identity_template(
 def test_create_app_applies_configured_template_cache_options() -> None:
     app = create_app()
     with TestClient(app):
-        renderer = app.state.renderer
+        renderer = get_site(app).require_capability(TemplateCapability)
 
+    assert isinstance(renderer, DefaultTemplateCapability)
     assert renderer.auto_reload is True
     assert renderer.cache_size == 0
     assert renderer.environment.auto_reload is True
@@ -1568,7 +1588,7 @@ def test_create_app_without_database_or_auth_modules_registers_no_capabilities(
     web_app = create_app(
         config_source=build_test_app_config(
             tmp_path,
-            modules=("uniquode_io", "wybra.assets", "wybra.web"),
+            modules=("uniquode_io", "wybra.assets", "wybra.template", "wybra.web"),
         ),
     )
 
@@ -1610,6 +1630,7 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wybra_db(
                 "compatible_database_app",
                 "uniquode_io",
                 "wybra.assets",
+                "wybra.template",
                 "wybra.web",
             ),
         ),

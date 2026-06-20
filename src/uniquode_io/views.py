@@ -1,5 +1,5 @@
 from fastapi import Request
-from wybra.web.rendering import render_page
+from wybra.template import render_page
 
 
 async def home(request: Request):
