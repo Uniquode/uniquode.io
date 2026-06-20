@@ -64,8 +64,7 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
         templates=TemplateOptions(auto_reload=True, cache_size=0),
         assets=AssetOptions(
             url_path="/static/",
-            root=None,
-            export_root=Path("static"),
+            root=Path("static"),
         ),
     )
 
@@ -301,7 +300,7 @@ def test_validate_command_runs_discovered_module_targets(
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert captured.out == "command-target: ok\n"
+    assert captured.out == "assets: ok\ncommand-target: ok\n"
     assert captured.err == ""
 
 
@@ -484,8 +483,7 @@ def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
             templates=TemplateOptions(auto_reload=True, cache_size=0),
             assets=AssetOptions(
                 url_path="/static/",
-                root=None,
-                export_root=Path("static"),
+                root=Path("static"),
             ),
         ),
     )
