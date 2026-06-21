@@ -16,9 +16,10 @@ identity support.
 - Jinja2 server-rendered pages with `htmx` used only for progressive
   enhancement.
 - Package-owned static assets and templates under configured modules, including
-  assets-owned runtime serving from `wybra.assets`, reusable web foundation
-  defaults from `wybra.web`, application-owned public page templates in
-  `src/uniquode_io/templates/`, and identity defaults from `wybra.auth`.
+  assets-owned runtime serving from `wybra.assets`, template rendering from
+  `wybra.template`, reusable web foundation defaults from `wybra.web`,
+  application-owned public page templates in `src/uniquode_io/templates/`, and
+  identity defaults from `wybra.auth`.
 - SQLAlchemy async persistence with Alembic migrations.
 - Local account support using FastAPI Users, including password sign-in,
   database-backed browser sessions, password reset hooks, and email verification
@@ -90,12 +91,14 @@ database_url = "sqlite+aiosqlite:///app.sqlite3"
 modules = [
   "app",
   "wybra.assets",
+  "wybra.template",
   "wybra.web",
   "wybra.auth",
 ]
 
 [app.routes]
 app = { default = "" }
+wybra-template = {}
 wybra-web = { partials = "", api = "" }
 wybra-auth = { account = "/account", api = "" }
 
@@ -146,7 +149,8 @@ override for both runtime and auth tooling.
 The current identity browser surface is published by `wybra.auth.routes`;
 default identity templates and safe identity template state are provided by
 `wybra.auth`. Identity model metadata and migration revisions are bundled with
-`wybra.auth` alongside those models. Reusable layout, theme, error, form, and
+`wybra.auth` alongside those models. Template rendering and template context are
+published by `wybra.template`; reusable layout, theme, error, form, and
 stylesheet defaults are published by `wybra.web`; static asset setup is
 published by `wybra.assets`. Host applications can override logical template and
 static paths from earlier configured modules.

@@ -13,6 +13,7 @@ from wybra.core.composition import (
     RouteOptions,
     TemplateOptions,
 )
+from wybra.template.validation import _contains_post_form
 from wybra.tools.settings import ProjectSettings
 from wybra.tools.validate import main as validate_main
 from wybra.tools.validation.core import ValidationResult
@@ -20,19 +21,18 @@ from wybra.tools.validation.registry import (
     ValidationDiscoveryError,
     discover_validation_targets,
 )
-from wybra.web.validation import (
-    _contains_post_form,
-    validate_web,
-)
+from wybra.web.validation import validate_web
 
 from uniquode_io.settings import Settings
 from uniquode_io.validation import validate_app
 
 TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
+    "wybra.template": {},
     "wybra.web": {"partials": "", "api": ""},
     "wybra.auth": {"account": "/account", "api": ""},
 }
+APP_ONLY_MODULES = ("uniquode_io",)
 
 
 def _write_validation_module(
@@ -145,8 +145,9 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     assert "ok: POST form CSRF field exists: identity/pages/login.html" in (
         captured.out
     )
-    assert "ok: static asset exists: styles/app.css" in captured.out
-    assert "ok: theme token present: --web-core-colour-page-bg" in captured.out
+    assert "ok: static asset sources load:" in captured.out
+    assert "wybra.template:static" in captured.out
+    assert "ok: template loads: layouts/page.html" in captured.out
     assert "ok: database URL uses supported async SQLAlchemy driver" in captured.out
     assert "ok: Alembic migrations root exists:" in captured.out
     assert "ok: Alembic migration file exists: env.py" in captured.out
@@ -300,7 +301,8 @@ def test_validate_command_runs_discovered_module_targets(
 
     captured = capsys.readouterr()
     assert exit_code == 0
-    assert captured.out == "assets: ok\ncommand-target: ok\n"
+    output_lines = set(captured.out.splitlines())
+    assert {"assets: ok", "template: ok", "command-target: ok"} <= output_lines
     assert captured.err == ""
 
 
@@ -440,18 +442,23 @@ def test_validate_command_rejects_blank_static_url_path(capsys) -> None:
     assert "static_url_path must not be blank." in captured.err
 
 
-def test_validate_web_omitting_wybra_web_does_not_use_default_static_root(
+def test_validate_web_without_wybra_web_skips_static_root_validation(
     tmp_path: Path,
 ) -> None:
     result = validate_web(
         WebValidationTestSettings(
             project_root=tmp_path,
-            app_config=_app_config(tmp_path, ("uniquode_io",)),
+            app_config=_app_config(tmp_path, APP_ONLY_MODULES),
         )
     )
 
-    assert not result.is_ok
-    assert "Missing static asset: styles/app.css" in result.errors
+    assert result.is_ok
+    check_text = "\n".join(check.description for check in result.checks).lower()
+    error_text = "\n".join(result.errors).lower()
+    assert "static root" not in check_text
+    assert "static root" not in error_text
+    assert "static asset" not in check_text
+    assert "static asset" not in error_text
 
 
 def test_validate_post_form_detection_accepts_html_attribute_variants() -> None:
@@ -600,7 +607,7 @@ def test_validate_command_reports_missing_templates(tmp_path, capsys) -> None:
 
     exit_code = validate_main(
         [
-            "web",
+            "template",
             "--template-root",
             str(template_root),
             "--static-root",
@@ -624,7 +631,7 @@ def test_validate_command_reports_template_decode_errors(tmp_path, capsys) -> No
 
     exit_code = validate_main(
         [
-            "web",
+            "template",
             "--template-root",
             str(template_root),
             "--static-root",
