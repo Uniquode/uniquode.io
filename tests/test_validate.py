@@ -7,6 +7,7 @@ import pytest
 import wybra.tools.validate as validate_module
 from click.testing import CliRunner
 from fastapi.routing import APIRoute, APIRouter
+from wybra.config import AppConfigSource, ConfigService
 from wybra.core.composition import (
     AppConfig,
     AssetOptions,
@@ -28,6 +29,7 @@ from uniquode_io.validation import validate_app
 
 TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
+    "wybra.security": {},
     "wybra.template": {},
     "wybra.web": {"partials": "", "api": ""},
     "wybra.auth": {"account": "/account", "api": ""},
@@ -66,6 +68,15 @@ def _app_config(tmp_path: Path, modules: tuple[str, ...]) -> AppConfig:
             url_path="/static/",
             root=Path("static"),
         ),
+    )
+
+
+def _project_settings(tmp_path: Path, modules: tuple[str, ...]) -> ProjectSettings:
+    app_config = _app_config(tmp_path, modules)
+    return ProjectSettings(
+        project_root=tmp_path,
+        app_config=app_config,
+        config=ConfigService([AppConfigSource(app_config)]),
     )
 
 
@@ -291,10 +302,7 @@ def test_validate_command_runs_discovered_module_targets(
     monkeypatch.setattr(
         validate_module,
         "_build_settings",
-        lambda _overrides: ProjectSettings(
-            project_root=tmp_path,
-            app_config=_app_config(tmp_path, ("command_validation_module",)),
-        ),
+        lambda _overrides: _project_settings(tmp_path, ("command_validation_module",)),
     )
 
     exit_code = validate_main([])
@@ -374,9 +382,9 @@ def test_validate_command_reports_malformed_validation_surface(
     monkeypatch.setattr(
         validate_module,
         "_build_settings",
-        lambda _overrides: ProjectSettings(
-            project_root=tmp_path,
-            app_config=_app_config(tmp_path, ("command_malformed_validation_module",)),
+        lambda _overrides: _project_settings(
+            tmp_path,
+            ("command_malformed_validation_module",),
         ),
     )
 
