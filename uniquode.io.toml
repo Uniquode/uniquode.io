@@ -6,6 +6,7 @@ modules = [
   "wybra.widgets",
   "wybra.assets",
   "wybra.security",
+  "wybra.forms",
   "wybra.template",
   "wybra.web",
   "wybra.db",
@@ -18,6 +19,7 @@ modules = [
 uniquode_io = { default = "" }
 wybra-widgets = { partials = "", api = "" }
 wybra-security = {}
+wybra-forms = {}
 wybra-template = {}
 wybra-auth = { account = "/account", api = "" }
 
