@@ -85,12 +85,13 @@ TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
     "wybra.widgets": {"partials": "", "api": ""},
     "wybra.assets": {},
+    "wybra.security": {},
     "wybra.template": {},
     "wybra.web": {},
     "wybra.db": {},
     "wybra.auth": {"account": "/account", "api": ""},
 }
-WEB_RUNTIME_MODULES = ("wybra.assets", "wybra.template", "wybra.web")
+WEB_RUNTIME_MODULES = ("wybra.assets", "wybra.security", "wybra.template", "wybra.web")
 PUBLIC_WEB_MODULES = ("uniquode_io", *WEB_RUNTIME_MODULES)
 AUTH_WEB_MODULES = (*WEB_RUNTIME_MODULES, "wybra.db", "wybra.auth")
 FULL_APP_MODULES = (
