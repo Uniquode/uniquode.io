@@ -30,6 +30,7 @@ from uniquode_io.validation import validate_app
 TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
     "wybra.security": {},
+    "wybra.forms": {},
     "wybra.template": {},
     "wybra.web": {"partials": "", "api": ""},
     "wybra.auth": {"account": "/account", "api": ""},

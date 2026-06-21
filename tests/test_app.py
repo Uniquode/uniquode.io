@@ -47,6 +47,10 @@ from wybra.db.persistence import (
     sqlite_database_path,
 )
 from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL
+from wybra.forms import (
+    CSRF_FIELD_NAME,
+    CSRF_HEADER_NAME,
+)
 from wybra.template import DefaultTemplateCapability, TemplateCapability
 from wybra.tools.project import (
     runtime_project_root,
@@ -56,10 +60,6 @@ from wybra.tools.runserver import (
     DEFAULT_PORT,
     DEFAULT_RELOAD,
     env_requests_reload,
-)
-from wybra.web.forms.csrf import (
-    CSRF_FIELD_NAME,
-    CSRF_HEADER_NAME,
 )
 from wybra.web.routes.contracts import _normalise_path_prefix
 
@@ -86,12 +86,19 @@ TEST_ROUTE_PREFIXES = {
     "wybra.widgets": {"partials": "", "api": ""},
     "wybra.assets": {},
     "wybra.security": {},
+    "wybra.forms": {},
     "wybra.template": {},
     "wybra.web": {},
     "wybra.db": {},
     "wybra.auth": {"account": "/account", "api": ""},
 }
-WEB_RUNTIME_MODULES = ("wybra.assets", "wybra.security", "wybra.template", "wybra.web")
+WEB_RUNTIME_MODULES = (
+    "wybra.assets",
+    "wybra.security",
+    "wybra.forms",
+    "wybra.template",
+    "wybra.web",
+)
 PUBLIC_WEB_MODULES = ("uniquode_io", *WEB_RUNTIME_MODULES)
 AUTH_WEB_MODULES = (*WEB_RUNTIME_MODULES, "wybra.db", "wybra.auth")
 FULL_APP_MODULES = (
