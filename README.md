@@ -18,8 +18,9 @@ identity support.
 - Package-owned static assets and templates under configured modules, including
   assets-owned runtime serving from `wybra.assets`, template rendering from
   `wybra.template`, web-facing security policy from `wybra.security`, reusable
-  form and CSRF defaults from `wybra.forms`, reusable web foundation defaults
-  from `wybra.web`, application-owned public page templates in
+  form and CSRF defaults from `wybra.forms`, error handling from
+  `wybra.errors`, reusable web foundation defaults from `wybra.web`,
+  application-owned public page templates in
   `src/uniquode_io/templates/`, and identity defaults from `wybra.auth`.
 - SQLAlchemy async persistence with Alembic migrations.
 - Local account support using FastAPI Users, including password sign-in,
@@ -96,6 +97,7 @@ modules = [
   "wybra.forms",
   "wybra.api",
   "wybra.template",
+  "wybra.errors",
   "wybra.web",
   "wybra.auth",
 ]
@@ -158,9 +160,10 @@ default identity templates and safe identity template state are provided by
 `wybra.auth`. Identity model metadata and migration revisions are bundled with
 `wybra.auth` alongside those models. Template rendering and template context are
 published by `wybra.template`; reusable layout, theme, error, form, and
-stylesheet defaults are published by `wybra.web`; form and CSRF defaults are
-published by `wybra.forms`; static asset setup is published by `wybra.assets`;
-security headers and CORS policy are published by `wybra.security`. Host
+stylesheet defaults are published by `wybra.web`; error handling is published
+by `wybra.errors`; form and CSRF defaults are published by `wybra.forms`;
+static asset setup is published by `wybra.assets`; security headers and CORS
+policy are published by `wybra.security`. Host
 applications can override logical template and static paths from earlier
 configured modules.
 Application-specific navigation and product policy remain application-owned.

@@ -8,6 +8,7 @@ TEST_ROUTE_PREFIXES = {
     "wybra.forms": {},
     "wybra.api": {},
     "wybra.template": {},
+    "wybra.errors": {},
     "wybra.web": {"partials": "", "api": ""},
     "wybra.db": {},
     "wybra.auth": {"account": "/account", "api": ""},
@@ -18,6 +19,7 @@ WEB_RUNTIME_MODULES = (
     "wybra.forms",
     "wybra.api",
     "wybra.template",
+    "wybra.errors",
     "wybra.web",
 )
 PUBLIC_WEB_MODULES = ("uniquode_io", *WEB_RUNTIME_MODULES)
