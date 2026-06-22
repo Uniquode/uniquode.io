@@ -87,6 +87,7 @@ TEST_ROUTE_PREFIXES = {
     "wybra.assets": {},
     "wybra.security": {},
     "wybra.forms": {},
+    "wybra.api": {},
     "wybra.template": {},
     "wybra.web": {},
     "wybra.db": {},
@@ -96,6 +97,7 @@ WEB_RUNTIME_MODULES = (
     "wybra.assets",
     "wybra.security",
     "wybra.forms",
+    "wybra.api",
     "wybra.template",
     "wybra.web",
 )

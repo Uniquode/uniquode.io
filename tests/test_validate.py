@@ -31,6 +31,7 @@ TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
     "wybra.security": {},
     "wybra.forms": {},
+    "wybra.api": {},
     "wybra.template": {},
     "wybra.web": {"partials": "", "api": ""},
     "wybra.auth": {"account": "/account", "api": ""},
