@@ -9,6 +9,7 @@ modules = [
   "wybra.forms",
   "wybra.api",
   "wybra.template",
+  "wybra.errors",
   "wybra.web",
   "wybra.db",
   "wybra.auth",
@@ -23,6 +24,7 @@ wybra-security = {}
 wybra-forms = {}
 wybra-api = {}
 wybra-template = {}
+wybra-errors = {}
 wybra-auth = { account = "/account", api = "" }
 
 [app.runserver]
