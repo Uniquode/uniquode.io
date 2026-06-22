@@ -19,8 +19,7 @@ identity support.
   assets-owned runtime serving from `wybra.assets`, template rendering from
   `wybra.template`, web-facing security policy from `wybra.security`, reusable
   form and CSRF defaults from `wybra.forms`, error handling from
-  `wybra.errors`, reusable web foundation defaults from `wybra.web`,
-  application-owned public page templates in
+  `wybra.errors`, route composition from `wybra.core`, application-owned public page templates in
   `src/uniquode_io/templates/`, and identity defaults from `wybra.auth`.
 - SQLAlchemy async persistence with Alembic migrations.
 - Local account support using FastAPI Users, including password sign-in,
@@ -72,8 +71,9 @@ from `<module>.models` and Alembic version locations from
 reusable database URL parsing and async SQLAlchemy engine/session helpers. The
 project `wybra-migrate` command loads the selected app config boundary and
 passes those settings into the generic `wybra.db` migration command factory.
-Page, partial, and API routes are discovered and registered through `wybra.web`
-from `<module>.routes` through a `module_routers` export, and template context
+Page, partial, and API routes are discovered and registered through
+`wybra.core` route composition from `<module>.routes` through a
+`module_routers` export, and template context
 providers are registered from `<module>.context` with `add_to_context`. Route
 prefixes are configured per module router label so the application can mount,
 for example, the `wybra.auth` account router at `/account`.
@@ -98,7 +98,6 @@ modules = [
   "wybra.api",
   "wybra.template",
   "wybra.errors",
-  "wybra.web",
   "wybra.auth",
 ]
 
@@ -108,7 +107,6 @@ wybra-security = {}
 wybra-forms = {}
 wybra-api = {}
 wybra-template = {}
-wybra-web = { partials = "", api = "" }
 wybra-auth = { account = "/account", api = "" }
 
 [app.runserver]
@@ -159,11 +157,9 @@ The current identity browser surface is published by `wybra.auth.routes`;
 default identity templates and safe identity template state are provided by
 `wybra.auth`. Identity model metadata and migration revisions are bundled with
 `wybra.auth` alongside those models. Template rendering and template context are
-published by `wybra.template`; reusable layout, theme, error, form, and
-stylesheet defaults are published by `wybra.web`; error handling is published
-by `wybra.errors`; form and CSRF defaults are published by `wybra.forms`;
-static asset setup is published by `wybra.assets`; security headers and CORS
-policy are published by `wybra.security`. Host
+published by `wybra.template`; error handling is published by `wybra.errors`;
+form and CSRF defaults are published by `wybra.forms`; static asset setup is
+published by `wybra.assets`; security headers and CORS policy are published by `wybra.security`. Host
 applications can override logical template and static paths from earlier
 configured modules.
 Application-specific navigation and product policy remain application-owned.

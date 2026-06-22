@@ -10,7 +10,6 @@ modules = [
   "wybra.api",
   "wybra.template",
   "wybra.errors",
-  "wybra.web",
   "wybra.db",
   "wybra.auth",
   "wybra.media",

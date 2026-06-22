@@ -957,21 +957,6 @@ def test_create_app_serves_static_files_from_configured_modules() -> None:
     assert "--web-core-colour-page-bg" in response.text
 
 
-def test_create_app_omitting_wybra_web_mounts_empty_static_route(
-    tmp_path: Path,
-) -> None:
-    app = create_app(
-        config_source=build_test_app_config(tmp_path, modules=("uniquode_io",)),
-    )
-
-    with TestClient(app) as client:
-        response = client.get("/static/styles/app.css")
-
-    assert response.status_code == 404
-    assert response.headers["content-type"].startswith("application/json")
-    assert "--web-core-colour-page-bg" not in response.text
-
-
 def test_create_app_applies_configured_route_prefixes(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
