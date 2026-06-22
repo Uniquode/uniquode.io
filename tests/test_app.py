@@ -36,6 +36,7 @@ from wybra.core.composition import (
     TemplateOptions,
 )
 from wybra.core.exceptions import ConfigurationError
+from wybra.core.routes.contracts import _normalise_path_prefix
 from wybra.db import DatabaseCapability
 from wybra.db.config import ENV_DATABASE_URL
 from wybra.db.migration_metadata import (
@@ -61,7 +62,6 @@ from wybra.tools.runserver import (
     DEFAULT_RELOAD,
     env_requests_reload,
 )
-from wybra.web.routes.contracts import _normalise_path_prefix
 
 from uniquode_io.app import create_app
 from uniquode_io.routes import health

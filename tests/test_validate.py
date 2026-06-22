@@ -14,6 +14,7 @@ from wybra.core.composition import (
     RouteOptions,
     TemplateOptions,
 )
+from wybra.core.routes.validation import validate_routes
 from wybra.template.validation import _contains_post_form
 from wybra.tools.settings import ProjectSettings
 from wybra.tools.validate import main as validate_main
@@ -22,7 +23,6 @@ from wybra.tools.validation.registry import (
     ValidationDiscoveryError,
     discover_validation_targets,
 )
-from wybra.web.validation import validate_web
 
 from uniquode_io.settings import Settings
 from uniquode_io.validation import validate_app
@@ -35,7 +35,6 @@ TEST_ROUTE_PREFIXES = {
     "wybra.web": {"partials": "", "api": ""},
     "wybra.auth": {"account": "/account", "api": ""},
 }
-APP_ONLY_MODULES = ("uniquode_io",)
 
 
 def _write_validation_module(
@@ -105,13 +104,13 @@ class WebValidationTestSettings:
         return self.static_root is not None
 
 
-def test_validate_command_checks_web_foundation(capsys) -> None:
-    exit_code = validate_main(["web"])
+def test_validate_command_checks_route_foundation(capsys) -> None:
+    exit_code = validate_main(["routes"])
 
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "web: ok" in captured.out
+    assert "routes: ok" in captured.out
 
 
 def test_validate_command_checks_persistence_foundation(capsys) -> None:
@@ -129,7 +128,7 @@ def test_validate_command_default_runs_registered_targets(capsys) -> None:
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "web: ok" in captured.out
+    assert "routes: ok" in captured.out
     assert "persistence: ok" in captured.out
 
 
@@ -148,10 +147,10 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "web: ok" in captured.out
+    assert "routes: ok" in captured.out
     assert "persistence: ok" in captured.out
     assert "ok: template context providers validate" in captured.out
-    assert "ok: module routers compose:" in captured.out
+    assert "ok: configured route modules compose:" in captured.out
     assert "ok: template exists: public/pages/home.html" in captured.out
     assert "ok: template exists: identity/pages/login.html" in captured.out
     assert "ok: POST form CSRF field exists: identity/pages/login.html" in (
@@ -179,7 +178,7 @@ def test_validate_command_does_not_mask_unrelated_value_errors(monkeypatch) -> N
     monkeypatch.setattr(validate_module, "_build_settings", raise_unrelated_value_error)
 
     with pytest.raises(ValueError, match="programmer error"):
-        validate_module.main(["web"])
+        validate_module.main(["routes"])
 
 
 def test_resolve_targets_raises_domain_error_for_unknown_targets() -> None:
@@ -433,41 +432,22 @@ def test_validate_main_treats_falsy_click_exception_as_failure(
 
 
 def test_validate_command_accepts_normalisable_static_url_path(capsys) -> None:
-    exit_code = validate_main(["web", "--static-url-path", "static"])
+    exit_code = validate_main(["assets", "--static-url-path", "static"])
 
     captured = capsys.readouterr()
 
     assert exit_code == 0
-    assert "web: ok" in captured.out
+    assert "assets: ok" in captured.out
 
 
 def test_validate_command_rejects_blank_static_url_path(capsys) -> None:
-    exit_code = validate_main(["web", "--static-url-path", "   "])
+    exit_code = validate_main(["assets", "--static-url-path", "   "])
 
     captured = capsys.readouterr()
 
     assert exit_code == 1
     assert captured.out == ""
     assert "static_url_path must not be blank." in captured.err
-
-
-def test_validate_web_without_wybra_web_skips_static_root_validation(
-    tmp_path: Path,
-) -> None:
-    result = validate_web(
-        WebValidationTestSettings(
-            project_root=tmp_path,
-            app_config=_app_config(tmp_path, APP_ONLY_MODULES),
-        )
-    )
-
-    assert result.is_ok
-    check_text = "\n".join(check.description for check in result.checks).lower()
-    error_text = "\n".join(result.errors).lower()
-    assert "static root" not in check_text
-    assert "static root" not in error_text
-    assert "static asset" not in check_text
-    assert "static asset" not in error_text
 
 
 def test_validate_post_form_detection_accepts_html_attribute_variants() -> None:
@@ -488,7 +468,7 @@ def test_validate_post_form_detection_accepts_html_attribute_variants() -> None:
     assert not _contains_post_form('<form method="post"')
 
 
-def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
+def test_validate_routes_reports_missing_configured_module(tmp_path) -> None:
     settings = WebValidationTestSettings(
         project_root=tmp_path,
         app_config=AppConfig(
@@ -504,11 +484,11 @@ def test_validate_web_reports_missing_configured_module(tmp_path) -> None:
         ),
     )
 
-    result = validate_web(settings)
+    result = validate_routes(settings)
 
     assert not result.is_ok
     assert result.errors == (
-        "Configured module surface validation failed: Configured module "
+        "Configured route module validation failed: Configured module "
         "'missing_validation_app' could not be imported.",
     )
 
