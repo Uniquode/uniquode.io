@@ -24,18 +24,9 @@ from wybra.tools.validation.registry import (
     discover_validation_targets,
 )
 
+from config_support import TEST_ROUTE_PREFIXES
 from uniquode_io.settings import Settings
 from uniquode_io.validation import validate_app
-
-TEST_ROUTE_PREFIXES = {
-    "uniquode_io": {"default": ""},
-    "wybra.security": {},
-    "wybra.forms": {},
-    "wybra.api": {},
-    "wybra.template": {},
-    "wybra.web": {"partials": "", "api": ""},
-    "wybra.auth": {"account": "/account", "api": ""},
-}
 
 
 def _write_validation_module(
