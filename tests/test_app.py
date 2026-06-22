@@ -63,6 +63,13 @@ from wybra.tools.runserver import (
     env_requests_reload,
 )
 
+from config_support import (
+    AUTH_WEB_MODULES,
+    FULL_APP_MODULES,
+    PUBLIC_WEB_MODULES,
+    TEST_ROUTE_PREFIXES,
+    WEB_RUNTIME_MODULES,
+)
 from uniquode_io.app import create_app
 from uniquode_io.routes import health
 from uniquode_io.settings import Settings
@@ -80,31 +87,6 @@ IDENTITY_TABLE_NAMES = frozenset(
         "identity_provider",
         "identity_external_identity_link",
     },
-)
-TEST_ROUTE_PREFIXES = {
-    "uniquode_io": {"default": ""},
-    "wybra.widgets": {"partials": "", "api": ""},
-    "wybra.assets": {},
-    "wybra.security": {},
-    "wybra.forms": {},
-    "wybra.template": {},
-    "wybra.web": {},
-    "wybra.db": {},
-    "wybra.auth": {"account": "/account", "api": ""},
-}
-WEB_RUNTIME_MODULES = (
-    "wybra.assets",
-    "wybra.security",
-    "wybra.forms",
-    "wybra.template",
-    "wybra.web",
-)
-PUBLIC_WEB_MODULES = ("uniquode_io", *WEB_RUNTIME_MODULES)
-AUTH_WEB_MODULES = (*WEB_RUNTIME_MODULES, "wybra.db", "wybra.auth")
-FULL_APP_MODULES = (
-    "uniquode_io",
-    "wybra.widgets",
-    *AUTH_WEB_MODULES,
 )
 
 

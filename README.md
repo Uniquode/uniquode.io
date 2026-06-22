@@ -94,6 +94,7 @@ modules = [
   "wybra.assets",
   "wybra.security",
   "wybra.forms",
+  "wybra.api",
   "wybra.template",
   "wybra.web",
   "wybra.auth",
@@ -103,6 +104,7 @@ modules = [
 app = { default = "" }
 wybra-security = {}
 wybra-forms = {}
+wybra-api = {}
 wybra-template = {}
 wybra-web = { partials = "", api = "" }
 wybra-auth = { account = "/account", api = "" }
