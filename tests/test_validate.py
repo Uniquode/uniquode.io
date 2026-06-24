@@ -164,7 +164,7 @@ def test_validate_command_verbose_checks_are_scoped_to_project_templates(
 ) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
-    project_config = (project_root / "app.toml")
+    project_config = project_root / "app.toml"
     project_config.write_text(
         """
         [app]
