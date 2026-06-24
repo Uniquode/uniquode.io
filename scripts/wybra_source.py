@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -69,8 +70,11 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("expected mode is only valid with 'check'.")
 
     replacement = _source_lines(args.mode)
-    lines[source_range.start : source_range.stop] = replacement
-    pyproject_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    current_source_lines = lines[source_range.start : source_range.stop]
+    if current_source_lines != replacement:
+        lines[source_range.start : source_range.stop] = replacement
+        pyproject_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        subprocess.run(["uv", "sync"], check=True)
     return 0
 
 
