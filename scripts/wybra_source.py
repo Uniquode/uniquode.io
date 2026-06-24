@@ -11,6 +11,7 @@ GIT_SOURCE = (
     'wybra = { git = "https://github.com/Uniquode/wybra.git", branch = "main" }'
 )
 PATH_SOURCE = 'wybra = { path = "../wybra", editable = true }'
+WYBRA_PACKAGE = "wybra"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -74,8 +75,17 @@ def main(argv: list[str] | None = None) -> int:
     if current_source_lines != replacement:
         lines[source_range.start : source_range.stop] = replacement
         pyproject_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-        subprocess.run(["uv", "sync"], check=True)
+        _sync_wybra_dependency(pyproject_path.parent)
     return 0
+
+
+def _sync_wybra_dependency(project_root: Path) -> None:
+    subprocess.run(
+        ["uv", "lock", "--upgrade-package", WYBRA_PACKAGE],
+        check=True,
+        cwd=project_root,
+    )
+    subprocess.run(["uv", "sync"], check=True, cwd=project_root)
 
 
 def _uv_sources_range(lines: list[str]) -> range:
