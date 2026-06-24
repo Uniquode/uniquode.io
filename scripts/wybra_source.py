@@ -80,6 +80,9 @@ def main(argv: list[str] | None = None) -> int:
 
 
 def _sync_wybra_dependency(project_root: Path) -> None:
+    if not (project_root / ".git").is_dir():
+        return
+
     subprocess.run(
         ["uv", "lock", "--upgrade-package", WYBRA_PACKAGE],
         check=True,
