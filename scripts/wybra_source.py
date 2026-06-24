@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import subprocess
 import sys
 from pathlib import Path
 
@@ -10,6 +11,7 @@ GIT_SOURCE = (
     'wybra = { git = "https://github.com/Uniquode/wybra.git", branch = "main" }'
 )
 PATH_SOURCE = 'wybra = { path = "../wybra", editable = true }'
+WYBRA_PACKAGE = "wybra"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -69,9 +71,24 @@ def main(argv: list[str] | None = None) -> int:
         parser.error("expected mode is only valid with 'check'.")
 
     replacement = _source_lines(args.mode)
-    lines[source_range.start : source_range.stop] = replacement
-    pyproject_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    current_source_lines = lines[source_range.start : source_range.stop]
+    if current_source_lines != replacement:
+        lines[source_range.start : source_range.stop] = replacement
+        pyproject_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+        _sync_wybra_dependency(pyproject_path.parent)
     return 0
+
+
+def _sync_wybra_dependency(project_root: Path) -> None:
+    if not (project_root / ".git").is_dir():
+        return
+
+    subprocess.run(
+        ["uv", "lock", "--upgrade-package", WYBRA_PACKAGE],
+        check=True,
+        cwd=project_root,
+    )
+    subprocess.run(["uv", "sync"], check=True, cwd=project_root)
 
 
 def _uv_sources_range(lines: list[str]) -> range:

@@ -144,13 +144,7 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
     assert "ok: template context providers validate" in captured.out
     assert "ok: configured route modules compose:" in captured.out
     assert "ok: template exists: public/pages/home.html" in captured.out
-    assert "ok: template exists: identity/pages/login.html" in captured.out
-    assert "ok: POST form CSRF field exists: identity/pages/login.html" in (
-        captured.out
-    )
-    assert "ok: static asset sources load:" in captured.out
-    assert "wybra.template:static" in captured.out
-    assert "ok: template loads: layouts/page.html" in captured.out
+    assert "ok: template loads: public/pages/home.html" in captured.out
     assert "ok: database URL uses supported async SQLAlchemy driver" in captured.out
     assert "ok: Alembic migrations root exists:" in captured.out
     assert "ok: Alembic migration file exists: env.py" in captured.out
@@ -161,6 +155,56 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
         captured.out
     )
     assert "uv run wybra-migrate init" in captured.out
+
+
+def test_validate_command_verbose_checks_are_scoped_to_project_templates(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    capsys,
+) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    project_config = project_root / "app.toml"
+    project_config.write_text(
+        """
+        [app]
+        modules = ["uniquode_io"]
+
+        [app.templates]
+        auto_reload = true
+        cache_size = 0
+
+        [app.assets]
+        url_path = "/static/"
+        root = "static"
+        """,
+        encoding="utf-8",
+    )
+
+    project_settings = _app_config(
+        project_root,
+        modules=("uniquode_io",),
+    )
+    monkeypatch.setenv("APP_CONFIG", str(project_config))
+    monkeypatch.setattr(
+        validate_module,
+        "_build_settings",
+        lambda _overrides: ProjectSettings(
+            project_root=project_root,
+            app_config=project_settings,
+            config=ConfigService([AppConfigSource(project_settings)]),
+        ),
+    )
+
+    exit_code = validate_main(["template", "--verbose"])
+
+    captured = capsys.readouterr()
+
+    assert exit_code == 0
+    assert "template: ok" in captured.out
+    assert "ok: template exists: public/pages/home.html" in captured.out
+    assert "ok: template exists: components/head_icons.html" in captured.out
+    assert "identity/pages/login.html" not in captured.out
 
 
 def test_validate_command_does_not_mask_unrelated_value_errors(monkeypatch) -> None:

@@ -19,6 +19,7 @@ modules = [
 [app.routes]
 uniquode_io = { default = "" }
 wybra-widgets = { partials = "", api = "" }
+wybra-profile = { profile = "" }
 wybra-security = {}
 wybra-forms = {}
 wybra-api = {}
