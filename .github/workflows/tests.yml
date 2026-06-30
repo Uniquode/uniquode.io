@@ -10,7 +10,6 @@ jobs:
     runs-on: ubuntu-latest
     env:
       APP_CONFIG: uniquode.io.toml
-      WYBRA_KEYRING_PASSWORD: uniquode-ci-keyring
 
     steps:
       - name: Check out repository
@@ -57,7 +56,13 @@ jobs:
           export XDG_DATA_HOME="${RUNNER_TEMP}/xdg-data"
           mkdir -p "${XDG_DATA_HOME}/keyrings"
           keyring_env="$(mktemp)"
-          printf '%s\n' "$WYBRA_KEYRING_PASSWORD" \
+          keyring_password="$(python - <<'PY'
+          import secrets
+
+          print(secrets.token_urlsafe(32))
+          PY
+          )"
+          printf '%s\n' "$keyring_password" \
             | gnome-keyring-daemon --unlock --components=secrets >"$keyring_env"
           set -a
           . "$keyring_env"
@@ -66,6 +71,7 @@ jobs:
           uv run python - <<'PY' | uv run wybra-secret --config uniquode.io.toml set --json
           import base64
           import json
+          import secrets
           import zlib
 
           from cryptography.fernet import Fernet
@@ -78,7 +84,7 @@ jobs:
                   {
                       "WYBRA_SECRET_KEY_CURRENT": f"ci:{encoded_key}:{checksum}",
                       "auth/providers/google/dev/client-secret": (
-                          "ci-google-client-secret"
+                          secrets.token_urlsafe(32)
                       ),
                   }
               )
