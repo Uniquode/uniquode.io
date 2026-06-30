@@ -3,6 +3,8 @@ set -euo pipefail
 
 : "${WYBRA_KEYRING_PASSWORD:?WYBRA_KEYRING_PASSWORD must be set}"
 
+uv sync --frozen --no-dev
+
 keyring_env=/tmp/wybra-keyring-env
 umask 077
 printf '%s\n' "$WYBRA_KEYRING_PASSWORD" \
