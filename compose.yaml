@@ -1,0 +1,43 @@
+name: uniquode
+
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    init: true
+    restart: unless-stopped
+    ports:
+      - "${UNIQUODE_PORT:-8000}:8000"
+    environment:
+      APP_CONFIG: /opt/uniquode.io/uniquode.io.toml
+      PORT: "8000"
+      UV_PROJECT_ENVIRONMENT: /opt/uniquode.io/.venv
+      WYBRA_KEYRING_PASSWORD: ${WYBRA_KEYRING_PASSWORD:?Set WYBRA_KEYRING_PASSWORD}
+      XDG_DATA_HOME: /home/uniquode/.local/share
+    volumes:
+      - type: volume
+        source: uniquode-venv
+        target: /opt/uniquode.io/.venv
+
+      - type: volume
+        source: uniquode-keyrings
+        target: /home/uniquode/.local/share/keyrings
+
+      - type: volume
+        source: uniquode-static
+        target: /opt/uniquode.io/static
+
+      - type: volume
+        source: uniquode-media
+        target: /opt/uniquode.io/media
+
+volumes:
+  uniquode-venv:
+    name: uniquode-venv
+  uniquode-keyrings:
+    name: uniquode-keyrings
+  uniquode-static:
+    name: uniquode-static
+  uniquode-media:
+    name: uniquode-media
