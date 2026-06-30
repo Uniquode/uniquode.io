@@ -11,7 +11,6 @@ jobs:
     env:
       APP_CONFIG: uniquode.io.toml
       WYBRA_KEYRING_PASSWORD: uniquode-ci-keyring
-      XDG_DATA_HOME: ${{ runner.temp }}/xdg-data
 
     steps:
       - name: Check out repository
@@ -55,6 +54,7 @@ jobs:
           dbus-run-session -- bash <<'SH'
           set -euo pipefail
 
+          export XDG_DATA_HOME="${RUNNER_TEMP}/xdg-data"
           mkdir -p "${XDG_DATA_HOME}/keyrings"
           keyring_env="$(mktemp)"
           printf '%s\n' "$WYBRA_KEYRING_PASSWORD" \
