@@ -11,7 +11,9 @@ modules = [
   "wybra.template",
   "wybra.errors",
   "wybra.db",
+  "wybra.secrets",
   "wybra.auth",
+  "wybra.providers",
   "wybra.media",
   "wybra.profile",
 ]
@@ -78,6 +80,22 @@ totp_mode = "opt_in"
 # Local development leaves session_cookie_force_secure unset so HTTP works.
 # Non-local deployments must set SESSION_FORCE_SECURE=true or configure
 # session_cookie_force_secure = true in deployment-specific config.
+
+[secrets.crypto]
+source = "keychain"
+current_key = "WYBRA_SECRET_KEY_CURRENT"
+previous_keys = "WYBRA_SECRET_KEYS_PREVIOUS"
+
+[secrets.keychain]
+appname = "wybra"
+
+[auth.providers.google]
+enabled = true
+client_id = "google-dev-client-id"
+secrets = "keychain"
+client_secret_key = "auth/providers/google/dev/client-secret"
+account_creation_enabled = false
+required_claims = ["sub", "email", "email_verified"]
 
 [auth.password.policy]
 minimum_length = 12
