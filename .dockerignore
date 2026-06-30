@@ -4,6 +4,12 @@
 !.env.example
 .idea
 .venv
+.*_cache
 **/__pycache__
 **/*.py[cod]
 *.sqlite3
+build
+dist
+*.egg-info
+media
+static
