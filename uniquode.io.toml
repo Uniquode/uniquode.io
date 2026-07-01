@@ -28,6 +28,7 @@ wybra-api = {}
 wybra-template = {}
 wybra-errors = {}
 wybra-auth = { account = "/account", api = "" }
+wybra-providers = { google = "/account/providers/google" }
 
 [app.runserver]
 asgi_app = "uniquode_io.asgi:app"
@@ -94,7 +95,8 @@ enabled = true
 client_id = "google-dev-client-id"
 secrets = "keychain"
 client_secret_key = "auth/providers/google/dev/client-secret"
-account_creation_enabled = false
+account_creation_enabled = true
+email_match_linking_enabled = true
 required_claims = ["sub", "email", "email_verified"]
 
 [auth.password.policy]
