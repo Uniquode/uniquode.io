@@ -28,7 +28,7 @@ wybra-api = {}
 wybra-template = {}
 wybra-errors = {}
 wybra-auth = { account = "/account", api = "" }
-wybra-providers = { google = "/account/providers/google" }
+wybra-providers = { google = "/account/providers/google", github = "/account/providers/github", apple = "/account/providers/apple" }
 
 [app.runserver]
 asgi_app = "uniquode_io.asgi:app"
@@ -78,9 +78,21 @@ level = "WARNING"
 [auth]
 session_cookie_name = "uniquode_session"
 totp_mode = "opt_in"
+passkey_enabled = true
 # Local development leaves session_cookie_force_secure unset so HTTP works.
 # Non-local deployments must set SESSION_FORCE_SECURE=true or configure
 # session_cookie_force_secure = true in deployment-specific config.
+
+[auth.passkeys]
+rp_id = "localhost"
+rp_name = "Uniquode Dev"
+allowed_origins = ["http://localhost:8000"]
+timeout_seconds = 300
+user_verification = "preferred"
+user_verification_satisfies_totp = true
+attestation = "none"
+discoverable_credentials = "preferred"
+counter_policy = "reject-regression"
 
 [secrets.crypto]
 source = "keychain"
@@ -95,6 +107,26 @@ enabled = true
 client_id = "google-dev-client-id"
 secrets = "keychain"
 client_secret_key = "auth/providers/google/dev/client-secret"
+account_creation_enabled = true
+email_match_linking_enabled = true
+required_claims = ["sub", "email", "email_verified"]
+
+[auth.providers.github]
+enabled = true
+client_id = "github-dev-client-id"
+secrets = "keychain"
+client_secret_key = "auth/providers/github/dev/client-secret"
+account_creation_enabled = true
+email_match_linking_enabled = true
+required_claims = ["id", "email", "email_verified"]
+
+[auth.providers.apple]
+enabled = true
+client_id = "io.uniquode.dev.web"
+team_id = "APPLE_DEV_TEAM_ID"
+key_id = "APPLE_DEV_KEY_ID"
+secrets = "keychain"
+private_key_secret_key = "auth/providers/apple/dev/private-key"
 account_creation_enabled = true
 email_match_linking_enabled = true
 required_claims = ["sub", "email", "email_verified"]
