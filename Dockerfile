@@ -50,7 +50,7 @@ USER uniquode
 WORKDIR /opt/uniquode.io
 
 RUN python_bin="$(uv python find 3.14)" \
-    && "$python_bin" scripts/wybra_source.py git \
+    && "$python_bin" -c 'from pathlib import Path; p = Path("pyproject.toml"); text = p.read_text(encoding="utf-8"); git = "wybra = { git = \"https://github.com/Uniquode/wybra.git\", branch = \"main\" }"; path = "wybra = { path = \"../wybra\", editable = true }"; text = text.replace(f"# {git}\n{path}", f"{git}\n# {path}"); p.write_text(text, encoding="utf-8")' \
     && uv lock --upgrade-package wybra \
     && mkdir -p media static \
     && uv sync --frozen --no-dev

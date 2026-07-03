@@ -190,21 +190,20 @@ can install dependencies without a sibling checkout. When working locally across
 both repositories, switch to the sibling checkout source:
 
 ```sh
-python scripts/wybra_source.py path
-uv sync
+python ../wybra/scripts/wybra_source.py path
 ```
 
 Before committing or pushing `uniquode.io`, switch back to the CI-safe Git
 source:
 
 ```sh
-python scripts/wybra_source.py git
-uv sync
-python scripts/wybra_source.py check
+python ../wybra/scripts/wybra_source.py git
+python ../wybra/scripts/wybra_source.py check git -q
 ```
 
-The `check` command is intended for `deeprave/pyproject-pre-commit` so the local
-path source cannot be committed accidentally.
+The `path` and `git` commands run `uv lock` and `uv sync`, so they may need
+network access. The `check` command is used by the local pre-commit hook so the
+local path source cannot be committed accidentally.
 
 Run project validation:
 
