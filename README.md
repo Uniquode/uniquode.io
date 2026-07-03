@@ -202,8 +202,8 @@ python ../wybra/scripts/wybra_source.py check git -q
 ```
 
 The `path` and `git` commands run `uv lock` and `uv sync`, so they may need
-network access. The `check` command is used by the local pre-commit hook so the
-local path source cannot be committed accidentally.
+network access. The local pre-commit hook performs a self-contained Git-source
+check so the local path source cannot be committed accidentally.
 
 Run project validation:
 

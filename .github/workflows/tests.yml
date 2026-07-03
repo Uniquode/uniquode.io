@@ -37,29 +37,13 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: Check Wybra dependency source
-        run: |
-          python - <<'PY'
-          from pathlib import Path
-
-          git_source = (
-              'wybra = { git = "https://github.com/Uniquode/wybra.git", '
-              'branch = "main" }'
-          )
-          path_source = 'wybra = { path = "../wybra", editable = true }'
-          sources = [
-              line.strip()
-              for line in Path("pyproject.toml").read_text(encoding="utf-8").splitlines()
-              if line.strip() in {git_source, path_source}
-          ]
-          if sources != [git_source]:
-              raise SystemExit("pyproject.toml must use the Wybra Git source in CI.")
-          PY
+        run: python ci/ensure_wybra_git_source.py check
 
       - name: Check formatting
-        run: uv run ruff format --check src tests
+        run: uv run ruff format --check ci src tests
 
       - name: Lint
-        run: uv run ruff check src tests
+        run: uv run ruff check ci src tests
 
       - name: Type check
         run: uv run ty check src/

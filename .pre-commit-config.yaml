@@ -22,7 +22,7 @@ repos:
     hooks:
       - id: wybra-source-git
         name: Ensure Wybra source is commit-safe
-        entry: python ../wybra/scripts/wybra_source.py check git -q
+        entry: python ci/ensure_wybra_git_source.py check
         language: system
         pass_filenames: false
         always_run: true
