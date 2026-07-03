@@ -37,13 +37,13 @@ jobs:
         run: uv sync --locked --group dev
 
       - name: Check Wybra dependency source
-        run: python scripts/wybra_source.py check git -q
+        run: python ci/ensure_wybra_git_source.py check
 
       - name: Check formatting
-        run: uv run ruff format --check src tests scripts
+        run: uv run ruff format --check ci src tests
 
       - name: Lint
-        run: uv run ruff check src tests scripts
+        run: uv run ruff check ci src tests
 
       - name: Type check
         run: uv run ty check src/

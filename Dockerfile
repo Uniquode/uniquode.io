@@ -50,7 +50,7 @@ USER uniquode
 WORKDIR /opt/uniquode.io
 
 RUN python_bin="$(uv python find 3.14)" \
-    && "$python_bin" scripts/wybra_source.py git \
+    && "$python_bin" ci/ensure_wybra_git_source.py normalise-git \
     && uv lock --upgrade-package wybra \
     && mkdir -p media static \
     && uv sync --frozen --no-dev
