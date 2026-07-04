@@ -747,17 +747,16 @@ def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
         observed.update(kwargs)
         return {}
 
-    def fake_run_uvicorn_command(args: list[str]) -> None:
+    def fake_run_uvicorn_command(
+        args: list[str], *, logging_config: object | None = None
+    ) -> None:
         observed["uvicorn_args"] = args
-
-    def fail_legacy_uvicorn_run(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("runserver should delegate to uvicorn's CLI command")
+        observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
     monkeypatch.setattr(
         runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
     )
-    monkeypatch.setattr(runserver_module.uvicorn, "run", fail_legacy_uvicorn_run)
 
     runserver_module.main([])
 
@@ -783,17 +782,16 @@ def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
         observed.update(kwargs)
         return FakeEnv()
 
-    def fake_run_uvicorn_command(args: list[str]) -> None:
+    def fake_run_uvicorn_command(
+        args: list[str], *, logging_config: object | None = None
+    ) -> None:
         observed["uvicorn_args"] = args
-
-    def fail_legacy_uvicorn_run(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("runserver should delegate to uvicorn's CLI command")
+        observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
     monkeypatch.setattr(
         runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
     )
-    monkeypatch.setattr(runserver_module.uvicorn, "run", fail_legacy_uvicorn_run)
 
     runserver_module.main([])
 
@@ -816,17 +814,16 @@ def test_runserver_forwards_trailing_uvicorn_arguments(monkeypatch) -> None:
         observed.update(kwargs)
         return {RUNSERVER_RELOAD_ENV: "on"}
 
-    def fake_run_uvicorn_command(args: list[str]) -> None:
+    def fake_run_uvicorn_command(
+        args: list[str], *, logging_config: object | None = None
+    ) -> None:
         observed["uvicorn_args"] = args
-
-    def fail_legacy_uvicorn_run(*_args: object, **_kwargs: object) -> None:
-        raise AssertionError("runserver should delegate to uvicorn's CLI command")
+        observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
     monkeypatch.setattr(
         runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
     )
-    monkeypatch.setattr(runserver_module.uvicorn, "run", fail_legacy_uvicorn_run)
 
     runserver_module.main(
         [
@@ -861,8 +858,11 @@ def test_runserver_no_reload_overrides_reload_environment(monkeypatch) -> None:
         observed.update(kwargs)
         return {RUNSERVER_RELOAD_ENV: "on"}
 
-    def fake_run_uvicorn_command(args: list[str]) -> None:
+    def fake_run_uvicorn_command(
+        args: list[str], *, logging_config: object | None = None
+    ) -> None:
         observed["uvicorn_args"] = args
+        observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
     monkeypatch.setattr(
@@ -888,7 +888,7 @@ def test_runserver_rejects_extra_uvicorn_app_target(monkeypatch) -> None:
 
 
 def test_runserver_allows_explicit_default_uvicorn_app_target() -> None:
-    runserver_module._reject_extra_app_target(
+    runserver_module.reject_extra_app_target(
         ["uniquode_io.asgi:app"],
         app_target="uniquode_io.asgi:app",
     )
@@ -905,7 +905,7 @@ def test_runserver_allows_explicit_default_uvicorn_app_target() -> None:
 def test_runserver_target_detection_does_not_reject_option_values(
     option_value: str,
 ) -> None:
-    runserver_module._reject_extra_app_target(
+    runserver_module.reject_extra_app_target(
         [option_value],
         app_target="uniquode_io.asgi:app",
     )
