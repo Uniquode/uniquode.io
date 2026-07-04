@@ -62,7 +62,8 @@ version = 1
 disable_existing_loggers = false
 
 [log.formatters.simple]
-format = "%(levelname)-5.5s [%(name)s] %(message)s"
+format = "%(asctime)s %(levelname)s %(name)s %(message)s"
+datefmt = "%Y-%m-%dT%H:%M:%S%z"
 
 [log.handlers.console]
 class = "logging.StreamHandler"
