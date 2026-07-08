@@ -1,7 +1,6 @@
 [app]
 name = "uniquode"
 deployment_environment = "local"
-database_url = "sqlite:///uniquode.io.sqlite3"
 modules = [
   "uniquode_io",
   "wybra.secrets",
@@ -19,6 +18,10 @@ modules = [
   "wybra.media",
   "wybra.profile",
 ]
+
+[app.database]
+backend = "sqlite"
+database = "uniquode.io.sqlite3"
 
 [app.routes]
 uniquode_io = { default = "" }

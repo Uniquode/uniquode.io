@@ -23,8 +23,8 @@ identity support.
   `src/uniquode_io/templates/`, and identity defaults from `wybra.auth`.
 - Tortoise-backed persistence with native Tortoise migrations.
 - Local account support using Wybra auth, including password sign-in,
-  database-backed browser sessions, password reset hooks, and email verification
-  hooks.
+  Wybra request sessions, queued user-facing messages, password reset hooks,
+  email verification hooks, passkeys, and external identity providers.
 - Account pages for sign in, sign out, account status, password reset, and email
   verification.
 
@@ -53,11 +53,12 @@ session-cookie guidance.
 ## Configuration
 
 Runtime configuration is loaded through `envex`, including local `.env` files.
-`DATABASE_URL` is the database connection string. App settings use concise names
-such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET`, `CSRF_SECURE`, `RESET_SECRET`,
-`VERIFICATION_SECRET`, `SESSION_COOKIE`, `SESSION_FORCE_SECURE`,
-`SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_MODE`, `PASSKEY_ENABLED`, and
-`APP_RELOAD`.
+Database settings normally live in structured `[app.database]` configuration.
+`DATABASE_URL` is an explicit database connection override. App settings use
+concise names such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET`, `CSRF_SECURE`,
+`RESET_SECRET`, `VERIFICATION_SECRET`, `SESSION_COOKIE`,
+`SESSION_FORCE_SECURE`, `SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_MODE`,
+`PASSKEY_ENABLED`, and `APP_RELOAD`.
 `wybra.core` owns the reusable envex/app.toml settings-loading mechanics, while
 `app.settings` owns this application's concrete settings fields, defaults,
 deployment policy, CSRF policy, and identity policy adapter.
@@ -88,25 +89,38 @@ composed logical static namespace to `[app.assets].root`.
 
 ```toml
 [app]
-database_url = "sqlite:///app.sqlite3"
 modules = [
   "app",
+  "wybra.secrets",
+  "wybra.widgets",
+  "wybra.messages",
   "wybra.assets",
   "wybra.security",
   "wybra.forms",
   "wybra.api",
   "wybra.template",
   "wybra.errors",
+  "wybra.db",
   "wybra.auth",
+  "wybra.providers",
+  "wybra.media",
+  "wybra.profile",
 ]
+
+[app.database]
+backend = "sqlite"
+database = "app.sqlite3"
 
 [app.routes]
 app = { default = "" }
+wybra-widgets = { partials = "", api = "" }
+wybra-profile = { profile = "" }
 wybra-security = {}
 wybra-forms = {}
 wybra-api = {}
 wybra-template = {}
 wybra-auth = { account = "/account", api = "" }
+wybra-providers = { google = "/account/providers/google", github = "/account/providers/github", apple = "/account/providers/apple" }
 
 [app.runserver]
 asgi_app = "uniquode_io.asgi:app"
@@ -119,6 +133,25 @@ cache_size = 0
 [app.assets]
 url_path = "/static/"
 root = "static"
+
+[wybra.sessions]
+storage_backend = "database"
+database_connection_name = "default"
+
+[wybra.messages]
+storage_backend = "session"
+
+[wybra.forms]
+csrf_token_secret_source = "keychain"
+csrf_token_secret_key = "auth/forms/csrf-token-secret/current"
+
+[secrets.crypto]
+source = "keychain"
+current_key = "WYBRA_SECRET_KEY_CURRENT"
+previous_keys = "WYBRA_SECRET_KEYS_PREVIOUS"
+
+[secrets.keychain]
+appname = "wybra"
 
 [auth]
 # Local development leaves session_cookie_force_secure unset so HTTP works.
@@ -147,10 +180,9 @@ common_fragments = [
 `app.toml` is not a secrets or deployment-policy file. Keep secrets in the
 environment or deployment secret manager. It is the canonical normal
 configuration boundary for the web runtime, migrations, validation, and local
-identity management. The application database URL is `[app].database_url`;
-auth settings live in `[auth]` and
-`[auth.password.policy]`. `DATABASE_URL` is the only database environment
-override for both runtime and auth tooling.
+identity management. The application database connection is `[app.database]`;
+auth settings live in `[auth]` and `[auth.password.policy]`. `DATABASE_URL` is
+the only database environment override for both runtime and auth tooling.
 
 The current identity browser surface is published by `wybra.auth.routes`;
 default identity templates and safe identity template state are provided by
@@ -250,7 +282,7 @@ Use `--config` to select an explicit app config file for one host-tool
 invocation:
 
 ```sh
-uv run wybra-migrate --config config/app.toml current
+uv run wybra-migrate --config config/app.toml history
 uv run wybra-routes --config config/app.toml
 uv run wybra-authmgr --config config/app.toml user list
 ```
@@ -302,8 +334,8 @@ separated form such as `2025-01-01` for calendar dates.
 `wybra-authmgr` is owned by the reusable authentication package and resolves
 the same application config boundary as the other Wybra project tools: run it
 from the app project, set `APP_CONFIG`, or pass `--config <path>`. It reads
-`[auth]` from `app.toml`, with `DATABASE_URL` overriding `[app].database_url`
-when explicitly set.
+`[auth]` from `app.toml`, with `DATABASE_URL` overriding `[app.database]` when
+explicitly set.
 
 `wybra-authmgr` talks to the configured identity database directly. It is
 not an API-backed remote administration client; that mode is deferred until

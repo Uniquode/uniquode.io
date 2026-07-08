@@ -31,7 +31,7 @@ from wybra.core.composition import (
 from wybra.core.exceptions import ConfigurationError
 from wybra.core.routes.contracts import _normalise_path_prefix
 from wybra.db import DatabaseCapability
-from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL
+from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL, parse_sqlite_database_url
 from wybra.forms import (
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
@@ -62,6 +62,29 @@ CSRF_INPUT_PATTERN = re.compile(
     rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
 )
 RUNSERVER_RELOAD_ENV = "APP_RELOAD"
+
+
+def _app_database_config(database_url: str) -> tuple[str, str]:
+    sqlite_url = parse_sqlite_database_url(database_url)
+    if sqlite_url is not None and not sqlite_url.query and not sqlite_url.fragment:
+        return (
+            "",
+            f"""
+        [app.database]
+        backend = "sqlite"
+        database = {json.dumps(sqlite_url.path.as_posix())}
+        """,
+        )
+    if database_url == SQLITE_MEMORY_DATABASE_URL:
+        return (
+            "",
+            """
+        [app.database]
+        backend = "sqlite"
+        database = ":memory:"
+        """,
+        )
+    return f"database_url = {json.dumps(database_url)}", ""
 
 
 def _imported_modules(path: Path) -> set[str]:
@@ -131,13 +154,16 @@ def write_app_config(
         f"{key} = {json.dumps(value)}" for key, value in (auth_options or {}).items()
     )
     name_config = "" if name is None else f"name = {json.dumps(name)}"
+    database_url_config, structured_database_config = _app_database_config(database_url)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
         [app]
         {name_config}
-        database_url = {json.dumps(database_url)}
+        {database_url_config}
         modules = {json.dumps(list(modules))}
+
+        {structured_database_config}
 
         [app.routes]
         {route_config}
@@ -156,6 +182,9 @@ def write_app_config(
 
         [wybra.sessions]
         storage_backend = "memory"
+
+        [wybra.messages]
+        storage_backend = "session"
 
         [auth]
         session_cookie_name = "test_session"
