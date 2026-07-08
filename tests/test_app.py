@@ -65,6 +65,15 @@ RUNSERVER_RELOAD_ENV = "APP_RELOAD"
 
 
 def _app_database_config(database_url: str) -> tuple[str, str]:
+    if database_url == SQLITE_MEMORY_DATABASE_URL:
+        return (
+            "",
+            """
+        [app.database]
+        backend = "sqlite"
+        database = ":memory:"
+        """,
+        )
     sqlite_url = parse_sqlite_database_url(database_url)
     if sqlite_url is not None and not sqlite_url.query and not sqlite_url.fragment:
         return (
@@ -73,15 +82,6 @@ def _app_database_config(database_url: str) -> tuple[str, str]:
         [app.database]
         backend = "sqlite"
         database = {json.dumps(sqlite_url.path.as_posix())}
-        """,
-        )
-    if database_url == SQLITE_MEMORY_DATABASE_URL:
-        return (
-            "",
-            """
-        [app.database]
-        backend = "sqlite"
-        database = ":memory:"
         """,
         )
     return f"database_url = {json.dumps(database_url)}", ""
@@ -232,6 +232,23 @@ def test_write_app_config_writes_hyphenated_route_module_alias_and_labels(
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
     assert data["app"]["routes"]["custom-route-app"]["api-v2"] == "/api/v2"
+
+
+def test_write_app_config_writes_memory_database_as_structured_sqlite(
+    tmp_path: Path,
+) -> None:
+    config_path = write_app_config(
+        tmp_path / "app.toml",
+        database_url=SQLITE_MEMORY_DATABASE_URL,
+    )
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+    assert "database_url" not in data["app"]
+    assert data["app"]["database"] == {
+        "backend": "sqlite",
+        "database": ":memory:",
+    }
 
 
 def build_test_app_config(
