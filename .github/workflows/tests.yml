@@ -90,7 +90,7 @@ jobs:
           print(
               json.dumps(
                   {
-                      "WYBRA_SECRET_KEY_CURRENT": f"ci:{encoded_key}:{checksum}",
+                      "secrets/key/dev/current": f"ci:{encoded_key}:{checksum}",
                       "auth/forms/csrf-token-secret/current": (
                           secrets.token_urlsafe(32)
                       ),

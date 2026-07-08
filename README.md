@@ -147,8 +147,8 @@ csrf_token_secret_key = "auth/forms/csrf-token-secret/current"
 
 [secrets.crypto]
 source = "keychain"
-current_key = "WYBRA_SECRET_KEY_CURRENT"
-previous_keys = "WYBRA_SECRET_KEYS_PREVIOUS"
+current_key = "secrets/key/dev/current"
+previous_keys = "secrets/key/dev/previous"
 
 [secrets.keychain]
 appname = "wybra"
