@@ -1,25 +1,18 @@
 import ast
-import asyncio
 import importlib
 import inspect
 import json
 import re
-import sqlite3
 import tomllib
-from contextlib import closing
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from pathlib import Path
 from textwrap import dedent
 from typing import cast
 
-import click
 import pytest
-import wybra.db.migrate as data_migrate_module
-import wybra.tools.migrate as migrate_module
 import wybra.tools.runserver as runserver_module
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-from sqlalchemy import inspect as sqlalchemy_inspect
 from starlette.routing import Mount
 from wybra import get_site
 from wybra.assets import StaticAssetCapability
@@ -38,15 +31,6 @@ from wybra.core.composition import (
 from wybra.core.exceptions import ConfigurationError
 from wybra.core.routes.contracts import _normalise_path_prefix
 from wybra.db import DatabaseCapability
-from wybra.db.config import ENV_DATABASE_URL
-from wybra.db.migration_metadata import (
-    MigrationConfigError,
-)
-from wybra.db.persistence import (
-    close_database,
-    create_database_engine,
-    sqlite_database_path,
-)
 from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL
 from wybra.forms import (
     CSRF_FIELD_NAME,
@@ -80,20 +64,6 @@ CSRF_INPUT_PATTERN = re.compile(
 RUNSERVER_RELOAD_ENV = "APP_RELOAD"
 
 
-IDENTITY_TABLE_NAMES = frozenset(
-    {
-        "identity_user",
-        "identity_access_token",
-        "identity_provider",
-        "identity_external_identity_link",
-    },
-)
-
-
-def assert_identity_tables_present(table_names: set[str]) -> None:
-    assert IDENTITY_TABLE_NAMES.issubset(table_names)
-
-
 def _imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported_modules = {
@@ -116,10 +86,6 @@ def _imported_modules(path: Path) -> set[str]:
     return imported_modules
 
 
-def sqlite_file_url(path: Path) -> str:
-    return f"sqlite+aiosqlite:///{path.resolve().as_posix()}"
-
-
 def write_app_config(
     path: Path,
     *,
@@ -127,7 +93,7 @@ def write_app_config(
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_asset_root: str = "static",
-    database_url: str = "sqlite+aiosqlite:///app.sqlite3",
+    database_url: str = "sqlite:///app.sqlite3",
     auth_options: dict[str, object] | None = None,
     name: str | None = None,
 ) -> Path:
@@ -259,19 +225,6 @@ def build_test_app_config(
     )
 
 
-@dataclass(frozen=True, slots=True)
-class MigrationTestSettings:
-    project_root: Path
-    database_url: str
-    app_config: AppConfig | None = None
-    migrations_root: Path | None = None
-
-    @property
-    def modules(self) -> tuple[str, ...]:
-        assert self.app_config is not None
-        return self.app_config.modules
-
-
 def test_asgi_app_imports(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("APP_CONFIG", str(write_app_config(tmp_path / "app.toml")))
 
@@ -368,376 +321,6 @@ def test_app_runtime_does_not_import_wybra_owned_configuration_details() -> None
     }
 
     assert imported_modules.isdisjoint(forbidden_imports)
-
-
-def test_migrate_upgrade_uses_settings_database_url(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    calls: list[tuple[str, str, str]] = []
-
-    def record_upgrade(config, revision: str) -> None:
-        calls.append(
-            (
-                "upgrade",
-                revision,
-                config.get_main_option("sqlalchemy.url"),
-            )
-        )
-
-    monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
-    monkeypatch.setattr(
-        data_migrate_module,
-        "_migration_state_from_connection",
-        lambda _database_url: data_migrate_module.MigrationState(initialised=True),
-    )
-    with closing(sqlite3.connect(tmp_path / "app.sqlite3")) as connection:
-        with connection:
-            connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-
-    exit_code = migrate_module.main(["--config", str(config_path), "upgrade"])
-
-    assert exit_code == 0
-    assert calls == [
-        (
-            "upgrade",
-            "heads",
-            sqlite_file_url(tmp_path / "app.sqlite3"),
-        )
-    ]
-
-
-def test_migrate_database_url_override_takes_precedence(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    calls: list[tuple[str, str | None]] = []
-
-    def record_current(config) -> None:
-        calls.append(("current", config.get_main_option("sqlalchemy.url")))
-
-    monkeypatch.setattr(migrate_module.command, "current", record_current)
-    monkeypatch.setattr(
-        data_migrate_module,
-        "inspect_migration_state",
-        lambda _database_url: data_migrate_module.MigrationState(
-            initialised=True,
-            current_revisions=("abc123",),
-        ),
-    )
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-
-    exit_code = migrate_module.main(
-        [
-            "--config",
-            str(config_path),
-            "--database-url",
-            "sqlite+aiosqlite:///override.sqlite3",
-            "current",
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls == [
-        (
-            "current",
-            sqlite_file_url(tmp_path / "override.sqlite3"),
-        )
-    ]
-
-
-def test_migrate_alembic_config_accepts_percent_encoded_database_url(
-    tmp_path: Path,
-) -> None:
-    database_url = (
-        "postgresql+asyncpg://db.example.test/uniquode?application_name=app%40local"
-    )
-
-    config = migrate_module.build_alembic_config(
-        MigrationTestSettings(
-            project_root=tmp_path,
-            app_config=build_test_app_config(tmp_path, modules=("wybra.db",)),
-            database_url=database_url,
-        )
-    )
-
-    assert config.get_main_option("sqlalchemy.url") == database_url
-    assert config.get_main_option("script_location") == "wybra.db:migrations"
-
-
-def test_migrate_database_url_override_preempts_blank_environment_value(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    calls: list[tuple[str, str | None]] = []
-
-    def record_current(config) -> None:
-        calls.append(("current", config.get_main_option("sqlalchemy.url")))
-
-    monkeypatch.setattr(migrate_module.command, "current", record_current)
-    monkeypatch.setattr(
-        data_migrate_module,
-        "inspect_migration_state",
-        lambda _database_url: data_migrate_module.MigrationState(
-            initialised=True,
-            current_revisions=("abc123",),
-        ),
-    )
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-    monkeypatch.setenv(ENV_DATABASE_URL, "")
-
-    exit_code = migrate_module.main(
-        [
-            "--config",
-            str(config_path),
-            "--database-url",
-            "sqlite+aiosqlite:///scratch.sqlite3",
-            "current",
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls == [
-        (
-            "current",
-            sqlite_file_url(tmp_path / "scratch.sqlite3"),
-        )
-    ]
-
-
-def test_migrate_database_url_override_can_follow_subcommand(
-    tmp_path,
-    monkeypatch,
-) -> None:
-    calls: list[tuple[str, str | None]] = []
-
-    def record_upgrade(config, revision: str) -> None:
-        calls.append((revision, config.get_main_option("sqlalchemy.url")))
-
-    monkeypatch.setattr(migrate_module.command, "upgrade", record_upgrade)
-    monkeypatch.setattr(
-        data_migrate_module,
-        "_migration_state_from_connection",
-        lambda _database_url: data_migrate_module.MigrationState(initialised=True),
-    )
-    with closing(sqlite3.connect(tmp_path / "subcommand.sqlite3")) as connection:
-        with connection:
-            connection.execute("CREATE TABLE alembic_version (version_num VARCHAR(32))")
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-
-    exit_code = migrate_module.main(
-        [
-            "--config",
-            str(config_path),
-            "upgrade",
-            "--database-url",
-            "sqlite+aiosqlite:///subcommand.sqlite3",
-        ]
-    )
-
-    assert exit_code == 0
-    assert calls == [
-        (
-            "heads",
-            sqlite_file_url(tmp_path / "subcommand.sqlite3"),
-        )
-    ]
-
-
-def test_migrate_rejects_blank_database_url_override(capsys) -> None:
-    exit_code = migrate_module.main(["--database-url", "", "current"])
-
-    captured = capsys.readouterr()
-    assert exit_code == 1
-    assert "DATABASE_URL must not be blank" in captured.err
-
-
-def test_migrate_rejects_invalid_root_database_url_context() -> None:
-    ctx = click.Context(
-        migrate_module.migrate_command,
-        obj={"database_url": Path("not-a-string.sqlite3")},
-    )
-
-    with pytest.raises(click.UsageError, match="Invalid root database_url type"):
-        migrate_module._database_url_for_command(ctx, None)
-
-
-def test_migrate_rejects_invalid_context_object_shape() -> None:
-    ctx = click.Context(migrate_module.migrate_command, obj="not-a-dict")
-
-    with pytest.raises(click.UsageError, match="expected a dictionary"):
-        migrate_module._database_url_for_command(ctx, None)
-
-
-@pytest.mark.parametrize(
-    "exception",
-    [
-        migrate_module.AlembicError("bad migration revision"),
-        migrate_module.SQLAlchemyError("database unavailable"),
-    ],
-)
-def test_migrate_reports_operation_errors_cleanly(
-    tmp_path,
-    monkeypatch,
-    capsys,
-    exception: Exception,
-) -> None:
-    def fail_current(_config) -> None:
-        raise exception
-
-    monkeypatch.setattr(migrate_module.command, "current", fail_current)
-    monkeypatch.setattr(
-        data_migrate_module,
-        "inspect_migration_state",
-        lambda _database_url: data_migrate_module.MigrationState(
-            initialised=True,
-            current_revisions=("abc123",),
-        ),
-    )
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-
-    exit_code = migrate_module.main(["--config", str(config_path), "current"])
-
-    captured = capsys.readouterr()
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "migration: failed" in captured.err
-    assert str(exception) in captured.err
-
-
-def test_migrate_reports_metadata_configuration_errors_cleanly(
-    tmp_path,
-    monkeypatch,
-    capsys,
-) -> None:
-    def fail_current(_config) -> None:
-        raise MigrationConfigError("bad module metadata")
-
-    monkeypatch.setattr(migrate_module.command, "current", fail_current)
-    monkeypatch.setattr(
-        data_migrate_module,
-        "inspect_migration_state",
-        lambda _database_url: data_migrate_module.MigrationState(
-            initialised=True,
-            current_revisions=("abc123",),
-        ),
-    )
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-
-    exit_code = migrate_module.main(["--config", str(config_path), "current"])
-
-    captured = capsys.readouterr()
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "configuration: failed" in captured.err
-    assert "bad module metadata" in captured.err
-    assert "Traceback" not in captured.err
-
-
-@pytest.mark.parametrize(
-    ("argv", "command_name", "revision"),
-    [
-        (["downgrade", "base"], "downgrade", "base"),
-        (["history"], "history", None),
-    ],
-)
-def test_migrate_dispatches_supported_commands(
-    tmp_path,
-    monkeypatch,
-    argv: list[str],
-    command_name: str,
-    revision: str | None,
-) -> None:
-    calls: list[tuple[str, str | None, str | None]] = []
-
-    def record_command(config, revision_arg: str | None = None) -> None:
-        calls.append(
-            (
-                command_name,
-                revision_arg,
-                config.get_main_option("sqlalchemy.url"),
-            )
-        )
-
-    monkeypatch.setattr(migrate_module.command, command_name, record_command)
-    config_path = write_app_config(tmp_path / "app.toml")
-    monkeypatch.setattr(migrate_module, "runtime_project_root", lambda: tmp_path)
-
-    exit_code = migrate_module.main(["--config", str(config_path), *argv])
-
-    assert exit_code == 0
-    assert calls == [
-        (
-            command_name,
-            revision,
-            sqlite_file_url(tmp_path / "app.sqlite3"),
-        )
-    ]
-
-
-def test_migrate_init_then_upgrade_initialises_empty_sqlite_database(tmp_path) -> None:
-    database_path = tmp_path / "dev.sqlite3"
-    database_url = f"sqlite+aiosqlite:///{database_path.as_posix()}"
-    config_path = write_app_config(tmp_path / "app.toml")
-
-    assert (
-        migrate_module.main(
-            ["--config", str(config_path), "--database-url", database_url, "init"]
-        )
-        == 0
-    )
-    assert database_path.is_file()
-
-    engine = create_database_engine(database_url)
-
-    async def table_names() -> set[str]:
-        async with engine.begin() as connection:
-            return set(
-                await connection.run_sync(
-                    lambda sync_connection: sqlalchemy_inspect(
-                        sync_connection
-                    ).get_table_names()
-                )
-            )
-
-    try:
-        assert asyncio.run(table_names()) == {"alembic_version"}
-    finally:
-        asyncio.run(close_database(engine))
-
-    assert (
-        migrate_module.main(
-            ["--config", str(config_path), "--database-url", database_url, "upgrade"]
-        )
-        == 0
-    )
-
-    engine = create_database_engine(database_url)
-
-    async def upgraded_table_names() -> set[str]:
-        async with engine.begin() as connection:
-            return set(
-                await connection.run_sync(
-                    lambda sync_connection: sqlalchemy_inspect(
-                        sync_connection
-                    ).get_table_names()
-                )
-            )
-
-    try:
-        upgraded_tables = asyncio.run(upgraded_table_names())
-    finally:
-        asyncio.run(close_database(engine))
-
-    assert "alembic_version" in upgraded_tables
-    assert_identity_tables_present(upgraded_tables)
 
 
 def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
@@ -1074,7 +657,7 @@ def test_load_configured_settings_reads_explicit_config_source(tmp_path) -> None
         tmp_path / "app.toml",
         modules=("uniquode_io", "wybra.db", "wybra.auth"),
         static_url_path="/assets/",
-        database_url="sqlite+aiosqlite:///identity.sqlite3",
+        database_url="sqlite:///identity.sqlite3",
         name="file-app",
     )
 
@@ -1145,15 +728,6 @@ def test_explicit_settings_override_configured_app_name() -> None:
     assert settings.app_name == "explicit-app"
 
 
-def test_sqlite_database_path_ignores_url_query_and_fragment() -> None:
-    assert sqlite_database_path("sqlite+aiosqlite:///app.sqlite3?mode=ro") == (
-        Path("app.sqlite3")
-    )
-    assert sqlite_database_path("sqlite+aiosqlite:///app.sqlite3#fragment") == Path(
-        "app.sqlite3"
-    )
-
-
 def test_app_config_preserves_configured_auth_module(tmp_path: Path) -> None:
     app_config = AppConfig(
         config_path=(tmp_path / "app.toml").resolve(),
@@ -1177,7 +751,7 @@ def test_create_app_configures_database_and_identity_boundaries() -> None:
 
         assert database is site.require_capability(DatabaseCapability)
         assert auth is site.require_capability(AuthCapability)
-        assert callable(database.session)
+        assert callable(database.connection)
         assert callable(database.transaction)
         assert callable(auth.login_required)
 

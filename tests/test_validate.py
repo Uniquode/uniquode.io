@@ -105,15 +105,6 @@ def test_validate_command_checks_route_foundation(capsys) -> None:
     assert "routes: ok" in captured.out
 
 
-def test_validate_command_checks_persistence_foundation(capsys) -> None:
-    exit_code = validate_main(["persistence"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "persistence: ok" in captured.out
-
-
 def test_validate_command_default_runs_registered_targets(capsys) -> None:
     exit_code = validate_main([])
 
@@ -121,7 +112,6 @@ def test_validate_command_default_runs_registered_targets(capsys) -> None:
 
     assert exit_code == 0
     assert "routes: ok" in captured.out
-    assert "persistence: ok" in captured.out
 
 
 def test_validate_command_help_returns_cleanly(capsys) -> None:
@@ -140,21 +130,10 @@ def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
 
     assert exit_code == 0
     assert "routes: ok" in captured.out
-    assert "persistence: ok" in captured.out
     assert "ok: template context providers validate" in captured.out
     assert "ok: configured route modules compose:" in captured.out
     assert "ok: template exists: public/pages/home.html" in captured.out
     assert "ok: template loads: public/pages/home.html" in captured.out
-    assert "ok: database URL uses supported async SQLAlchemy driver" in captured.out
-    assert "ok: Alembic migrations root exists:" in captured.out
-    assert "ok: Alembic migration file exists: env.py" in captured.out
-    assert "ok: Alembic migration file exists: script.py.mako" in captured.out
-    assert "ok: module migration version locations exist:" in captured.out
-    assert "ok: Alembic migration revision exists" in captured.out
-    assert "ok: development database initialisation command is available:" in (
-        captured.out
-    )
-    assert "uv run wybra-migrate init" in captured.out
 
 
 def test_validate_command_verbose_checks_are_scoped_to_project_templates(
@@ -527,102 +506,6 @@ def test_validate_routes_reports_missing_configured_module(tmp_path) -> None:
         "Configured route module validation failed: Configured module "
         "'missing_validation_app' could not be imported.",
     )
-
-
-def test_validate_command_rejects_unsupported_database_url(capsys) -> None:
-    exit_code = validate_main(["persistence", "--database-url", "sqlite://:memory:"])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "Database URL must use sqlite+aiosqlite:// or postgresql+asyncpg://" in (
-        captured.err
-    )
-
-
-def test_validate_command_rejects_empty_database_url_override(capsys) -> None:
-    exit_code = validate_main(["persistence", "--database-url", ""])
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "Database URL must not be empty." in captured.err
-
-
-def test_validate_command_verbose_lists_failed_checks(capsys) -> None:
-    exit_code = validate_main(
-        ["persistence", "--verbose", "--database-url", "sqlite://:memory:"]
-    )
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "persistence: failed" in captured.err
-    assert "ok: database URL is configured: sqlite://:memory:" in captured.err
-    assert "failed: database URL uses supported async SQLAlchemy driver" in (
-        captured.err
-    )
-    assert "Database URL must use sqlite+aiosqlite:// or postgresql+asyncpg://" in (
-        captured.err
-    )
-
-
-def test_validate_command_redacts_database_url_password(capsys) -> None:
-    exit_code = validate_main(
-        [
-            "persistence",
-            "--verbose",
-            "--database-url",
-            "postgresql+asyncpg://user:password@host.example/app",
-        ]
-    )
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "postgresql+asyncpg://***:***@host.example/app" in captured.out
-    assert "postgresql+asyncpg://user:password@host.example/app" not in captured.out
-    assert "password" not in captured.out
-
-
-def test_validate_command_redacts_database_url_username_without_password(
-    capsys,
-) -> None:
-    exit_code = validate_main(
-        [
-            "persistence",
-            "--verbose",
-            "--database-url",
-            "postgresql+asyncpg://alice@host.example/app",
-        ]
-    )
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 0
-    assert "postgresql+asyncpg://***@host.example/app" in captured.out
-    assert "postgresql+asyncpg://alice@host.example/app" not in captured.out
-    assert "alice" not in captured.out
-
-
-def test_validate_command_reports_missing_alembic_structure(tmp_path, capsys) -> None:
-    exit_code = validate_main(
-        [
-            "persistence",
-            "--migrations-root",
-            str(tmp_path / "missing-migrations"),
-        ]
-    )
-
-    captured = capsys.readouterr()
-
-    assert exit_code == 1
-    assert captured.out == ""
-    assert "Missing Alembic migrations root" in captured.err
-    assert "Development database initialisation requires migrations." in captured.err
 
 
 def test_validate_command_reports_missing_templates(tmp_path, capsys) -> None:

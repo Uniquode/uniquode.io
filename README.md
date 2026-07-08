@@ -21,8 +21,8 @@ identity support.
   form and CSRF defaults from `wybra.forms`, error handling from
   `wybra.errors`, route composition from `wybra.core`, application-owned public page templates in
   `src/uniquode_io/templates/`, and identity defaults from `wybra.auth`.
-- SQLAlchemy async persistence with Alembic migrations.
-- Local account support using FastAPI Users, including password sign-in,
+- Tortoise-backed persistence with native Tortoise migrations.
+- Local account support using Wybra auth, including password sign-in,
   database-backed browser sessions, password reset hooks, and email verification
   hooks.
 - Account pages for sign in, sign out, account status, password reset, and email
@@ -64,13 +64,12 @@ deployment policy, CSRF policy, and identity policy adapter.
 
 Application composition is loaded from `app.toml` in the project root,
 or from the path named by `APP_CONFIG`. This file is the shared source for
-configured modules and web resource defaults used by runtime startup, Alembic,
-validation, and future project tooling. `wybra.db` discovers model metadata
-from `<module>.models` and Alembic version locations from
-`<module>/migrations/versions/` when those surfaces exist; it also owns the
-reusable database URL parsing and async SQLAlchemy engine/session helpers. The
-project `wybra-migrate` command loads the selected app config boundary and
-passes those settings into the generic `wybra.db` migration command factory.
+configured modules and web resource defaults used by runtime startup,
+validation, migrations, and project tooling. `wybra.db` discovers Tortoise
+models from configured module model surfaces and owns the reusable database URL
+parsing plus Tortoise connection lifecycle helpers. The project `wybra-migrate`
+command loads the selected app config boundary and passes those settings into
+Wybra's Tortoise migration integration.
 Page, partial, and API routes are discovered and registered through
 `wybra.core` route composition from `<module>.routes` through a
 `module_routers` export, and template context
@@ -89,7 +88,7 @@ composed logical static namespace to `[app.assets].root`.
 
 ```toml
 [app]
-database_url = "sqlite+aiosqlite:///app.sqlite3"
+database_url = "sqlite:///app.sqlite3"
 modules = [
   "app",
   "wybra.assets",
@@ -215,7 +214,7 @@ uv run wybra-validate --verbose environment web persistence
 
 Verbose validation lists the concrete checks performed for each target. Database
 URLs printed by validation are redacted when credentials are embedded, for
-example `postgresql+asyncpg://***:***@host.example/app`.
+example `postgresql://***:***@host.example/app`.
 
 Project command wrappers such as `wybra-runserver`, `wybra-routes`, and
 `wybra-validate` are published by the `wybra` package. The current application
@@ -237,14 +236,14 @@ schema migrations:
 
 ```sh
 uv run wybra-migrate init
-uv run wybra-migrate upgrade
+uv run wybra-migrate migrate
 ```
 
 Use `--database-url` to target an explicit database for one migration command:
 
 ```sh
-uv run wybra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 init
-uv run wybra-migrate --database-url sqlite+aiosqlite:///scratch.sqlite3 upgrade
+uv run wybra-migrate --database-url sqlite:///scratch.sqlite3 init
+uv run wybra-migrate --database-url sqlite:///scratch.sqlite3 migrate
 ```
 
 Use `--config` to select an explicit app config file for one host-tool
@@ -256,9 +255,10 @@ uv run wybra-routes --config config/app.toml
 uv run wybra-authmgr --config config/app.toml user list
 ```
 
-PostgreSQL environments use `wybra-migrate init` for explicit database, user,
-role, and privilege provisioning before `wybra-migrate upgrade` applies
-application schema migrations.
+PostgreSQL environments must have their database, role, and privileges
+provisioned before running migrations. `wybra-migrate init` prepares Wybra's
+Tortoise migration state, and `wybra-migrate migrate` applies application schema
+migrations.
 
 Manage local identity users with the operator CLI:
 
@@ -320,7 +320,7 @@ strength feedback for future UI use.
 
 The CLI distinguishes application admins from superusers. `--admin` marks an
 account for elevated application administration, while `--superuser` is the
-absolute FastAPI Users privilege flag. Superusers cannot be deleted or
+absolute local identity privilege flag. Superusers cannot be deleted or
 deactivated, and the final superuser cannot be demoted. A user's preferred
 timezone is stored only when explicitly supplied; otherwise presentation falls
 back to the current server/application timezone at runtime.
