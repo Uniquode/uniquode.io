@@ -1,11 +1,12 @@
 [app]
 name = "uniquode"
 deployment_environment = "local"
-database_url = "sqlite+aiosqlite:///uniquode.io.sqlite3"
+database_url = "sqlite:///uniquode.io.sqlite3"
 modules = [
   "uniquode_io",
   "wybra.secrets",
   "wybra.widgets",
+  "wybra.messages",
   "wybra.assets",
   "wybra.security",
   "wybra.forms",
@@ -37,6 +38,13 @@ reload_env = "APP_RELOAD"
 
 [wybra.widgets]
 features = ["theme", "login"]
+
+[wybra.sessions]
+storage_backend = "database"
+database_connection_name = "default"
+
+[wybra.messages]
+storage_backend = "session"
 
 [wybra.forms]
 csrf_token_secret_source = "keychain"
@@ -75,10 +83,7 @@ stream = "ext://sys.stderr"
 level = "WARNING"
 handlers = ["console"]
 
-[log.loggers.alembic]
-level = "INFO"
-
-[log.loggers."sqlalchemy.engine"]
+[log.loggers.tortoise]
 level = "WARNING"
 
 [auth]
