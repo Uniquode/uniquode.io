@@ -154,6 +154,9 @@ def write_app_config(
         url_path = {json.dumps(static_url_path)}
         root = {json.dumps(static_asset_root)}
 
+        [wybra.sessions]
+        storage_backend = "memory"
+
         [auth]
         session_cookie_name = "test_session"
         session_cookie_force_secure = false
@@ -168,6 +171,14 @@ def write_app_config(
         encoding="utf-8",
     )
     return path
+
+
+@pytest.fixture(autouse=True)
+def use_generated_app_config(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("APP_CONFIG", str(write_app_config(tmp_path / "app.toml")))
 
 
 def test_write_app_config_requires_route_prefixes_for_modules_without_defaults(
