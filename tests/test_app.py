@@ -31,7 +31,7 @@ from wybra.core.composition import (
 from wybra.core.exceptions import ConfigurationError
 from wybra.core.routes.contracts import _normalise_path_prefix
 from wybra.db import DatabaseCapability
-from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL, parse_sqlite_database_url
+from wybra.db.urls import SQLITE_MEMORY_DATABASE_URL
 from wybra.forms import (
     CSRF_FIELD_NAME,
     CSRF_HEADER_NAME,
@@ -64,29 +64,6 @@ CSRF_INPUT_PATTERN = re.compile(
 RUNSERVER_RELOAD_ENV = "APP_RELOAD"
 
 
-def _app_database_config(database_url: str) -> tuple[str, str]:
-    if database_url == SQLITE_MEMORY_DATABASE_URL:
-        return (
-            "",
-            """
-        [app.database]
-        backend = "sqlite"
-        database = ":memory:"
-        """,
-        )
-    sqlite_url = parse_sqlite_database_url(database_url)
-    if sqlite_url is not None and not sqlite_url.query and not sqlite_url.fragment:
-        return (
-            "",
-            f"""
-        [app.database]
-        backend = "sqlite"
-        database = {json.dumps(sqlite_url.path.as_posix())}
-        """,
-        )
-    return f"database_url = {json.dumps(database_url)}", ""
-
-
 def _imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported_modules = {
@@ -116,7 +93,8 @@ def write_app_config(
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_asset_root: str = "static",
-    database_url: str = "sqlite:///app.sqlite3",
+    database_backend: str = "sqlite",
+    database: str = "app.sqlite3",
     auth_options: dict[str, object] | None = None,
     name: str | None = None,
 ) -> Path:
@@ -154,13 +132,16 @@ def write_app_config(
         f"{key} = {json.dumps(value)}" for key, value in (auth_options or {}).items()
     )
     name_config = "" if name is None else f"name = {json.dumps(name)}"
-    database_url_config, structured_database_config = _app_database_config(database_url)
+    structured_database_config = f"""
+        [app.database]
+        backend = {json.dumps(database_backend)}
+        database = {json.dumps(database)}
+        """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
         [app]
         {name_config}
-        {database_url_config}
         modules = {json.dumps(list(modules))}
 
         {structured_database_config}
@@ -239,7 +220,7 @@ def test_write_app_config_writes_memory_database_as_structured_sqlite(
 ) -> None:
     config_path = write_app_config(
         tmp_path / "app.toml",
-        database_url=SQLITE_MEMORY_DATABASE_URL,
+        database=":memory:",
     )
 
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
@@ -714,7 +695,7 @@ def test_load_configured_settings_reads_explicit_config_source(tmp_path) -> None
         tmp_path / "app.toml",
         modules=("uniquode_io", "wybra.db", "wybra.auth"),
         static_url_path="/assets/",
-        database_url="sqlite:///identity.sqlite3",
+        database="identity.sqlite3",
         name="file-app",
     )
 
