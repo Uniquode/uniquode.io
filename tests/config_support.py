@@ -3,6 +3,7 @@
 TEST_ROUTE_PREFIXES = {
     "uniquode_io": {"default": ""},
     "wybra.widgets": {"partials": "", "api": ""},
+    "wybra.messages": {},
     "wybra.assets": {},
     "wybra.security": {},
     "wybra.forms": {},
@@ -13,6 +14,7 @@ TEST_ROUTE_PREFIXES = {
     "wybra.auth": {"account": "/account", "api": ""},
 }
 WEB_RUNTIME_MODULES = (
+    "wybra.messages",
     "wybra.assets",
     "wybra.security",
     "wybra.forms",

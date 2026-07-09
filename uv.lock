@@ -1276,7 +1276,7 @@ wheels = [
 [[package]]
 name = "wybra"
 version = "0.1.0"
-source = { git = "https://github.com/Uniquode/wybra.git?branch=main#8ae855fdff9fd0f1344267dec8faa7d0c56c9540" }
+source = { git = "https://github.com/Uniquode/wybra.git?branch=main#647f665800d6d3d5489616706b0ef8fb5f3043cd" }
 dependencies = [
     { name = "aiosqlite" },
     { name = "anyio" },

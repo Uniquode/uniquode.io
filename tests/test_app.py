@@ -93,7 +93,8 @@ def write_app_config(
     route_prefixes: dict[str, dict[str, str]] | None = None,
     static_url_path: str = "/static/",
     static_asset_root: str = "static",
-    database_url: str = "sqlite:///app.sqlite3",
+    database_backend: str = "sqlite",
+    database: str = "app.sqlite3",
     auth_options: dict[str, object] | None = None,
     name: str | None = None,
 ) -> Path:
@@ -131,13 +132,19 @@ def write_app_config(
         f"{key} = {json.dumps(value)}" for key, value in (auth_options or {}).items()
     )
     name_config = "" if name is None else f"name = {json.dumps(name)}"
+    structured_database_config = f"""
+        [app.database]
+        backend = {json.dumps(database_backend)}
+        database = {json.dumps(database)}
+        """
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
         f"""
         [app]
         {name_config}
-        database_url = {json.dumps(database_url)}
         modules = {json.dumps(list(modules))}
+
+        {structured_database_config}
 
         [app.routes]
         {route_config}
@@ -156,6 +163,9 @@ def write_app_config(
 
         [wybra.sessions]
         storage_backend = "memory"
+
+        [wybra.messages]
+        storage_backend = "session"
 
         [auth]
         session_cookie_name = "test_session"
@@ -203,6 +213,23 @@ def test_write_app_config_writes_hyphenated_route_module_alias_and_labels(
     data = tomllib.loads(config_path.read_text(encoding="utf-8"))
 
     assert data["app"]["routes"]["custom-route-app"]["api-v2"] == "/api/v2"
+
+
+def test_write_app_config_writes_memory_database_as_structured_sqlite(
+    tmp_path: Path,
+) -> None:
+    config_path = write_app_config(
+        tmp_path / "app.toml",
+        database=":memory:",
+    )
+
+    data = tomllib.loads(config_path.read_text(encoding="utf-8"))
+
+    assert "database_url" not in data["app"]
+    assert data["app"]["database"] == {
+        "backend": "sqlite",
+        "database": ":memory:",
+    }
 
 
 def build_test_app_config(
@@ -668,7 +695,7 @@ def test_load_configured_settings_reads_explicit_config_source(tmp_path) -> None
         tmp_path / "app.toml",
         modules=("uniquode_io", "wybra.db", "wybra.auth"),
         static_url_path="/assets/",
-        database_url="sqlite:///identity.sqlite3",
+        database="identity.sqlite3",
         name="file-app",
     )
 
