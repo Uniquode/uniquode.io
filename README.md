@@ -55,7 +55,7 @@ session-cookie guidance.
 Runtime configuration is loaded through `envex`, including local `.env` files.
 Database settings normally live in structured `[app.database]` configuration.
 `DATABASE_URL` is an explicit database connection override. App settings use
-concise names such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET`, `CSRF_SECURE`,
+concise names such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET_KEY`, `CSRF_SECURE`,
 `RESET_SECRET`, `VERIFICATION_SECRET`, `SESSION_COOKIE`,
 `SESSION_FORCE_SECURE`, `SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_MODE`,
 `PASSKEY_ENABLED`, and `APP_RELOAD`.
@@ -143,7 +143,7 @@ storage_backend = "session"
 
 [wybra.forms]
 csrf_token_secret_source = "keychain"
-csrf_token_secret_key = "auth/forms/csrf-token-secret/current"
+csrf_token_secret_key = "auth/forms/csrf-token-secret/dev/current"
 
 [secrets.crypto]
 source = "keychain"

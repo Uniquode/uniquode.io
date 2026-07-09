@@ -91,7 +91,7 @@ jobs:
               json.dumps(
                   {
                       "secrets/key/dev/current": f"ci:{encoded_key}:{checksum}",
-                      "auth/forms/csrf-token-secret/current": (
+                      "auth/forms/csrf-token-secret/dev/current": (
                           secrets.token_urlsafe(32)
                       ),
                       "auth/providers/google/dev/client-secret": (
