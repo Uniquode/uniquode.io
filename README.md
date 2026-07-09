@@ -55,7 +55,7 @@ session-cookie guidance.
 Runtime configuration is loaded through `envex`, including local `.env` files.
 Database settings normally live in structured `[app.database]` configuration.
 `DATABASE_URL` is an explicit database connection override. App settings use
-concise names such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET`, `CSRF_SECURE`,
+concise names such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET_KEY`, `CSRF_SECURE`,
 `RESET_SECRET`, `VERIFICATION_SECRET`, `SESSION_COOKIE`,
 `SESSION_FORCE_SECURE`, `SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_MODE`,
 `PASSKEY_ENABLED`, and `APP_RELOAD`.
@@ -143,7 +143,7 @@ storage_backend = "session"
 
 [wybra.forms]
 csrf_token_secret_source = "keychain"
-csrf_token_secret_key = "auth/forms/csrf-token-secret/current"
+csrf_token_secret_key = "auth/forms/csrf-token-secret/dev/current"
 
 [secrets.crypto]
 source = "keychain"
@@ -193,7 +193,6 @@ form and CSRF defaults are published by `wybra.forms`; static asset setup is
 published by `wybra.assets`; security headers and CORS policy are published by `wybra.security`. Host
 applications can override logical template and static paths from earlier
 configured modules.
-Application-specific navigation and product policy remain application-owned.
 
 Local `.env` files are for development only and are ignored by Git. Deployment
 environments should inject secrets through their secret manager or environment
@@ -258,101 +257,3 @@ From the workspace root, run the main checks:
 
 ```sh
 uv run ruff format --check app/src app/tests
-uv run ruff check app/src app/tests
-uv --directory app run ty check src/
-uv --directory app run pytest -q
-```
-
-Initialise the local SQLite development database the first time, then apply the
-schema migrations:
-
-```sh
-uv run wybra-migrate init
-uv run wybra-migrate migrate
-```
-
-Use `--database-url` to target an explicit database for one migration command:
-
-```sh
-uv run wybra-migrate --database-url sqlite:///scratch.sqlite3 init
-uv run wybra-migrate --database-url sqlite:///scratch.sqlite3 migrate
-```
-
-Use `--config` to select an explicit app config file for one host-tool
-invocation:
-
-```sh
-uv run wybra-migrate --config config/app.toml history
-uv run wybra-routes --config config/app.toml
-uv run wybra-authmgr --config config/app.toml user list
-```
-
-PostgreSQL environments must have their database, role, and privileges
-provisioned before running migrations. `wybra-migrate init` prepares Wybra's
-Tortoise migration state, and `wybra-migrate migrate` applies application schema
-migrations.
-
-Manage local identity users with the operator CLI:
-
-```sh
-uv run wybra-authmgr user create person@example.com
-uv run wybra-authmgr user create admin@example.com --admin
-uv run wybra-authmgr user create reader@example.com --group readers
-uv run wybra-authmgr user update reader@example.com --add-group editors
-uv run wybra-authmgr user update reader@example.com --rm-group readers
-uv run wybra-authmgr user update reader@example.com --set-group operators
-uv run wybra-authmgr user list
-uv run wybra-authmgr user list --json
-uv run wybra-authmgr user password person@example.com
-uv run wybra-authmgr user delete person@example.com --force
-```
-
-Manage local authorisation scopes and groups with the same CLI:
-
-```sh
-uv run wybra-authmgr scope create document:read --description "Read documents"
-uv run wybra-authmgr scope update document:read --description "Read published documents"
-uv run wybra-authmgr scope list --json
-uv run wybra-authmgr scope delete document:read
-
-uv run wybra-authmgr group create readers --description "Readers" --scope document:read
-uv run wybra-authmgr group readers update --scope document:write --rm-scope document:read
-uv run wybra-authmgr group readers add-user person@example.com
-uv run wybra-authmgr group readers add-group staff
-uv run wybra-authmgr group readers show --json
-uv run wybra-authmgr group effective-scopes person@example.com --json
-uv run wybra-authmgr group readers remove-user person@example.com
-uv run wybra-authmgr group readers remove-group staff
-uv run wybra-authmgr group readers delete --force
-```
-
-`wybra-authmgr` timestamp arguments accept Unix seconds directly, such as
-`--expires-at 4102444800`, or supported date/time strings parsed by
-`dateparser`. Numeric input is interpreted first as Unix seconds, so use a
-separated form such as `2025-01-01` for calendar dates.
-
-`wybra-authmgr` is owned by the reusable authentication package and resolves
-the same application config boundary as the other Wybra project tools: run it
-from the app project, set `APP_CONFIG`, or pass `--config <path>`. It reads
-`[auth]` from `app.toml`, with `DATABASE_URL` overriding `[app.database]` when
-explicitly set.
-
-`wybra-authmgr` talks to the configured identity database directly. It is
-not an API-backed remote administration client; that mode is deferred until
-administrative API tokens and scopes exist. Passwords are entered through hidden
-prompts by default, or read from stdin with `--password -` for operator
-automation. Password changes revoke existing sessions unless `--no-revoke` is
-supplied. Groups are the local authorisation mechanism: scopes are assigned to
-groups, users are assigned to groups, and effective scopes are resolved through
-direct and nested group membership. Scope deletion is refused while any group
-uses that scope, and group deletion is refused while users, child groups, or
-parent groups still reference that group. Password writes use the configured
-`wybra.auth` password policy, which provides server-side validation and
-strength feedback for future UI use.
-
-The CLI distinguishes application admins from superusers. `--admin` marks an
-account for elevated application administration, while `--superuser` is the
-absolute local identity privilege flag. Superusers cannot be deleted or
-deactivated, and the final superuser cannot be demoted. A user's preferred
-timezone is stored only when explicitly supplied; otherwise presentation falls
-back to the current server/application timezone at runtime.

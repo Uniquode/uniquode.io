@@ -51,7 +51,7 @@ storage_backend = "session"
 
 [wybra.forms]
 csrf_token_secret_source = "keychain"
-csrf_token_secret_key = "auth/forms/csrf-token-secret/current"
+csrf_token_secret_key = "auth/forms/csrf-token-secret/dev/current"
 
 [wybra.media]
 root = "media"
