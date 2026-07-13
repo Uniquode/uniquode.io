@@ -53,19 +53,20 @@ session-cookie guidance.
 ## Configuration
 
 Runtime configuration is loaded through `envex`, including local `.env` files.
-Database settings normally live in structured `[app.database]` configuration.
-`DATABASE_URL` is an explicit database connection override. App settings use
-concise names such as `APP_ENV`, `APP_NAME`, `CSRF_SECRET_KEY`, `CSRF_SECURE`,
-`RESET_SECRET`, `VERIFICATION_SECRET`, `SESSION_COOKIE`,
-`SESSION_FORCE_SECURE`, `SESSION_LIFETIME`, `PROVIDER_ENABLED`, `TOTP_MODE`,
-`PASSKEY_ENABLED`, and `APP_RELOAD`.
-`wybra.core` owns the reusable envex/app.toml settings-loading mechanics, while
+Keep the current application configuration in `uniquode.io.toml`; it is the
+canonical example for local development and deployment wiring. Avoid copying
+database, secret, provider, or session details into this README because those
+settings change as Wybra features are exercised. Use Wybra's configuration
+documentation for the active database, secret, environment-variable, and
+session settings.
+`wybra.core` owns the reusable envex/app-config settings-loading mechanics,
+while
 `app.settings` owns this application's concrete settings fields, defaults,
 deployment policy, CSRF policy, and identity policy adapter.
 
-Application composition is loaded from `app.toml` in the project root,
-or from the path named by `APP_CONFIG`. This file is the shared source for
-configured modules and web resource defaults used by runtime startup,
+Application composition is loaded from `uniquode.io.toml` in the project root,
+or from the path named by `APP_CONFIG`. The selected config file is the shared
+source for configured modules and web resource defaults used by runtime startup,
 validation, migrations, and project tooling. `wybra.db` discovers Tortoise
 models from configured module model surfaces and owns the reusable database URL
 parsing plus Tortoise connection lifecycle helpers. The project `wybra-migrate`
@@ -87,102 +88,10 @@ Static collection is only needed when exporting assets for an external static
 server such as Nginx, and the reusable static export boundary writes the
 composed logical static namespace to `[app.assets].root`.
 
-```toml
-[app]
-modules = [
-  "app",
-  "wybra.secrets",
-  "wybra.widgets",
-  "wybra.messages",
-  "wybra.assets",
-  "wybra.security",
-  "wybra.forms",
-  "wybra.api",
-  "wybra.template",
-  "wybra.errors",
-  "wybra.db",
-  "wybra.auth",
-  "wybra.providers",
-  "wybra.media",
-  "wybra.profile",
-]
-
-[app.database]
-backend = "sqlite"
-database = "app.sqlite3"
-
-[app.routes]
-app = { default = "" }
-wybra-widgets = { partials = "", api = "" }
-wybra-profile = { profile = "" }
-wybra-security = {}
-wybra-forms = {}
-wybra-api = {}
-wybra-template = {}
-wybra-auth = { account = "/account", api = "" }
-wybra-providers = { google = "/account/providers/google", github = "/account/providers/github", apple = "/account/providers/apple" }
-
-[app.runserver]
-asgi_app = "uniquode_io.asgi:app"
-reload_env = "APP_RELOAD"
-
-[app.templates]
-auto_reload = true
-cache_size = 0
-
-[app.assets]
-url_path = "/static/"
-root = "static"
-
-[wybra.sessions]
-storage_backend = "database"
-database_connection_name = "default"
-
-[wybra.messages]
-storage_backend = "session"
-
-[wybra.forms]
-csrf_token_secret_source = "keychain"
-csrf_token_secret_key = "auth/forms/csrf-token-secret/dev/current"
-
-[secrets.crypto]
-source = "keychain"
-current_key = "secrets/key/dev/current"
-previous_keys = "secrets/key/dev/previous"
-
-[secrets.keychain]
-appname = "wybra"
-
-[auth]
-# Local development leaves session_cookie_force_secure unset so HTTP works.
-# Non-local deployments must set SESSION_FORCE_SECURE=1 or configure
-# session_cookie_force_secure = true in deployment-specific config.
-
-[auth.password.policy]
-minimum_length = 12
-minimum_character_categories = 2
-minimum_strength = 0.45
-common_fragments = [
-  "admin",
-  "changeme",
-  "changeit",
-  "letmein",
-  "p4ssw0rd",
-  "pass",
-  "password",
-  "qwerty",
-  "test",
-  "tester",
-  "welcome",
-]
-```
-
-`app.toml` is not a secrets or deployment-policy file. Keep secrets in the
-environment or deployment secret manager. It is the canonical normal
-configuration boundary for the web runtime, migrations, validation, and local
-identity management. The application database connection is `[app.database]`;
-auth settings live in `[auth]` and `[auth.password.policy]`. `DATABASE_URL` is
-the only database environment override for both runtime and auth tooling.
+`uniquode.io.toml` is not a secrets file. Keep secret values in the configured
+secret backend or deployment environment. The config file is the normal
+application boundary for web runtime, migrations, validation, and local identity
+management.
 
 The current identity browser surface is published by `wybra.auth.routes`;
 default identity templates and safe identity template state are provided by
@@ -254,43 +163,34 @@ remains the configured command target where appropriate, for example
 `wybra-runserver` starts `uniquode_io.asgi:app` through `[app.runserver]` in the
 selected app config file.
 
-From the workspace root, run the main checks:
+From the repository root, run the main checks:
 
 ```sh
-uv run ruff format --check app/src app/tests
-uv run ruff check app/src app/tests
-uv --directory app run ty check src/
-uv --directory app run pytest -q
+uv run ruff format --check src tests
+uv run ruff check src tests
+uv run ty check src/
+uv run pytest -q
 ```
 
-Initialise the local SQLite development database the first time, then apply the
-schema migrations:
+Initialise the configured local database the first time, then apply schema
+migrations:
 
 ```sh
 uv run wybra-migrate init
 uv run wybra-migrate migrate
 ```
 
-Use `--database-url` to target an explicit database for one migration command:
-
-```sh
-uv run wybra-migrate --database-url sqlite:///scratch.sqlite3 init
-uv run wybra-migrate --database-url sqlite:///scratch.sqlite3 migrate
-```
-
 Use `--config` to select an explicit app config file for one host-tool
 invocation:
 
 ```sh
-uv run wybra-migrate --config config/app.toml history
-uv run wybra-routes --config config/app.toml
-uv run wybra-authmgr --config config/app.toml user list
+uv run wybra-migrate --config uniquode.io.toml history
+uv run wybra-routes --config uniquode.io.toml
+uv run wybra-authmgr --config uniquode.io.toml user list
 ```
 
-PostgreSQL environments must have their database, role, and privileges
-provisioned before running migrations. `wybra-migrate init` prepares Wybra's
-Tortoise migration state, and `wybra-migrate migrate` applies application schema
-migrations.
+Database provisioning details are owned by Wybra. Use `wybra-migrate --help`
+and the Wybra database documentation for backend-specific options.
 
 Manage local identity users with the operator CLI:
 
@@ -334,8 +234,8 @@ separated form such as `2025-01-01` for calendar dates.
 `wybra-authmgr` is owned by the reusable authentication package and resolves
 the same application config boundary as the other Wybra project tools: run it
 from the app project, set `APP_CONFIG`, or pass `--config <path>`. It reads
-`[auth]` from `app.toml`, with `DATABASE_URL` overriding `[app.database]` when
-explicitly set.
+auth settings from the selected app config, with `DATABASE_URL` overriding the
+configured database connection when explicitly set.
 
 `wybra-authmgr` talks to the configured identity database directly. It is
 not an API-backed remote administration client; that mode is deferred until

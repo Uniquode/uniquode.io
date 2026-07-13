@@ -20,8 +20,9 @@ modules = [
 ]
 
 [app.database]
-backend = "sqlite"
-database = "uniquode.io.sqlite3"
+backend = "postgresql"
+database = "uniquode"
+credential_source = "keychain"
 
 [app.routes]
 uniquode_io = { default = "" }
@@ -51,7 +52,6 @@ storage_backend = "session"
 
 [wybra.forms]
 csrf_token_secret_source = "keychain"
-csrf_token_secret_key = "auth/forms/csrf-token-secret/dev/current"
 
 [wybra.media]
 root = "media"
@@ -110,8 +110,6 @@ counter_policy = "reject-regression"
 
 [secrets.crypto]
 source = "keychain"
-current_key = "secrets/key/dev/current"
-previous_keys = "secrets/key/dev/previous"
 
 [secrets.keychain]
 appname = "wybra"
@@ -120,7 +118,6 @@ appname = "wybra"
 enabled = true
 client_id = "google-dev-client-id"
 secrets = "keychain"
-client_secret_key = "auth/providers/google/dev/client-secret"
 account_creation_enabled = true
 email_match_linking_enabled = true
 required_claims = ["sub", "email", "email_verified"]
@@ -129,7 +126,6 @@ required_claims = ["sub", "email", "email_verified"]
 enabled = true
 client_id = "github-dev-client-id"
 secrets = "keychain"
-client_secret_key = "auth/providers/github/dev/client-secret"
 account_creation_enabled = true
 email_match_linking_enabled = true
 required_claims = ["id", "email", "email_verified"]
@@ -140,7 +136,6 @@ client_id = "io.uniquode.dev.web"
 team_id = "APPLE_DEV_TEAM_ID"
 key_id = "APPLE_DEV_KEY_ID"
 secrets = "keychain"
-private_key_secret_key = "auth/providers/apple/dev/private-key"
 account_creation_enabled = true
 email_match_linking_enabled = true
 required_claims = ["sub", "email", "email_verified"]
