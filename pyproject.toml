@@ -9,7 +9,7 @@ requires-python = ">=3.14"
 dependencies = [
     "fastapi>=0.141.1",
     "starlette>=1.2.1",
-    "wybra[keychain,postgresql]",
+    "wybra[cache,keychain,postgresql]",
 ]
 
 [build-system]

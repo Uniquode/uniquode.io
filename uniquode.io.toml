@@ -4,6 +4,7 @@ deployment_environment = "local"
 modules = [
   "uniquode_io",
   "wybra.secrets",
+  "wybra.cache",
   "wybra.widgets",
   "wybra.messages",
   "wybra.assets",
@@ -114,6 +115,11 @@ source = "keychain"
 
 [secrets.keychain]
 appname = "wybra"
+
+[cache]
+backend = "redis"
+url_source = "keychain"
+namespace = "uniquode"
 
 [auth.providers.google]
 enabled = true
