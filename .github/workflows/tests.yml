@@ -68,43 +68,63 @@ jobs:
           . "$keyring_env"
           set +a
 
-          uv run python - <<'PY' | uv run wybra-secret --config uniquode.io.toml set --json
-          import base64
-          import json
-          import secrets
-          import zlib
-
-          from cryptography.hazmat.primitives import serialization
-          from cryptography.hazmat.primitives.asymmetric import ec
-          from cryptography.fernet import Fernet
-
-          encoded_key = Fernet.generate_key().decode("ascii")
-          raw_key = base64.urlsafe_b64decode(encoded_key)
-          checksum = f"{zlib.crc32(raw_key) & 0xFFFFFFFF:08x}"
-          apple_private_key = ec.generate_private_key(ec.SECP256R1())
-          apple_private_key_pem = apple_private_key.private_bytes(
-              encoding=serialization.Encoding.PEM,
-              format=serialization.PrivateFormat.PKCS8,
-              encryption_algorithm=serialization.NoEncryption(),
-          ).decode("ascii")
-          print(
-              json.dumps(
-                  {
-                      "secrets/key/dev/current": f"ci:{encoded_key}:{checksum}",
-                      "auth/forms/csrf-token-secret/dev/current": (
-                          secrets.token_urlsafe(32)
-                      ),
-                      "auth/providers/google/dev/client-secret": (
-                          secrets.token_urlsafe(32)
-                      ),
-                      "auth/providers/github/dev/client-secret": (
-                          secrets.token_urlsafe(32)
-                      ),
-                      "auth/providers/apple/dev/private-key": apple_private_key_pem,
-                  }
-              )
-          )
-          PY
+          uv run python ci/seed_core_secrets.py --config uniquode.io.toml
 
           uv run pytest -q
           SH
+
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    env:
+      APP_CONFIG: uniquode.io.toml
+      # Ephemeral superuser password for the throwaway Postgres service
+      # container below, torn down at the end of this job. Derived from
+      # run identifiers (not a fixed dictionary word) so secret scanners
+      # don't flag it as a leaked credential.
+      POSTGRES_SUPERUSER_PASSWORD: smoke-${{ github.run_id }}-${{ github.run_attempt }}
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: smoke-${{ github.run_id }}-${{ github.run_attempt }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Linux keychain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dbus-user-session \
+            gnome-keyring \
+            libsecret-tools
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Run smoke test
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+          POSTGRES_SUPERUSER_PASSWORD: ${{ env.POSTGRES_SUPERUSER_PASSWORD }}
+        run: dbus-run-session -- bash ./smoke_test.sh

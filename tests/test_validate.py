@@ -105,7 +105,30 @@ def test_validate_command_checks_route_foundation(capsys) -> None:
     assert "routes: ok" in captured.out
 
 
-def test_validate_command_default_runs_registered_targets(capsys) -> None:
+def _stub_out_scopes_target(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Replace the "scopes" built-in target with a no-op for this test.
+
+    Scope-catalogue validation opens a live database connection (and, for
+    apps that use it, a real keychain-backed secret) to detect drift between
+    declared and persisted scopes. That live-infrastructure dependency is
+    exercised end-to-end by the smoke test (see smoke_test.sh); these tests
+    are only concerned with the validate CLI's own plumbing (default target
+    selection, verbose output, module-discovered targets), so scopes is
+    stubbed out here to keep them fast and hermetic.
+    """
+    monkeypatch.setitem(
+        validate_module.BUILTIN_VALIDATION_TARGETS,
+        "scopes",
+        lambda settings: ValidationResult(name="scopes", errors=()),
+    )
+
+
+def test_validate_command_default_runs_registered_targets(
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_out_scopes_target(monkeypatch)
+
     exit_code = validate_main([])
 
     captured = capsys.readouterr()
@@ -123,7 +146,12 @@ def test_validate_command_help_returns_cleanly(capsys) -> None:
     assert captured.err == ""
 
 
-def test_validate_command_verbose_lists_registered_checks(capsys) -> None:
+def test_validate_command_verbose_lists_registered_checks(
+    capsys,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _stub_out_scopes_target(monkeypatch)
+
     exit_code = validate_main(["--verbose"])
 
     captured = capsys.readouterr()
@@ -319,6 +347,7 @@ def test_validate_command_runs_discovered_module_targets(
         "_build_settings",
         lambda _overrides: _project_settings(tmp_path, ("command_validation_module",)),
     )
+    _stub_out_scopes_target(monkeypatch)
 
     exit_code = validate_main([])
 
