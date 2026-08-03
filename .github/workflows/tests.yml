@@ -90,17 +90,17 @@ jobs:
           print(
               json.dumps(
                   {
-                      "secrets/key/dev/current": f"ci:{encoded_key}:{checksum}",
-                      "auth/forms/csrf-token-secret/dev/current": (
+                      "secrets/key/current": f"ci:{encoded_key}:{checksum}",
+                      "auth/forms/csrf-token-secret/current": (
                           secrets.token_urlsafe(32)
                       ),
-                      "auth/providers/google/dev/client-secret": (
+                      "auth/providers/google/client-secret": (
                           secrets.token_urlsafe(32)
                       ),
-                      "auth/providers/github/dev/client-secret": (
+                      "auth/providers/github/client-secret": (
                           secrets.token_urlsafe(32)
                       ),
-                      "auth/providers/apple/dev/private-key": apple_private_key_pem,
+                      "auth/providers/apple/private-key": apple_private_key_pem,
                   }
               )
           )
@@ -108,3 +108,53 @@ jobs:
 
           uv run pytest -q
           SH
+
+  smoke:
+    name: Smoke test
+    runs-on: ubuntu-latest
+    env:
+      APP_CONFIG: uniquode.io.toml
+
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Install Linux keychain dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            dbus-user-session \
+            gnome-keyring \
+            libsecret-tools
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v9.0.0
+        with:
+          enable-cache: true
+
+      - name: Install Python
+        uses: actions/setup-python@v7
+        with:
+          python-version-file: pyproject.toml
+
+      - name: Install dependencies
+        run: uv sync --locked --group dev
+
+      - name: Run smoke test
+        env:
+          RUNNER_TEMP: ${{ runner.temp }}
+        run: dbus-run-session -- bash ./smoke_test.sh

@@ -789,8 +789,9 @@ def test_create_app_configures_database_and_identity_boundaries() -> None:
 
         assert database is site.require_capability(DatabaseCapability)
         assert auth is site.require_capability(AuthCapability)
-        assert callable(database.connection)
-        assert callable(database.transaction)
+        assert callable(database.database)
+        assert callable(database.models)
+        assert callable(database.close)
         assert callable(auth.login_required)
 
     assert not hasattr(app.state, "database")
@@ -1162,12 +1163,10 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wybra_db(
     (package_root / "__init__.py").write_text(
         "from wybra.db import DatabaseCapability\n\n"
         "class CompatibleDatabaseCapability:\n"
-        "    def connection(self, name='default'):\n"
+        "    def database(self, name='default'):\n"
         "        raise NotImplementedError\n"
-        "    def session(self, name='default'):\n"
-        "        raise NotImplementedError\n"
-        "    def transaction(self, name='default'):\n"
-        "        raise NotImplementedError\n"
+        "    def models(self):\n"
+        "        return ()\n"
         "    async def close(self):\n"
         "        return None\n\n"
         "async def setup_site(site):\n"

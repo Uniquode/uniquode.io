@@ -13,6 +13,7 @@ modules = [
   "wybra.template",
   "wybra.errors",
   "wybra.db",
+  "wybra.content_types",
   "wybra.auth",
   "wybra.providers",
   "wybra.media",
