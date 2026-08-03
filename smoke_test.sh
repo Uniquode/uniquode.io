@@ -15,7 +15,14 @@ dest = sys.argv[1]
 with open("uniquode.io.toml", encoding="utf-8") as fh:
     text = fh.read()
 marker = "[app.database]\n"
-idx = text.index(marker) + len(marker)
+try:
+    idx = text.index(marker) + len(marker)
+except ValueError as exc:
+    raise SystemExit(
+        f"smoke_test.sh: expected marker {marker!r} not found in "
+        "uniquode.io.toml -- update smoke_test.sh if the [app.database] "
+        "section was renamed or restructured."
+    ) from exc
 injected = 'host = "127.0.0.1"\nport = 5432\n'
 text = text[:idx] + injected + text[idx:]
 with open(dest, "w", encoding="utf-8") as fh:
@@ -36,42 +43,15 @@ set -a
 set +a
 
 echo "== Seeding core app secrets =="
-uv run python - <<'PY' | uv run wybra-secret set --json
-import base64
-import json
-import secrets
-import zlib
-
-from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
-from cryptography.fernet import Fernet
-
-encoded_key = Fernet.generate_key().decode("ascii")
-raw_key = base64.urlsafe_b64decode(encoded_key)
-checksum = f"{zlib.crc32(raw_key) & 0xFFFFFFFF:08x}"
-apple_private_key = ec.generate_private_key(ec.SECP256R1())
-apple_private_key_pem = apple_private_key.private_bytes(
-    encoding=serialization.Encoding.PEM,
-    format=serialization.PrivateFormat.PKCS8,
-    encryption_algorithm=serialization.NoEncryption(),
-).decode("ascii")
-print(
-    json.dumps(
-        {
-            "secrets/key/current": f"ci:{encoded_key}:{checksum}",
-            "auth/forms/csrf-token-secret/current": secrets.token_urlsafe(32),
-            "auth/providers/google/client-secret": secrets.token_urlsafe(32),
-            "auth/providers/github/client-secret": secrets.token_urlsafe(32),
-            "auth/providers/apple/private-key": apple_private_key_pem,
-        }
-    )
-)
-PY
+uv run python ci/seed_core_secrets.py | uv run wybra-secret set --json
 
 echo "== Seeding database credentials =="
 DB_APP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
+# POSTGRES_SUPERUSER_PASSWORD is set by CI to match the throwaway Postgres
+# service container's generated password. Falls back to "postgres" for
+# local runs against a default local Postgres install.
 printf '%s' "postgres" | uv run wybra-secret set --key database/uniquode/service-account/user --stdin
-printf '%s' "postgres" | uv run wybra-secret set --key database/uniquode/service-account/password --stdin
+printf '%s' "${POSTGRES_SUPERUSER_PASSWORD:-postgres}" | uv run wybra-secret set --key database/uniquode/service-account/password --stdin
 printf '%s' "uniquode_app" | uv run wybra-secret set --key database/uniquode/app/user --stdin
 printf '%s' "$DB_APP_PASSWORD" | uv run wybra-secret set --key database/uniquode/app/password --stdin
 
@@ -142,7 +122,9 @@ check_route "/nonexistent-smoke-path" 404
 echo "== Attempting login flow =="
 COOKIE_JAR="$(mktemp)"
 LOGIN_PAGE="$(curl -s -c "$COOKIE_JAR" http://127.0.0.1:8000/account/login)"
-CSRF_TOKEN="$(printf '%s' "$LOGIN_PAGE" | grep -o 'name="csrf_token"[^>]*value="[^"]*"' | head -1 | sed -E 's/.*value="([^"]*)".*/\1/')"
+# The trailing `|| true` keeps a no-match `grep` from tripping `set -e` and
+# aborting the script before the clearer diagnostic below can run.
+CSRF_TOKEN="$(printf '%s' "$LOGIN_PAGE" | grep -o 'name="csrf_token"[^>]*value="[^"]*"' | head -1 | sed -E 's/.*value="([^"]*)".*/\1/')" || true
 if [ -z "$CSRF_TOKEN" ]; then
   echo "CSRF token not found on login page - login form markup may have changed" >&2
   exit 1
@@ -152,7 +134,7 @@ fi
 # form being re-rendered with a 200) means the credentials, CSRF token, or
 # session cookie handling is broken.
 LOGIN_CODE="$(curl -s -o /tmp/smoke_login.html -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
-  -d "csrf_token=${CSRF_TOKEN}" -d "email=${SMOKE_EMAIL}" -d "password=${SMOKE_PASSWORD}" \
+  --data-urlencode "csrf_token=${CSRF_TOKEN}" --data-urlencode "email=${SMOKE_EMAIL}" --data-urlencode "password=${SMOKE_PASSWORD}" \
   http://127.0.0.1:8000/account/login)"
 echo "POST /account/login -> ${LOGIN_CODE}"
 if [ "$LOGIN_CODE" != "303" ]; then
