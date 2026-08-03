@@ -43,7 +43,7 @@ set -a
 set +a
 
 echo "== Seeding core app secrets =="
-uv run python ci/seed_core_secrets.py | uv run wybra-secret set --json
+uv run python ci/seed_core_secrets.py
 
 echo "== Seeding database credentials =="
 DB_APP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"

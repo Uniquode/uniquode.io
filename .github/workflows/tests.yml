@@ -68,7 +68,7 @@ jobs:
           . "$keyring_env"
           set +a
 
-          uv run python ci/seed_core_secrets.py | uv run wybra-secret --config uniquode.io.toml set --json
+          uv run python ci/seed_core_secrets.py --config uniquode.io.toml
 
           uv run pytest -q
           SH
