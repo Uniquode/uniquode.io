@@ -58,18 +58,14 @@ from uniquode_io.app import create_app
 from uniquode_io.routes import health
 from uniquode_io.settings import Settings
 
-CSRF_INPUT_PATTERN = re.compile(
-    rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"'
-)
+CSRF_INPUT_PATTERN = re.compile(rf'<input[^>]+name="{CSRF_FIELD_NAME}"[^>]+value="([^"]+)"')
 RUNSERVER_RELOAD_ENV = "APP_RELOAD"
 
 
 def _imported_modules(path: Path) -> set[str]:
     tree = ast.parse(path.read_text(encoding="utf-8"))
     imported_modules = {
-        node.module
-        for node in ast.walk(tree)
-        if isinstance(node, ast.ImportFrom) and node.module is not None
+        node.module for node in ast.walk(tree) if isinstance(node, ast.ImportFrom) and node.module is not None
     }
     imported_modules.update(
         f"{node.module}.{alias.name}"
@@ -78,10 +74,7 @@ def _imported_modules(path: Path) -> set[str]:
         for alias in node.names
     )
     imported_modules.update(
-        alias.name
-        for node in ast.walk(tree)
-        if isinstance(node, ast.Import)
-        for alias in node.names
+        alias.name for node in ast.walk(tree) if isinstance(node, ast.Import) for alias in node.names
     )
     return imported_modules
 
@@ -107,9 +100,7 @@ def write_app_config(
         for module, labels in route_prefixes.items():
             prefixes[module] = {**prefixes.get(module, {}), **labels}
 
-    missing_prefix_modules = tuple(
-        module_name for module_name in modules if module_name not in prefixes
-    )
+    missing_prefix_modules = tuple(module_name for module_name in modules if module_name not in prefixes)
     if missing_prefix_modules:
         raise ValueError(
             "write_app_config needs explicit route_prefixes for modules without "
@@ -121,16 +112,13 @@ def write_app_config(
             f"{module_name.replace('.', '-')} = "
             "{ "
             + ", ".join(
-                f"{json.dumps(label)} = {json.dumps(prefix)}"
-                for label, prefix in prefixes[module_name].items()
+                f"{json.dumps(label)} = {json.dumps(prefix)}" for label, prefix in prefixes[module_name].items()
             )
             + " }"
         )
         for module_name in modules
     )
-    auth_config = "\n".join(
-        f"{key} = {json.dumps(value)}" for key, value in (auth_options or {}).items()
-    )
+    auth_config = "\n".join(f"{key} = {json.dumps(value)}" for key, value in (auth_options or {}).items())
     name_config = "" if name is None else f"name = {json.dumps(name)}"
     structured_database_config = f"""
         [app.database]
@@ -280,10 +268,7 @@ def test_asgi_loader_reports_configuration_errors_without_traceback(
     with pytest.raises(SystemExit) as excinfo:
         load_asgi_app(raise_configuration_error)
 
-    message = (
-        "Application configuration failed: "
-        "APP_ENV must be local, staging, or production."
-    )
+    message = "Application configuration failed: APP_ENV must be local, staging, or production."
     captured = capsys.readouterr()
     assert str(excinfo.value) == message
     assert captured.err.strip() == message
@@ -354,9 +339,7 @@ def test_app_runtime_does_not_import_wybra_owned_configuration_details() -> None
         "wybra.db.migrate",
         "wybra.db.surfaces",
     }
-    imported_modules = {
-        module for path in app_root.rglob("*.py") for module in _imported_modules(path)
-    }
+    imported_modules = {module for path in app_root.rglob("*.py") for module in _imported_modules(path)}
 
     assert imported_modules.isdisjoint(forbidden_imports)
 
@@ -368,16 +351,12 @@ def test_runserver_delegates_default_arguments_to_uvicorn(monkeypatch) -> None:
         observed.update(kwargs)
         return {}
 
-    def fake_run_uvicorn_command(
-        args: list[str], *, logging_config: object | None = None
-    ) -> None:
+    def fake_run_uvicorn_command(args: list[str], *, logging_config: object | None = None) -> None:
         observed["uvicorn_args"] = args
         observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
-    monkeypatch.setattr(
-        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
-    )
+    monkeypatch.setattr(runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False)
 
     runserver_module.main([])
 
@@ -403,16 +382,12 @@ def test_runserver_loads_dotenv_from_runtime_project_root(monkeypatch) -> None:
         observed.update(kwargs)
         return FakeEnv()
 
-    def fake_run_uvicorn_command(
-        args: list[str], *, logging_config: object | None = None
-    ) -> None:
+    def fake_run_uvicorn_command(args: list[str], *, logging_config: object | None = None) -> None:
         observed["uvicorn_args"] = args
         observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
-    monkeypatch.setattr(
-        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
-    )
+    monkeypatch.setattr(runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False)
 
     runserver_module.main([])
 
@@ -435,16 +410,12 @@ def test_runserver_forwards_trailing_uvicorn_arguments(monkeypatch) -> None:
         observed.update(kwargs)
         return {RUNSERVER_RELOAD_ENV: "on"}
 
-    def fake_run_uvicorn_command(
-        args: list[str], *, logging_config: object | None = None
-    ) -> None:
+    def fake_run_uvicorn_command(args: list[str], *, logging_config: object | None = None) -> None:
         observed["uvicorn_args"] = args
         observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
-    monkeypatch.setattr(
-        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False
-    )
+    monkeypatch.setattr(runserver_module, "run_uvicorn_command", fake_run_uvicorn_command, raising=False)
 
     runserver_module.main(
         [
@@ -479,16 +450,12 @@ def test_runserver_no_reload_overrides_reload_environment(monkeypatch) -> None:
         observed.update(kwargs)
         return {RUNSERVER_RELOAD_ENV: "on"}
 
-    def fake_run_uvicorn_command(
-        args: list[str], *, logging_config: object | None = None
-    ) -> None:
+    def fake_run_uvicorn_command(args: list[str], *, logging_config: object | None = None) -> None:
         observed["uvicorn_args"] = args
         observed["logging_config"] = logging_config
 
     monkeypatch.setattr(runserver_module, "load_environment", fake_load_environment)
-    monkeypatch.setattr(
-        runserver_module, "run_uvicorn_command", fake_run_uvicorn_command
-    )
+    monkeypatch.setattr(runserver_module, "run_uvicorn_command", fake_run_uvicorn_command)
 
     runserver_module.main(["--no-reload"])
 
@@ -548,11 +515,7 @@ def test_create_app_mounts_configurable_static_files(tmp_path: Path) -> None:
     web_app = create_app(config_source=app_config)
 
     with TestClient(web_app):
-        static_routes = [
-            route
-            for route in web_app.routes
-            if getattr(route, "name", None) == "static"
-        ]
+        static_routes = [route for route in web_app.routes if getattr(route, "name", None) == "static"]
     assert len(static_routes) == 1
 
     static_route = static_routes[0]
@@ -879,9 +842,7 @@ def app_request_with_session_cookie(
         ("off", False),
     ],
 )
-def test_env_requests_reload_normalises_values(
-    value: str | None, expected: bool
-) -> None:
+def test_env_requests_reload_normalises_values(value: str | None, expected: bool) -> None:
     assert env_requests_reload(value) is expected
 
 
@@ -936,9 +897,7 @@ def test_theme_mode_route_sets_cookie_and_returns_fragment() -> None:
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "light"
     assert "HttpOnly" in response.headers["set-cookie"]
-    assert json.loads(response.headers["HX-Trigger"]) == {
-        "theme-mode-changed": {"theme_mode": "light"}
-    }
+    assert json.loads(response.headers["HX-Trigger"]) == {"theme-mode-changed": {"theme_mode": "light"}}
     assert 'id="theme-selector"' in response.text
     assert '/partials/theme-mode"' in response.text
     assert 'name="theme_mode" value="dark"' in response.text
@@ -958,9 +917,7 @@ def test_theme_mode_route_normalises_invalid_value_to_auto() -> None:
     assert response.status_code == 200
     assert response.cookies["theme_mode"] == "auto"
     assert "HttpOnly" in response.headers["set-cookie"]
-    assert json.loads(response.headers["HX-Trigger"]) == {
-        "theme-mode-changed": {"theme_mode": "auto"}
-    }
+    assert json.loads(response.headers["HX-Trigger"]) == {"theme-mode-changed": {"theme_mode": "auto"}}
     assert 'id="theme-selector"' in response.text
     assert '/partials/theme-mode"' in response.text
     assert "Theme mode: Auto." in response.text
@@ -1186,6 +1143,4 @@ def test_configured_compatible_database_provider_is_not_replaced_by_wybra_db(
     with TestClient(web_app) as client:
         site = get_site(cast(FastAPI, client.app))
 
-        assert type(site.require_capability(DatabaseCapability)).__name__ == (
-            "CompatibleDatabaseCapability"
-        )
+        assert type(site.require_capability(DatabaseCapability)).__name__ == ("CompatibleDatabaseCapability")

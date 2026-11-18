@@ -262,9 +262,7 @@ def test_validation_targets_are_discovered_from_configured_modules(
     )
     monkeypatch.syspath_prepend(str(tmp_path))
 
-    targets = discover_validation_targets(
-        ("uniquode_io", "first_validation_module", "second_validation_module")
-    )
+    targets = discover_validation_targets(("uniquode_io", "first_validation_module", "second_validation_module"))
 
     assert tuple(targets) == ("uniquode_io", "first", "second")
     assert isinstance(targets["uniquode_io"](Settings()), ValidationResult)
@@ -532,8 +530,7 @@ def test_validate_routes_reports_missing_configured_module(tmp_path) -> None:
 
     assert not result.is_ok
     assert result.errors == (
-        "Configured route module validation failed: Configured module "
-        "'missing_validation_app' could not be imported.",
+        "Configured route module validation failed: Configured module 'missing_validation_app' could not be imported.",
     )
 
 

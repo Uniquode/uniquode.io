@@ -10,9 +10,7 @@ from typing import Any
 
 WYBRA_GIT_URL = "https://github.com/Uniquode/wybra.git"
 GIT_SOURCE = {"git": WYBRA_GIT_URL, "branch": "main"}
-GIT_SOURCE_LINE = (
-    'wybra = { git = "https://github.com/Uniquode/wybra.git", branch = "main" }'
-)
+GIT_SOURCE_LINE = 'wybra = { git = "https://github.com/Uniquode/wybra.git", branch = "main" }'
 PATH_SOURCE_LINE = 'wybra = { path = "../wybra", editable = true }'
 
 
@@ -72,9 +70,7 @@ def _read_toml(pyproject_path: Path) -> dict[str, Any]:
 def _rewrite_wybra_source_to_git(pyproject_path: Path) -> None:
     lines = pyproject_path.read_text(encoding="utf-8").splitlines()
     source_range = _uv_sources_range(lines)
-    wybra_source_indices = [
-        index for index in source_range if _is_wybra_source_line(lines[index])
-    ]
+    wybra_source_indices = [index for index in source_range if _is_wybra_source_line(lines[index])]
     if not wybra_source_indices:
         raise SystemExit("pyproject.toml does not contain a Wybra source line.")
 
@@ -108,9 +104,7 @@ def _is_wybra_source_line(line: str) -> bool:
     stripped = line.strip()
     if stripped.startswith("#"):
         stripped = stripped[1:].strip()
-    return stripped.startswith("wybra") and stripped.removeprefix(
-        "wybra"
-    ).lstrip().startswith("=")
+    return stripped.startswith("wybra") and stripped.removeprefix("wybra").lstrip().startswith("=")
 
 
 if __name__ == "__main__":
