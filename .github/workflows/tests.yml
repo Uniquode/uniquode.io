@@ -97,6 +97,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Check out repository
@@ -127,4 +136,27 @@ jobs:
         env:
           RUNNER_TEMP: ${{ runner.temp }}
           POSTGRES_SUPERUSER_PASSWORD: ${{ env.POSTGRES_SUPERUSER_PASSWORD }}
-        run: dbus-run-session -- bash ./smoke_test.sh
+        run: |
+          dbus-run-session -- bash <<'SH'
+          set -euo pipefail
+
+          export XDG_DATA_HOME="${RUNNER_TEMP}/xdg-data-smoke"
+          mkdir -p "${XDG_DATA_HOME}/keyrings"
+          keyring_env="$(mktemp)"
+          keyring_password="$(python - <<'PY'
+          import secrets
+
+          print(secrets.token_urlsafe(32))
+          PY
+          )"
+          printf '%s\n' "$keyring_password" \
+            | gnome-keyring-daemon --unlock --components=secrets >"$keyring_env"
+          set -a
+          . "$keyring_env"
+          set +a
+
+          printf '%s' 'redis://127.0.0.1:6379/0' \
+            | uv run wybra-secret set --key cache/redis/url --stdin
+
+          bash ./smoke_test.sh
+          SH

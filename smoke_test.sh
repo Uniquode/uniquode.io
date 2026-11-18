@@ -7,7 +7,18 @@ cd "$(dirname "$0")"
 # resolve the database host another way (e.g. AWS RDS discovery or a
 # platform-injected socket); local/CI smoke runs need an explicit host since
 # there is no such discovery mechanism available.
-SMOKE_CONFIG="$(mktemp --suffix=.toml)"
+# Both BSD and GNU mktemp randomise a directory template ending in Xs.
+SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/uniquode-smoke.XXXXXX")"
+SMOKE_CONFIG="$SMOKE_DIR/config.toml"
+
+cleanup() {
+  if [ -n "${SERVER_PID:-}" ]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+  fi
+  rm -r -- "$SMOKE_DIR"
+}
+trap cleanup EXIT
+
 python3 - "$SMOKE_CONFIG" <<'PY'
 import sys
 
@@ -30,17 +41,16 @@ with open(dest, "w", encoding="utf-8") as fh:
 PY
 
 export APP_CONFIG="$SMOKE_CONFIG"
-export XDG_DATA_HOME="${RUNNER_TEMP:-/tmp}/xdg-data-smoke"
-rm -rf "$XDG_DATA_HOME"
-mkdir -p "$XDG_DATA_HOME/keyrings"
 
-keyring_env="$(mktemp)"
-keyring_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-printf '%s\n' "$keyring_password" | gnome-keyring-daemon --unlock --components=secrets >"$keyring_env"
-set -a
-# shellcheck disable=SC1090
-. "$keyring_env"
-set +a
+# This script assumes a working OS keychain is already unlocked and
+# reachable -- wybra-secret/wybra-authmgr resolve secrets through it
+# directly, with no keyring/daemon setup of their own here. On a normal
+# desktop login (macOS or Linux) that's already true. A headless Linux
+# session (a bare CI runner, a docker-dev container shell) has no desktop
+# login to do that, so whatever starts this script there is responsible for
+# unlocking a Secret Service provider first -- see the "smoke" job in
+# .github/workflows/tests.yml for CI, or AGENTS.md's docker-dev instructions
+# for local headless Linux use.
 
 echo "== Seeding core app secrets =="
 uv run python ci/seed_core_secrets.py
@@ -77,7 +87,6 @@ printf '%s' "$SMOKE_PASSWORD" | uv run wybra-authmgr user create "$SMOKE_EMAIL" 
 echo "== Starting server =="
 uv run wybra-runserver --host 127.0.0.1 --port 8000 --no-reload &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
 echo "Waiting for server to become ready..."
 ready=""
@@ -99,7 +108,7 @@ check_route() {
   local path="$1"
   local expected="$2"
   local code
-  code="$(curl -s -o /tmp/smoke_body.html -w '%{http_code}' "http://127.0.0.1:8000${path}")"
+  code="$(curl -s -o "$SMOKE_DIR/response.html" -w '%{http_code}' "http://127.0.0.1:8000${path}")"
   echo "GET ${path} -> ${code} (expected ${expected})"
   if [ "$code" != "$expected" ]; then
     echo "UNEXPECTED status for ${path}: got ${code}, expected ${expected}" >&2
@@ -120,7 +129,7 @@ check_route "/openapi.json" 200
 check_route "/nonexistent-smoke-path" 404
 
 echo "== Attempting login flow =="
-COOKIE_JAR="$(mktemp)"
+COOKIE_JAR="$SMOKE_DIR/cookies"
 LOGIN_PAGE="$(curl -s -c "$COOKIE_JAR" http://127.0.0.1:8000/account/login)"
 # The trailing `|| true` keeps a no-match `grep` from tripping `set -e` and
 # aborting the script before the clearer diagnostic below can run.
@@ -133,7 +142,7 @@ fi
 # A successful login redirects (303) to "/"; anything else (e.g. the login
 # form being re-rendered with a 200) means the credentials, CSRF token, or
 # session cookie handling is broken.
-LOGIN_CODE="$(curl -s -o /tmp/smoke_login.html -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+LOGIN_CODE="$(curl -s -o "$SMOKE_DIR/login.html" -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
   --data-urlencode "csrf_token=${CSRF_TOKEN}" --data-urlencode "email=${SMOKE_EMAIL}" --data-urlencode "password=${SMOKE_PASSWORD}" \
   http://127.0.0.1:8000/account/login)"
 echo "POST /account/login -> ${LOGIN_CODE}"
