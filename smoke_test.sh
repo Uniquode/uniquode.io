@@ -2,68 +2,29 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Build a smoke-test config layered on top of uniquode.io.toml that adds an
-# explicit TCP host/port for the database. Production/deploy environments
-# resolve the database host another way (e.g. AWS RDS discovery or a
-# platform-injected socket); local/CI smoke runs need an explicit host since
-# there is no such discovery mechanism available.
 # Both BSD and GNU mktemp randomise a directory template ending in Xs.
 SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/uniquode-smoke.XXXXXX")"
-SMOKE_CONFIG="$SMOKE_DIR/config.toml"
 
 cleanup() {
+  local status=$?
   if [ -n "${SERVER_PID:-}" ]; then
     kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  if [ -f "$SMOKE_DIR/keychain.json" ]; then
+    uv run --locked python -m ci.smoke_fixtures cleanup "$SMOKE_DIR" || status=1
   fi
   rm -r -- "$SMOKE_DIR"
+  exit "$status"
 }
 trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-python3 - "$SMOKE_CONFIG" <<'PY'
-import sys
-
-dest = sys.argv[1]
-with open("uniquode.io.toml", encoding="utf-8") as fh:
-    text = fh.read()
-marker = "[app.database]\n"
-try:
-    idx = text.index(marker) + len(marker)
-except ValueError as exc:
-    raise SystemExit(
-        f"smoke_test.sh: expected marker {marker!r} not found in "
-        "uniquode.io.toml -- update smoke_test.sh if the [app.database] "
-        "section was renamed or restructured."
-    ) from exc
-injected = 'host = "127.0.0.1"\nport = 5432\n'
-text = text[:idx] + injected + text[idx:]
-with open(dest, "w", encoding="utf-8") as fh:
-    fh.write(text)
-PY
-
-export APP_CONFIG="$SMOKE_CONFIG"
-
-# This script assumes a working OS keychain is already unlocked and
-# reachable -- wybra-secret/wybra-authmgr resolve secrets through it
-# directly, with no keyring/daemon setup of their own here. On a normal
-# desktop login (macOS or Linux) that's already true. A headless Linux
-# session (a bare CI runner, a docker-dev container shell) has no desktop
-# login to do that, so whatever starts this script there is responsible for
-# unlocking a Secret Service provider first -- see the "smoke" job in
-# .github/workflows/tests.yml for CI, or AGENTS.md's docker-dev instructions
-# for local headless Linux use.
-
-echo "== Seeding core app secrets =="
-uv run python ci/seed_core_secrets.py
-
-echo "== Seeding database credentials =="
-DB_APP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
-# POSTGRES_SUPERUSER_PASSWORD is set by CI to match the throwaway Postgres
-# service container's generated password. Falls back to "postgres" for
-# local runs against a default local Postgres install.
-printf '%s' "postgres" | uv run wybra-secret set --key database/uniquode/service-account/user --stdin
-printf '%s' "${POSTGRES_SUPERUSER_PASSWORD:-postgres}" | uv run wybra-secret set --key database/uniquode/service-account/password --stdin
-printf '%s' "uniquode_app" | uv run wybra-secret set --key database/uniquode/app/user --stdin
-printf '%s' "$DB_APP_PASSWORD" | uv run wybra-secret set --key database/uniquode/app/password --stdin
+echo "== Checking Redis and preparing the smoke keychain =="
+uv run --locked python -m ci.smoke_fixtures prepare "$SMOKE_DIR"
+export APP_CONFIG="$SMOKE_DIR/config.toml"
+unset SMOKE_REDIS_URL POSTGRES_SUPERUSER_PASSWORD
 
 echo "== Provisioning database =="
 uv run wybra-migrate init

@@ -51,6 +51,16 @@ def build_secrets() -> dict[str, str]:
     }
 
 
+def store_secrets(values: dict[str, str], config: str | None) -> int:
+    command = ["uv", "run", "wybra-secret"]
+    if config:
+        command += ["--config", config]
+    command += ["set", "--json"]
+
+    result = subprocess.run(command, input=json.dumps(values).encode("utf-8"))
+    return result.returncode
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(
         description="Seed core app secrets into the keychain via wybra-secret.",
@@ -60,16 +70,7 @@ def main(argv: list[str] | None = None) -> int:
         help="Forwarded as wybra-secret's --config flag, if provided.",
     )
     args = parser.parse_args(argv)
-
-    payload = json.dumps(build_secrets()).encode("utf-8")
-
-    command = ["uv", "run", "wybra-secret"]
-    if args.config:
-        command += ["--config", args.config]
-    command += ["set", "--json"]
-
-    result = subprocess.run(command, input=payload)
-    return result.returncode
+    return store_secrets(build_secrets(), args.config)
 
 
 if __name__ == "__main__":

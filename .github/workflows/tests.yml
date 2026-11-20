@@ -141,6 +141,8 @@ jobs:
         env:
           RUNNER_TEMP: ${{ runner.temp }}
           POSTGRES_SUPERUSER_PASSWORD: ${{ env.POSTGRES_SUPERUSER_PASSWORD }}
+          SMOKE_POSTGRES_PORT: "5432"
+          SMOKE_REDIS_URL: redis://127.0.0.1:6379/0
         run: |
           dbus-run-session -- bash <<'SH'
           set -euo pipefail
@@ -159,9 +161,6 @@ jobs:
           set -a
           . "$keyring_env"
           set +a
-
-          printf '%s' 'redis://127.0.0.1:6379/0' \
-            | uv run wybra-secret set --key cache/redis/url --stdin
 
           bash ./smoke_test.sh
           SH
