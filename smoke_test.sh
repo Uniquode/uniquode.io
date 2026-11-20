@@ -2,58 +2,29 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Build a smoke-test config layered on top of uniquode.io.toml that adds an
-# explicit TCP host/port for the database. Production/deploy environments
-# resolve the database host another way (e.g. AWS RDS discovery or a
-# platform-injected socket); local/CI smoke runs need an explicit host since
-# there is no such discovery mechanism available.
-SMOKE_CONFIG="$(mktemp --suffix=.toml)"
-python3 - "$SMOKE_CONFIG" <<'PY'
-import sys
+# Both BSD and GNU mktemp randomise a directory template ending in Xs.
+SMOKE_DIR="$(mktemp -d "${TMPDIR:-/tmp}/uniquode-smoke.XXXXXX")"
 
-dest = sys.argv[1]
-with open("uniquode.io.toml", encoding="utf-8") as fh:
-    text = fh.read()
-marker = "[app.database]\n"
-try:
-    idx = text.index(marker) + len(marker)
-except ValueError as exc:
-    raise SystemExit(
-        f"smoke_test.sh: expected marker {marker!r} not found in "
-        "uniquode.io.toml -- update smoke_test.sh if the [app.database] "
-        "section was renamed or restructured."
-    ) from exc
-injected = 'host = "127.0.0.1"\nport = 5432\n'
-text = text[:idx] + injected + text[idx:]
-with open(dest, "w", encoding="utf-8") as fh:
-    fh.write(text)
-PY
+cleanup() {
+  local status=$?
+  if [ -n "${SERVER_PID:-}" ]; then
+    kill "$SERVER_PID" 2>/dev/null || true
+    wait "$SERVER_PID" 2>/dev/null || true
+  fi
+  if [ -f "$SMOKE_DIR/keychain.json" ]; then
+    uv run --locked python -m ci.smoke_fixtures cleanup "$SMOKE_DIR" || status=1
+  fi
+  rm -r -- "$SMOKE_DIR"
+  exit "$status"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
 
-export APP_CONFIG="$SMOKE_CONFIG"
-export XDG_DATA_HOME="${RUNNER_TEMP:-/tmp}/xdg-data-smoke"
-rm -rf "$XDG_DATA_HOME"
-mkdir -p "$XDG_DATA_HOME/keyrings"
-
-keyring_env="$(mktemp)"
-keyring_password="$(python3 -c 'import secrets; print(secrets.token_urlsafe(32))')"
-printf '%s\n' "$keyring_password" | gnome-keyring-daemon --unlock --components=secrets >"$keyring_env"
-set -a
-# shellcheck disable=SC1090
-. "$keyring_env"
-set +a
-
-echo "== Seeding core app secrets =="
-uv run python ci/seed_core_secrets.py
-
-echo "== Seeding database credentials =="
-DB_APP_PASSWORD="$(python3 -c 'import secrets; print(secrets.token_urlsafe(24))')"
-# POSTGRES_SUPERUSER_PASSWORD is set by CI to match the throwaway Postgres
-# service container's generated password. Falls back to "postgres" for
-# local runs against a default local Postgres install.
-printf '%s' "postgres" | uv run wybra-secret set --key database/uniquode/service-account/user --stdin
-printf '%s' "${POSTGRES_SUPERUSER_PASSWORD:-postgres}" | uv run wybra-secret set --key database/uniquode/service-account/password --stdin
-printf '%s' "uniquode_app" | uv run wybra-secret set --key database/uniquode/app/user --stdin
-printf '%s' "$DB_APP_PASSWORD" | uv run wybra-secret set --key database/uniquode/app/password --stdin
+echo "== Checking Redis and preparing the smoke keychain =="
+uv run --locked python -m ci.smoke_fixtures prepare "$SMOKE_DIR"
+export APP_CONFIG="$SMOKE_DIR/config.toml"
+unset SMOKE_REDIS_URL POSTGRES_SUPERUSER_PASSWORD
 
 echo "== Provisioning database =="
 uv run wybra-migrate init
@@ -77,7 +48,6 @@ printf '%s' "$SMOKE_PASSWORD" | uv run wybra-authmgr user create "$SMOKE_EMAIL" 
 echo "== Starting server =="
 uv run wybra-runserver --host 127.0.0.1 --port 8000 --no-reload &
 SERVER_PID=$!
-trap 'kill "$SERVER_PID" 2>/dev/null || true' EXIT
 
 echo "Waiting for server to become ready..."
 ready=""
@@ -99,7 +69,7 @@ check_route() {
   local path="$1"
   local expected="$2"
   local code
-  code="$(curl -s -o /tmp/smoke_body.html -w '%{http_code}' "http://127.0.0.1:8000${path}")"
+  code="$(curl -s -o "$SMOKE_DIR/response.html" -w '%{http_code}' "http://127.0.0.1:8000${path}")"
   echo "GET ${path} -> ${code} (expected ${expected})"
   if [ "$code" != "$expected" ]; then
     echo "UNEXPECTED status for ${path}: got ${code}, expected ${expected}" >&2
@@ -120,7 +90,7 @@ check_route "/openapi.json" 200
 check_route "/nonexistent-smoke-path" 404
 
 echo "== Attempting login flow =="
-COOKIE_JAR="$(mktemp)"
+COOKIE_JAR="$SMOKE_DIR/cookies"
 LOGIN_PAGE="$(curl -s -c "$COOKIE_JAR" http://127.0.0.1:8000/account/login)"
 # The trailing `|| true` keeps a no-match `grep` from tripping `set -e` and
 # aborting the script before the clearer diagnostic below can run.
@@ -133,7 +103,7 @@ fi
 # A successful login redirects (303) to "/"; anything else (e.g. the login
 # form being re-rendered with a 200) means the credentials, CSRF token, or
 # session cookie handling is broken.
-LOGIN_CODE="$(curl -s -o /tmp/smoke_login.html -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
+LOGIN_CODE="$(curl -s -o "$SMOKE_DIR/login.html" -w '%{http_code}' -b "$COOKIE_JAR" -c "$COOKIE_JAR" \
   --data-urlencode "csrf_token=${CSRF_TOKEN}" --data-urlencode "email=${SMOKE_EMAIL}" --data-urlencode "password=${SMOKE_PASSWORD}" \
   http://127.0.0.1:8000/account/login)"
 echo "POST /account/login -> ${LOGIN_CODE}"

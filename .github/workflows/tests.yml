@@ -97,6 +97,15 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
+      redis:
+        image: redis:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
 
     steps:
       - name: Check out repository
@@ -123,8 +132,35 @@ jobs:
       - name: Install dependencies
         run: uv sync --locked --group dev
 
+      - name: Configure Redis for Wybra cache readiness
+        env:
+          REDIS_CONTAINER_ID: ${{ job.services.redis.id }}
+        run: docker exec "$REDIS_CONTAINER_ID" redis-cli -e CONFIG SET appendonly yes maxmemory-policy noeviction
+
       - name: Run smoke test
         env:
           RUNNER_TEMP: ${{ runner.temp }}
           POSTGRES_SUPERUSER_PASSWORD: ${{ env.POSTGRES_SUPERUSER_PASSWORD }}
-        run: dbus-run-session -- bash ./smoke_test.sh
+          SMOKE_POSTGRES_PORT: "5432"
+          SMOKE_REDIS_URL: redis://127.0.0.1:6379/0
+        run: |
+          dbus-run-session -- bash <<'SH'
+          set -euo pipefail
+
+          export XDG_DATA_HOME="${RUNNER_TEMP}/xdg-data-smoke"
+          mkdir -p "${XDG_DATA_HOME}/keyrings"
+          keyring_env="$(mktemp)"
+          keyring_password="$(python - <<'PY'
+          import secrets
+
+          print(secrets.token_urlsafe(32))
+          PY
+          )"
+          printf '%s\n' "$keyring_password" \
+            | gnome-keyring-daemon --unlock --components=secrets >"$keyring_env"
+          set -a
+          . "$keyring_env"
+          set +a
+
+          bash ./smoke_test.sh
+          SH

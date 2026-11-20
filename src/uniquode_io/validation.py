@@ -19,10 +19,7 @@ def validate_app(_settings: object) -> ValidationResult:
     record_check(
         checks,
         errors,
-        passed=any(
-            route.path == HOME_ROUTE_PATH and route.name == HOME_ROUTE_NAME
-            for route in routes
-        ),
+        passed=any(route.path == HOME_ROUTE_PATH and route.name == HOME_ROUTE_NAME for route in routes),
         description=f"home route exists: {HOME_ROUTE_PATH}",
         error=f"Missing home route: {HOME_ROUTE_PATH}",
     )

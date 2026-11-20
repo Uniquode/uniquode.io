@@ -50,6 +50,12 @@ uv run wybra-runserver --host 127.0.0.1 --port 8000 -- --proxy-headers --forward
 See [WEB-SECURITY.md](WEB-SECURITY.md) for reverse-proxy HTTPS setup and secure
 session-cookie guidance.
 
+### Smoke test
+
+Use disposable PostgreSQL and Redis instances and an unlocked OS keychain. The smoke test provisions and migrates the PostgreSQL instance and starts the app on loopback port 8000. Set `SMOKE_POSTGRES_PORT` to the disposable instance's loopback port and `POSTGRES_SUPERUSER_PASSWORD` to its `postgres` user's password. Set `SMOKE_REDIS_URL` to the disposable Redis instance's URL. Redis must permit `CONFIG GET`, use `appendonly yes` and use a non-`allkeys-*` eviction policy such as `noeviction`.
+
+With those variables exported, run `bash ./smoke_test.sh`. The script checks Redis before seeding credentials, uses a separate Wybra keychain service for each run and removes that run's entries on exit. GitHub Actions supplies both disposable services and an isolated GNOME Keyring.
+
 ## Configuration
 
 Runtime configuration is loaded through `envex`, including local `.env` files.
